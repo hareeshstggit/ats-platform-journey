@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ATS Platform — Execution Methodology</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; margin: 40px 60px; line-height: 1.5; font-size: 13px; }
+  h1 { font-size: 22px; border-bottom: 3px solid #1f4e79; padding-bottom: 8px; margin-top: 0; }
+  h2 { font-size: 16px; color: #1f4e79; margin-top: 34px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  h3 { font-size: 13px; color: #333; margin-bottom: 4px; }
+  .subtitle { color: #555; font-size: 12px; margin-top: -6px; margin-bottom: 20px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 18px 0; font-size: 12px; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #1f4e79; color: white; }
+  tr:nth-child(even) td { background: #f4f7fa; }
+  .before td:first-child, .after td:first-child { font-weight: 600; }
+  .tag-new { background: #e6f4ea; color: #1e7a34; font-weight: 600; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+  .tag-changed { background: #fef3e0; color: #a15c00; font-weight: 600; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+  .tag-same { background: #eee; color: #666; font-weight: 600; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+  .mandate { border-left: 4px solid #1f4e79; background: #f4f7fa; padding: 10px 14px; margin: 10px 0 18px 0; }
+  .mandate .flag { color: #a11; font-weight: 700; }
+  .cols { display: flex; gap: 20px; }
+  .col { flex: 1; }
+  .footer { margin-top: 40px; font-size: 11px; color: #888; border-top: 1px solid #ccc; padding-top: 8px; }
+  code { background: #eee; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<h1>ATS Platform — Execution Methodology</h1>
+<div class="subtitle">Last updated: 2026-07-24 &middot; Living document — update in the same PR as any agent/CI/mandate
+change (see docs/TOKEN_OPTIMIZATION_PRACTICE.md's living-doc rule) &middot; Source: PR #191/#192/#193 &middot;
+Author: Claude Code (agent), reviewed by principal-reviewer</div>
+
+<p>This document records what changed in how work on the ATS Platform gets executed —
+the agent pipeline, the model/effort tiering behind it, and the new binding project rules —
+following a same-day review of repeated late-cycle bug discovery and a CI-visibility gap that
+had existed since the repository's creation.</p>
+
+<h2>1. Why this changed</h2>
+<p>Two structural gaps were found on 2026-07-23/24, neither fixed by "try harder":</p>
+<ul>
+<li><b>CI masking.</b> <code>backend-ci.yml</code> ran <code>ruff</code> &rarr; <code>mypy</code> &rarr; <code>pytest</code> as
+sequential steps in one job. The first failing step stopped the job — so <code>mypy</code> and the full
+<code>pytest</code> suite had <b>never run to completion, once, in the repo's entire history</b>. This silently
+hid 52 mypy errors and 18 Postgres/Redis-dependent test failures until a lint cleanup accidentally
+let the job run past <code>ruff</code> for the first time.</li>
+<li><b>Review depth at the single chokepoint.</b> <code>principal-reviewer</code> — the one gate every change
+passes through before merge — took 3 rounds to close a single change (a missed endpoint, then a
+missed spec-sync update) even at high effort, because it was on the same model tier as every other
+agent in the roster, with no tier reserved for the highest-leverage review/specialist work.</li>
+</ul>
+
+<h2>2. Workflow: before &rarr; now</h2>
+<table>
+<tr><th style="width:20%">Aspect</th><th style="width:40%">Before</th><th style="width:40%">Now</th></tr>
+<tr><td>Backend CI (<code>backend-ci.yml</code>)</td>
+<td>One job, <code>lint-type-test</code>: ruff &rarr; mypy &rarr; pytest as sequential steps. An early failure
+silently masked every later check's result.</td>
+<td><span class="tag-new">NEW</span> Four independent parallel jobs: <code>lint</code>, <code>dependency-drift</code>,
+<code>typecheck</code>, <code>test</code>. Each reports its own pass/fail; no <code>needs:</code> dependency between them.</td></tr>
+<tr><td>Frontend CI (<code>frontend-ci.yml</code>)</td>
+<td>One job, <code>lint-typecheck-test</code>: lint &rarr; typecheck &rarr; test &rarr; build sequential, plus a
+separate <code>e2e</code> job.</td>
+<td><span class="tag-new">NEW</span> Independent <code>lint</code>, <code>typecheck</code>, <code>component-test</code>,
+<code>build</code> jobs; <code>e2e</code> unchanged.</td></tr>
+<tr><td>Dependency-drift detection</td>
+<td>None. A package installed locally outside the tracked dependency list stayed invisible to CI
+until CI itself broke on it (the <code>psycopg2-binary</code> incident).</td>
+<td><span class="tag-new">NEW</span> Mandatory <code>deptry</code> job on every backend CI run — fails the build if
+a first-party module imports an undeclared package.</td></tr>
+<tr><td>Tool-version drift</td>
+<td>Dev tools declared as open floors (e.g. <code>ruff&gt;=0.4</code>) with no upper bound — CI could silently
+resolve a newer version than any developer had tested against.</td>
+<td><span class="tag-new">NEW</span> Precedent set (via the ruff 0.16.0 incident, 2026-07-24): pin
+correctness-gate tooling to an exact, verified-clean version, matching the existing
+<code>bcrypt==4.1.3</code> pattern.</td></tr>
+<tr><td>Cost visibility</td>
+<td>Cost alerts only required for "non-trivial" tasks; no standard after-the-fact actual-cost report.</td>
+<td><span class="tag-new">NEW</span> <code>[COST ALERT]</code> before <b>and</b> after every task, no size carve-out —
+plus a mandatory statement of which specific token-optimization practice was applied and how it
+saved cost, for every task.</td></tr>
+<tr><td>Model/effort tiering</td>
+<td>Single-tier: every agent on Sonnet, effort varied by role.</td>
+<td><span class="tag-new">NEW</span> Two-tier: 3 chokepoint/specialist roles on Opus (fixed, no
+per-task re-evaluation); the rest stay on Sonnet.</td></tr>
+</table>
+
+<h2>2b. What stayed the same</h2>
+<p>The router &rarr; service &rarr; repository layering, the OpenSpec spec-first workflow, the Quality
+Gate rules (async-outcome verification, RLS context in Celery tasks, functional-test cleanup),
+Gates 1&ndash;4 and their 3-request override rule, and Gate 5's 3-stage bug-fix pipeline
+(<code>cavecrew-investigator</code> &rarr; fix agent &rarr; <code>principal-reviewer</code>) are unchanged. This update
+extends the existing governance model — it does not replace it.</p>
+
+<h2>3. Agent roster: before &rarr; now</h2>
+<table>
+<tr><th>Agent</th><th>Before</th><th>Now</th><th>Change</th></tr>
+<tr><td><code>backend-engineer</code></td><td>Sonnet 5 / high</td><td>Sonnet 5 / high</td><td><span class="tag-same">UNCHANGED</span></td></tr>
+<tr><td><code>ux-ui-engineer</code></td><td>Sonnet 5 / high</td><td>Sonnet 5 / high</td><td><span class="tag-same">UNCHANGED</span></td></tr>
+<tr><td><code>unit-test-engineer</code></td><td>Sonnet 5 / medium</td><td>Sonnet 5 / medium</td><td><span class="tag-same">UNCHANGED</span></td></tr>
+<tr><td><code>functional-test-engineer</code></td><td>Sonnet 5 / medium</td><td>Sonnet 5 / medium</td><td><span class="tag-same">UNCHANGED</span></td></tr>
+<tr><td><code>integration-test-engineer</code></td><td>Sonnet 5 / medium</td><td>Sonnet 5 / medium</td><td><span class="tag-same">UNCHANGED</span></td></tr>
+<tr><td><code>reviewer</code> &rarr; <code>principal-reviewer</code></td><td>Sonnet 5 / high</td>
+<td><b>Opus 4.8</b> / high</td><td><span class="tag-changed">RETIERED</span></td></tr>
+<tr><td><code>reliability-engineer</code> &rarr; <code>principal-reliability-engineer</code></td>
+<td>Sonnet 5 / high</td><td><b>Opus 4.8</b> / xhigh</td>
+<td><span class="tag-changed">RENAMED + RETIERED</span></td></tr>
+<tr><td><code>performance-auditor</code> &rarr; <code>principal-performance-auditor</code></td>
+<td>Sonnet 5 / high</td><td><b>Opus 4.8</b> / xhigh</td>
+<td><span class="tag-changed">RENAMED + RETIERED</span></td></tr>
+</table>
+
+<h3>Why these 3, and no others</h3>
+<p><code>principal-reviewer</code> is the single merge chokepoint every change passes through exactly
+once — the highest-leverage point to spend more on. <code>principal-reliability-engineer</code> and
+<code>principal-performance-auditor</code> are on-demand specialists engaged only for the highest
+blast-radius categories (data loss, broken recoverability, perf regressions at 200+ concurrent
+users). In both cases the cost delta (roughly 1.7&ndash;2.5&times; Sonnet, depending on Sonnet's intro
+vs. standard pricing window) is trivial against the cost of a defect that gate or specialist was
+supposed to catch and didn't. The remaining agents run high-volume, well-scoped, mechanical-to-
+moderate judgment work where Sonnet's ceiling was never the constraint.</p>
+
+<h3>Worked cost comparison (per invocation, ~70K tokens, review-shaped 80/20 input/output mix)</h3>
+<table>
+<tr><th></th><th>Sonnet 5 (intro, through 2026-08-31)</th><th>Sonnet 5 (standard, after)</th><th>Opus 4.8</th></tr>
+<tr><td>Input / output per 1M tokens</td><td>$2.00 / $10.00</td><td>$3.00 / $15.00</td><td>$5.00 / $25.00</td></tr>
+<tr><td>Multiplier vs. Sonnet</td><td>&mdash;</td><td>&mdash;</td><td>2.5&times; today, 1.67&times; after Aug 31</td></tr>
+<tr><td>Approx. cost per invocation</td><td>~$0.25</td><td>~$0.38</td><td>~$0.63</td></tr>
+</table>
+<p>Net estimated incremental spend: ~$5&ndash;11/month for <code>principal-reviewer</code> (one invocation
+per merged change) and under $3/month combined for the two on-demand specialists — roughly
+$10&ndash;15/month total for the whole retiering.</p>
+
+<h2>4. New binding mandates added</h2>
+
+<div class="mandate">
+<h3>Model tier &amp; CI independence mandate <span class="flag">(NO OVERRIDE)</span></h3>
+<p>Added 2026-07-24, same enforcement class as the pre-existing Gate 5. Fixes the two-tier model
+roster in place by agent file name (load-bearing, not cosmetic); requires all CI jobs to be
+independent, parallel jobs with no <code>needs:</code> dependency between checks; makes dependency-drift
+detection (<code>deptry</code> or equivalent) mandatory in backend CI. Cannot be lifted by any number of
+user requests in any session — the only way to change it is to edit <code>CLAUDE.md</code> directly.</p>
+</div>
+
+<div class="mandate">
+<h3>Cost alerts — before <b>and</b> after every task <span class="flag">(NO OVERRIDE)</span></h3>
+<p>Supersedes the old "simple tasks: no alert" carve-out. Every task — regardless of size — states
+a <code>[COST ALERT]</code> estimate before starting and the actual cost/tokens spent after finishing,
+flagging any overrun beyond ~2&times; the estimate.</p>
+</div>
+
+<div class="mandate">
+<h3>Token-optimization practice showcase <span class="flag">(NO OVERRIDE)</span></h3>
+<p>After completing any task, name the specific <code>docs/TOKEN_OPTIMIZATION_PRACTICE.md</code>
+practice(s) applied and state concretely how each reduced <i>this task's</i> actual spend — not a
+generic restatement of the practice. An explicit "N/A" is required if none meaningfully applied;
+silence is non-compliant.</p>
+</div>
+
+<p style="margin-top:22px">All three mandates sit in the same enforcement class as Gate 5: not
+subject to the 3-request override rule that governs Gates 1&ndash;4, and not waivable by any
+in-session user request, however explicit. Changing them requires editing <code>CLAUDE.md</code> itself.</p>
+
+<h2>5. First real-world validation (same day)</h2>
+<p>PR #193 (the change that introduced this update) dogfooded its own new gate: the retiered
+<code>principal-reviewer</code> reviewed its own creation and caught 4 genuine defects across two rounds
+(a duplicate doc-section heading, a stale cost-alert rule contradicting the same PR's own change,
+a missing playbook entry, and — the sharpest finding — a dependency-drift check sequenced after
+lint in the same job, reproducing the exact "one failure masks another" pattern the whole mandate
+exists to close). Separately, the new independent <code>lint</code> job's first real CI run surfaced a
+genuine ruff-version-drift bug within hours of merging (804 previously-invisible lint findings from
+an unpinned tool version) — direct, same-day proof that job independence surfaces information a
+combined job would have kept hidden.</p>
+
+<div class="footer">
+Generated by Claude Code &middot; ATS Platform — STG Labs &middot; Baseline v2.2 (11-Jun-2026) &middot;
+Source PRs: #191, #192, #193
+</div>
+
+</body>
+</html>

@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ATS Platform — Spec to Go-Live Journey</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; margin: 40px 60px; line-height: 1.55; font-size: 13px; }
+  h1 { font-size: 24px; border-bottom: 3px solid #1f4e79; padding-bottom: 8px; margin-top: 0; color: #1f4e79; }
+  h2 { font-size: 17px; color: #1f4e79; margin-top: 30px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  h3 { font-size: 14px; color: #333; margin-bottom: 4px; margin-top: 20px; }
+  h4 { font-size: 13px; color: #333; margin-bottom: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 18px 0; font-size: 11.5px; page-break-inside: avoid; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #1f4e79; color: white; }
+  tr:nth-child(even) td { background: #f4f7fa; }
+  code { background: #eee; padding: 1px 4px; border-radius: 3px; font-family: Consolas, monospace; font-size: 11.5px; }
+  pre { background: #f4f4f4; border: 1px solid #ddd; border-radius: 4px; padding: 10px 14px; overflow-x: auto; font-size: 11px; line-height: 1.4; page-break-inside: avoid; }
+  pre code { background: none; padding: 0; white-space: pre-wrap; word-wrap: break-word; }
+  blockquote { border-left: 4px solid #1f4e79; background: #f4f7fa; padding: 6px 14px; margin: 12px 0; color: #333; }
+  hr { border: none; border-top: 1px solid #ccc; margin: 30px 0; }
+  a { color: #1f4e79; }
+  .footer { margin-top: 40px; font-size: 11px; color: #888; border-top: 1px solid #ccc; padding-top: 8px; }
+</style>
+</head>
+<body>
+<h1>ATS Platform — Spec to Go-Live Journey</h1>
+<p><strong>What this is:</strong> the real journey of an enterprise ATS built spec-first, end to end, by
+governed AI agents — what was built, how it was built, what pitfalls were hit along the
+way, how each one got captured and looped back into the rulebook so it can&#39;t quietly
+repeat, and why the whole thing stays a living process instead of a one-time setup. How
+an AI agent (or a new engineer) knows what to build, how to build it, why it&#39;s shaped the
+way it is, how it remembers what happened last week, how its own database evolves safely,
+and how the rulebook itself grows when something goes wrong.</p>
+<p>This document has <strong>two parts, deliberately different in approach.</strong> Read the chooser
+below, then pick the one that fits how you learn — or read both, in order.</p>
+<hr>
+<h2>Which part should you read?</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Part 1 — The Map</th>
+<th>Part 2 — The Manual</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Length</strong></td>
+<td>Short</td>
+<td>Long, self-contained</td>
+</tr>
+<tr>
+<td><strong>How it works</strong></td>
+<td>Points at the real files in this repo, tells you what to look for, then trusts you to go open them</td>
+<td>Explains every mechanic inline — no other file to open</td>
+</tr>
+<tr>
+<td><strong>What it teaches</strong></td>
+<td><em>The skill of reading a governed codebase</em> — a habit that transfers to any project like this one, not just this repo</td>
+<td><em>The concrete rules of this particular system</em> — knowledge you can hold in your head without repo access</td>
+</tr>
+<tr>
+<td><strong>Cost to you</strong></td>
+<td>Requires clicking through to real files, in a real (or similar) repository</td>
+<td>None — reads like a textbook chapter, standalone</td>
+</tr>
+<tr>
+<td><strong>Best if...</strong></td>
+<td>You will actually work in this repo, or want to build the <em>habit</em> of orienting yourself in someone else&#39;s governed codebase</td>
+<td>You just want to understand the concept — teaching someone else, or evaluating the approach, with no intent to open the actual files</td>
+</tr>
+<tr>
+<td><strong>Risk of skipping it</strong></td>
+<td>None — it&#39;s a shortcut to the same understanding Part 2 gives you directly, via a different route</td>
+<td>None — if you&#39;d rather explore than read a full account, Part 1&#39;s exercises get you there faster</td>
+</tr>
+</tbody></table>
+<p>Neither part is more &quot;correct.&quot; A map is faster if you&#39;re going to walk the terrain
+yourself. A manual is faster if you just need the terrain explained. Use your own
+judgment — that&#39;s the entire point of offering both instead of picking for you.</p>
+<hr>
+<h1>Part 1 — The Map</h1>
+<p><em>Read this if you want to learn by opening the real files. Every section below names
+an actual file in this repo and tells you what to look for — it does not duplicate the
+file&#39;s content.</em></p>
+<h2>1. The governance stack</h2>
+<p>A governed codebase like this one has five distinct layers, each answering a different
+question. Confusing them is the single most common mistake newcomers make — e.g. putting
+business logic in an architecture doc, or business rules in code comments instead of a spec.</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Question it answers</th>
+<th>Where it lives</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Spec</strong></td>
+<td>What are we building, exactly?</td>
+<td><code>openspec/specs/&lt;module&gt;/spec.md</code></td>
+</tr>
+<tr>
+<td><strong>Standards</strong></td>
+<td>What rules apply to <em>everything</em>, no exceptions?</td>
+<td><a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a></td>
+</tr>
+<tr>
+<td><strong>Architecture</strong></td>
+<td>Why is the system shaped this way?</td>
+<td><a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a></td>
+</tr>
+<tr>
+<td><strong>Memory</strong></td>
+<td>What happened, and where are we right now?</td>
+<td><a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a>, <code>docs/BACKLOG.md</code></td>
+</tr>
+<tr>
+<td><strong>Evolution</strong></td>
+<td>How does the schema/system change without breaking prod?</td>
+<td><a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a>, <code>docs/SCHEMA_CHANGE.md</code></td>
+</tr>
+</tbody></table>
+<p>Read them in that order for any new module. Spec first — always. <code>CLAUDE.md</code> itself says
+so: <em>&quot;Build order is always spec-first: the spec.md is the contract, code implements it —
+never the reverse.&quot;</em></p>
+<h2>2. Layer by layer</h2>
+<h3>2.1 Spec — <code>openspec/specs/&lt;module&gt;/spec.md</code></h3>
+<p>Each business module (<code>positions</code>, <code>applications</code>, <code>interviews</code>, <code>offers</code>, <code>security</code>, …)
+has one spec file. Open <code>openspec/specs/positions/spec.md</code> and look for three things:</p>
+<ul>
+<li><strong>Acceptance criteria (AC-xxx)</strong> — the actual contract. If code and spec disagree, the
+code is wrong until proven otherwise.</li>
+<li><strong>Business rules (BR-xxx)</strong> — cross-cutting rules referenced from multiple endpoints.</li>
+<li><strong>Error codes and permissions per endpoint</strong> — read this <em>before</em> writing any code
+against the endpoint, not after.</li>
+</ul>
+<h3>2.2 Standards — <a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a></h3>
+<p>The file every agent reads before every task (its own first line says so). Skim its
+table of contents once. You&#39;ll see escalating tiers: ordinary code-quality rules, then
+binding process gates, then a small number of &quot;no override&quot; sections. Notice that most
+binding sections name the failure they prevent, right in the rule text.</p>
+<h3>2.3 Architecture — <a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a></h3>
+<p>Where <code>CLAUDE.md</code> says <em>what the rules are</em>, this file says <em>why the system is shaped
+this way</em> — the code map, module boundaries, the full expansion of the Engineering
+Mandate. Read this once per module you touch for the first time.</p>
+<h3>2.4 Memory — <a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a> + <code>docs/BACKLOG.md</code></h3>
+<ul>
+<li><strong><code>resume-pointer.md</code></strong> — chronological narrative, &quot;you are here.&quot; Read this FIRST
+after any compaction or new session.</li>
+<li><strong><code>BACKLOG.md</code></strong> — query-free current-state snapshot. No narrative, just what&#39;s open
+right now. Carries its own binding rule at the top: update inline, same commit.</li>
+</ul>
+<p><strong>The trap to notice:</strong> these files diverge across open, unmerged git branches — each
+branch&#39;s copy is a snapshot from whenever it forked. Look for a line in this repo&#39;s own
+<code>BACKLOG.md</code> acknowledging exactly that, written live during a real multi-branch
+session — a governance system that names its own blind spots is more trustworthy than
+one that pretends not to have any.</p>
+<h3>2.5 Evolution — <a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a> + <code>docs/SCHEMA_CHANGE.md</code></h3>
+<ul>
+<li><strong><code>SCHEMA_EVOLUTION.md</code></strong> — a decision tree, consulted <em>before</em> any new data is
+stored: JSONB → lookup_values → custom_field_definitions → tags → only then a real
+column/table.</li>
+<li><strong><code>SCHEMA_CHANGE.md</code></strong> — the permanent log of every schema change ever made, with the
+<em>why</em>, not just the current shape.</li>
+</ul>
+<p>Find the backfill mandate in <code>CLAUDE.md</code>&#39;s schema section — it names a real incident.
+Part 2 tells that story in full if you&#39;d rather read it than dig for it.</p>
+<h2>3. Who&#39;s actually driving — the orchestration model</h2>
+<p><strong>There is no separate orchestrator agent.</strong> The main-loop session — human-supervised —
+<em>is</em> the orchestrator. Find <code>CLAUDE.md</code>&#39;s &quot;Subagents&quot; section and read the pipeline it
+states directly: <code>backend-engineer → unit-test-engineer → functional-test-engineer → integration-test-engineer → principal-reviewer → human approves merge</code>.</p>
+<p><strong>Where each subagent&#39;s real contract lives:</strong> <code>.claude/agents/*.md</code> — one file per
+named subagent. Open <code>.claude/agents/principal-reviewer.md</code> and check its frontmatter
+(<code>model:</code>, <code>effort:</code>) against what <code>CLAUDE.md</code>&#39;s Model Tier mandate says that role
+should be pinned to. They should match.</p>
+<p><strong>Three enforcement layers, not one:</strong> the main loop&#39;s own compliance, <code>principal-reviewer</code>
+independently re-checking the actual diff (not trusting self-report), and the human&#39;s
+final merge approval. Notice that two of <code>CLAUDE.md</code>&#39;s rules state they cannot be
+overridden by any number of user requests, ever — only an edit to the file itself
+changes them. Find both. Ask yourself why those two, specifically, earned that tier.</p>
+<h2>4. Try it yourself</h2>
+<ol>
+<li>Open <code>CLAUDE.md</code> and find the gate that would block a bug fix from going straight
+from &quot;verified in browser&quot; to &quot;ready to merge&quot; with no review.</li>
+<li>Open <code>docs/BACKLOG.md</code> and find the maintenance rule stating <em>when</em> it&#39;s supposed to
+be updated.</li>
+<li>Pick any module&#39;s <code>spec.md</code>. Find one acceptance criterion, then find the code file
+that implements it, and confirm the code actually does what the AC says.</li>
+<li>Compare <code>.claude/agents/principal-reviewer.md</code>&#39;s model/effort pinning against
+<code>CLAUDE.md</code>&#39;s Model Tier mandate. They should match — a mismatch would itself be a
+defect this system is designed to catch.</li>
+<li>Find a binding rule in <code>CLAUDE.md</code> and identify what incident it cites. If it
+doesn&#39;t cite one, ask why not.</li>
+</ol>
+<h2>Appendix — file quick-reference</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>One-line purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>openspec/specs/&lt;module&gt;/spec.md</code></td>
+<td>The contract for one module</td>
+</tr>
+<tr>
+<td><a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a></td>
+<td>Universal binding rules, re-read every task</td>
+</tr>
+<tr>
+<td><a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a></td>
+<td>Why the system is shaped this way</td>
+</tr>
+<tr>
+<td><a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a></td>
+<td>Chronological &quot;you are here&quot;</td>
+</tr>
+<tr>
+<td><a href="artifacts/BACKLOG.md"><code>docs/BACKLOG.md</code></a></td>
+<td>Query-free current-state snapshot</td>
+</tr>
+<tr>
+<td><a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a></td>
+<td>Decision tree for new data storage</td>
+</tr>
+<tr>
+<td><a href="artifacts/SCHEMA_CHANGE.md"><code>docs/SCHEMA_CHANGE.md</code></a></td>
+<td>Structured log of every schema change</td>
+</tr>
+<tr>
+<td><code>.claude/agents/*.md</code></td>
+<td>The actual binding contract per named subagent</td>
+</tr>
+<tr>
+<td><code>.claude/rules/*.md</code></td>
+<td>Domain-specific guardrails loaded globally</td>
+</tr>
+</tbody></table>
+<hr>
+<h1>Part 2 — The Manual</h1>
+<p><em>Read this if you&#39;d rather have every mechanic explained inline, with no other file to
+open. This part is self-contained.</em></p>
+<h2>1. Why a governed codebase looks different</h2>
+<p>A single AI coding session, working alone, for one afternoon, doesn&#39;t need much
+governance — the human is watching every line. An AI agentic <em>system</em> — one that runs
+across days, compactions, multiple specialized subagents, and dozens of merged PRs — falls
+apart without it, for three specific reasons:</p>
+<ol>
+<li><strong>Context doesn&#39;t survive by default.</strong> An AI&#39;s working memory resets between
+sessions. Without a deliberate mechanism, every new session re-derives (or
+mis-derives) what&#39;s already been decided.</li>
+<li><strong>Consistency doesn&#39;t survive scale by default.</strong> One agent&#39;s &quot;reasonable judgment
+call&quot; on Monday becomes a different agent&#39;s &quot;reasonable judgment call&quot; on Thursday.
+Without a shared rulebook, the same class of bug gets re-introduced indefinitely.</li>
+<li><strong>Trust doesn&#39;t survive delegation by default.</strong> The moment work is delegated to a
+specialist (a &quot;sub-agent&quot;), someone has to check its output against the same
+standard a human reviewer would apply — or delegation just means unverified work
+ships faster.</li>
+</ol>
+<p>This repository solves all three with the same tool: <strong>durable, git-tracked files that
+are read back into context automatically, and a review gate that checks work against
+them independently.</strong> Everything in this part is a variation on that one idea.</p>
+<h2>2. Project organization</h2>
+<p>At the top level, the repository separates into five kinds of thing:</p>
+<pre><code>ats-platform-project/
+├── backend/            # FastAPI app — router → service → repository layers
+├── frontend/            # Next.js app — components, hooks, API client
+├── openspec/            # Specs: the contract for every module (source of truth)
+├── docs/                # Living documentation: architecture, schema, backlog, guides
+├── .claude/             # The governance machinery itself
+│   ├── agents/          # One file per named subagent — its actual contract
+│   ├── rules/            # Domain guardrails loaded globally (not per-file)
+│   └── settings.json     # Hooks — e.g. auto-loading docs/BACKLOG.md every session
+├── memory/              # Durable &quot;you are here&quot; — survives compaction/new sessions
+└── CLAUDE.md            # The rulebook. Read before every task, no exceptions.
+</code></pre>
+<p>The organizing principle: <strong>code lives where its layer says it should
+(<code>backend/app/modules/&lt;name&gt;/{router,service,repository,models,schemas}.py</code>), and
+everything that ISN&#39;T code — decisions, rules, history, contracts — lives in a
+predictable, git-tracked location too.</strong> Nothing important is allowed to exist only in
+someone&#39;s head or in a chat transcript that gets discarded.</p>
+<p>A new module always follows the same skeleton:</p>
+<pre><code>backend/app/modules/&lt;name&gt;/
+├── router.py       # HTTP only — validate input, call service, shape response
+├── service.py      # ALL business logic — no raw SQL, no HTTP concepts
+├── repository.py   # ALL DB access — no business logic, returns ORM objects
+├── models.py       # SQLAlchemy ORM models only
+├── schemas.py      # Pydantic v2 request/response schemas only
+├── exceptions.py   # One custom exception hierarchy per module
+└── tests/          # Unit + functional tests, mirroring the same layers
+</code></pre>
+<p>This strict layering is itself a rule from <code>CLAUDE.md</code> (§ &quot;Architecture&quot;), and it&#39;s
+enforced two ways: <code>principal-reviewer</code> checks for layering violations on every review,
+and the codebase&#39;s own history has caught real violations of it — e.g. a module
+importing another module&#39;s <code>Repository</code> class directly instead of going through its
+<code>Service</code>, discovered during a routine decomposition review and logged in
+<code>docs/BACKLOG.md</code> as a tracked architecture defect rather than silently left alone.</p>
+<h2>3. The Standards Layer — <a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a></h2>
+<p><code>CLAUDE.md</code> is the single most important file in the repository. Its own first line
+states its job: <em>&quot;Claude Code reads this before EVERY task. All generated code
+complies.&quot;</em> It is re-injected into an agent&#39;s context at the start of every
+conversation turn — not something an agent has to remember to open.</p>
+<h3>3.1 What&#39;s actually inside it</h3>
+<p>Reading top to bottom, <code>CLAUDE.md</code> moves through increasing levels of bindingness:</p>
+<p><strong>Baseline standards</strong> — the kind of rule every serious codebase has, whether or not
+it&#39;s AI-authored: type hints on every function, docstrings in a fixed 2–3 line format,
+a 40-line function cap and 300-line file cap, <code>structlog</code> instead of <code>print()</code>, no PII
+in logs, 80% minimum test coverage, soft deletes instead of hard deletes, optimistic
+concurrency on versioned updates, idempotency keys on mutating endpoints.</p>
+<p><strong>The Engineering Mandate</strong> — a compressed statement of the project&#39;s actual philosophy:
+<em>&quot;Write the minimum code that makes the intended function run correctly and
+efficiently — not one line more.&quot;</em> No speculative features, no unused parameters, no
+&quot;might need later&quot; abstractions. This isn&#39;t a style preference — it&#39;s stated as a hard
+contract, and the authoritative expansion lives in <code>docs/ARCHITECTURE.md</code>.</p>
+<p><strong>Process gates</strong> — this is where the file stops being generic and becomes specific to
+<em>this</em> project&#39;s actual failure history. Each gate exists because something concrete
+went wrong once:</p>
+<ul>
+<li><em>Quality Gate Rules 1–5</em> — clarify silences before building (not after), verify async
+outcomes not just enqueue confirmations, mandatory <code>set_rls_context</code> on RLS-protected
+Celery tasks, UI golden-path verification before calling anything &quot;done,&quot; mandatory
+functional-test cleanup with an exact soft-delete-vs-hard-delete table per entity type.</li>
+<li><em>Regression Prevention Gates 1–5</em> — run unit tests before spawning any other agent;
+fix user-visible tech debt next session, not &quot;eventually&quot;; read the spec before
+touching any status/enum/transition map; route small fixes to a cheap, scope-limited
+agent instead of a heavyweight one; and Gate 5 — every bug fix, regardless of size,
+goes through investigate → fix → review, with <strong>no override mechanism at all.</strong></li>
+<li><em>Model Tier &amp; CI Independence mandate</em> — pins the senior review role to a stronger
+model tier permanently, and requires CI jobs to run as independent parallel jobs
+(never sequential steps where one early failure masks everything behind it).</li>
+</ul>
+<p><strong>&quot;No override&quot; vs. &quot;3-request override&quot;</strong> — two distinct resistance tiers. Some gates
+can be lifted if a user asks to skip them three times in a row, consecutively — with
+the agent naming the gate and pushing back on the first two asks. Two gates cannot be
+lifted <em>at all</em>, by any number of requests: the only way to change them is editing
+<code>CLAUDE.md</code> itself. The calibration is deliberate — softer gates protect against
+carelessness; the two hard gates protect against a specific, expensive failure that
+already happened once.</p>
+<h3>3.2 Why this structure works</h3>
+<p>The reason this isn&#39;t just a style guide nobody reads: <strong>every binding section states
+the failure it prevents, in the rule text itself.</strong> A rule with no stated incident reads
+as a guess. A rule with a named incident reads as a fix — and is far harder to
+rationalize skipping &quot;just this once,&quot; because the cost of skipping it is written down
+right there.</p>
+<h2>4. The Architecture Layer — <a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a></h2>
+<p>If <code>CLAUDE.md</code> is the compressed rulebook, <code>docs/ARCHITECTURE.md</code> is the expansion —
+the &quot;why,&quot; not just the &quot;what.&quot; It carries:</p>
+<ul>
+<li><strong>The code map</strong> — which directory owns which responsibility, and the boundaries
+between modules.</li>
+<li><strong>The full Engineering Mandate</strong> — <code>CLAUDE.md</code>&#39;s &quot;minimal, optimized, modular,
+maintainable&quot; contract, expanded with the actual SLOs a real hot path is measured
+against (this project&#39;s stated target: 200+ concurrent users, no perceptible
+screen-response slowdown).</li>
+<li><strong>Cross-module boundaries</strong> — the rule that inter-module calls must go through the
+other module&#39;s <em>service</em> interface, never its repository directly. This is checked
+by <code>principal-reviewer</code> on every review, and violations of it are tracked as real,
+named tech debt in <code>docs/BACKLOG.md</code> when found — not silently fixed and forgotten,
+because a fix without a record just means the next person re-discovers the same
+problem from scratch.</li>
+</ul>
+<p>Read this file once per module, the first time you touch it — not every session.
+Unlike <code>CLAUDE.md</code> (universal, re-read constantly) and specs (per-feature, read before
+building), architecture context changes slowly and is meant to be internalized, not
+re-verified every turn.</p>
+<h2>5. The Context System — staying current, never stale</h2>
+<p>This is the part that has no equivalent in a single-session coding tool, because a
+single session doesn&#39;t need it. An agentic system that spans days needs an answer to:
+<em>how does a brand-new session, with zero memory of anything, know what&#39;s already true?</em></p>
+<p>The answer is a deliberate three-file split, each with a distinct job:</p>
+<h3>5.1 <a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a> — the chronological narrative</h3>
+<p>This is the <strong>first file read after any compaction or new session</strong>, before even the
+specs. It answers &quot;what happened, when, and why&quot; — a running log of resolved work,
+in-progress work, and the exact state something was left in. It is git-tracked, which
+matters: a chat-only memory disappears with a cleared profile or a new machine; this
+file survives both, because it&#39;s just a file in the repository like any other.</p>
+<p>The file states its own failure mode explicitly: if an agent can&#39;t restore context and
+this file is missing or stale, <em>that itself is the bug to report</em> — the file&#39;s own
+maintenance is treated as load-bearing infrastructure, not a nice-to-have.</p>
+<h3>5.2 <a href="artifacts/BACKLOG.md"><code>docs/BACKLOG.md</code></a> — the query-free current-state snapshot</h3>
+<p>Where <code>resume-pointer.md</code> is a <em>story</em>, this file is a <em>snapshot</em> — no dates, no
+narrative, just what&#39;s true right now: the active execution queue, PRs pending merge,
+tech debt by category, deferred features. Its own binding rule, stated at the top of
+the file: <strong>update this file inline, in the same commit, whenever an item changes
+status.</strong> Not &quot;eventually&quot; — the same commit.</p>
+<p>This file is important enough that this project wired a <code>SessionStart</code> hook (in
+<code>.claude/settings.json</code>) that loads it automatically at the start of every session, so
+a human opening the project never has to ask &quot;what&#39;s the state of things?&quot; — it&#39;s
+already in front of them.</p>
+<h3>5.3 Auto-memory — durable facts <em>about the collaboration itself</em></h3>
+<p>Separate from both of the above, an agentic assistant can maintain its own persistent
+memory of the <em>user</em> and the <em>working relationship</em> — preferences, corrections,
+confirmed-good judgment calls, project facts that aren&#39;t really &quot;backlog&quot; items. This
+is deliberately kept out of <code>BACKLOG.md</code>/<code>resume-pointer.md</code>, because conflating
+&quot;what&#39;s the state of the project&quot; with &quot;what have I learned about how this person likes
+to work&quot; produces a document that&#39;s useless for both purposes.</p>
+<h3>5.4 Why staleness is a <em>known</em>, <em>named</em> risk — not a silent one</h3>
+<p>The most honest thing about this system: it doesn&#39;t claim to be immune to drift. When
+multiple branches are open simultaneously, each branch&#39;s copy of <code>docs/BACKLOG.md</code> is a
+snapshot from whenever it forked — edits on one branch don&#39;t appear on another until
+merge. This repository&#39;s own backlog carries a line acknowledging exactly this,
+written live during a real session with four branches open at once, rather than
+pretending the problem doesn&#39;t exist. <strong>A governance system that never admits its own
+blind spots is more dangerous than one that names them and tells you when to
+reconcile.</strong></p>
+<h2>6. Database schema evolution</h2>
+<p>Schema changes are the single highest-blast-radius kind of change a codebase makes —
+they&#39;re hard to reverse, and a mistake can silently corrupt data rather than just
+crash. This project handles it with a decision tree plus a permanent log.</p>
+<h3>6.1 <a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a> — consulted <em>before</em> every new kind of data</h3>
+<p>The rule: before storing any new attribute, walk this order, cheapest-safe-option
+first, and only escalate when the cheaper option genuinely doesn&#39;t fit:</p>
+<ol>
+<li><strong>Metadata JSONB</strong> on the existing entity (cheapest, no migration).</li>
+<li><strong>A lookup-values table</strong> (for a small, evolving set of categorical options).</li>
+<li><strong>Custom field definitions</strong> (for admin-configurable, per-tenant fields).</li>
+<li><strong>Tags</strong> (for loose, many-to-many categorization).</li>
+<li><strong>A real column or table</strong> — only for data that&#39;s hot-queried, indexed, or
+genuinely relational. Never an EAV (entity-attribute-value) pattern.</li>
+</ol>
+<p>This exists specifically to stop the slow accumulation of one-off nullable columns
+added for every feature request — a real, common failure mode in long-lived schemas.</p>
+<h3>6.2 The additive-only migration rule</h3>
+<p>Every schema change must be <strong>backward-compatible only</strong>: new columns are nullable or
+carry a default; existing indexes, constraints, and RLS policies are preserved; nothing
+populated is ever dropped, renamed, or retyped in the same release the running code
+depends on it. A change that genuinely needs to remove something old happens in
+phases across releases — add new, backfill, switch reads/writes, drop old <em>later</em> —
+never all at once.</p>
+<p>Every migration must also be <strong>reversible</strong> — a real, working downgrade path, not a
+stub — and validated against existing data in both directions before it ships.</p>
+<h3>6.3 <a href="artifacts/SCHEMA_CHANGE.md"><code>docs/SCHEMA_CHANGE.md</code></a> — the permanent, structured log</h3>
+<p>Every schema change, no exceptions, gets one entry: date, baseline, author, the
+<em>trigger</em> (what feature or fix required it), the change type, which storage mechanism
+was chosen from the §6.1 decision tree (and why, if a real column was needed), the
+migration&#39;s revision id, a backward-compatibility/rollback note, and the linked
+spec/PR. This is the answer to a question a live database schema can never answer on
+its own: <em>why does this column exist, and was it deliberate?</em></p>
+<h3>6.4 The backfill mandate — a rule earned by a real incident</h3>
+<p>A subtle trap this project actually hit: a new column can be &quot;technically true&quot; when
+its migration says &quot;no existing rows affected, backfills to NULL&quot; — while being
+<em>functionally wrong</em>, because the value already existed somewhere else (a status
+history table, a related entity) and just wasn&#39;t backfilled. NULL for &quot;this was already
+decided before the column existed&quot; is indistinguishable from NULL for &quot;never decided&quot; —
+and any feature reading that column will silently misbehave for every pre-existing row.</p>
+<p>The rule this incident produced: every such migration must explicitly do one of two
+things — (a) write an idempotent backfill script deriving the correct value from the
+authoritative source wherever it can be determined unambiguously, or (b) explicitly
+document, in both the migration and the schema-change log, <em>why</em> no backfill was
+possible or needed. Silence on the question is not an acceptable default — a reviewer
+must affirmatively confirm one of the two was considered, never assume it away.</p>
+<h2>7. The markdown file directory</h2>
+<p>A comprehensive catalog — what exists, what it&#39;s for, and how often it changes:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+<th>Update cadence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a></td>
+<td>Universal binding rules, re-read every task</td>
+<td>Rare — only when a new failure earns a new rule</td>
+</tr>
+<tr>
+<td><a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a></td>
+<td>Why the system is shaped this way; code map; full engineering mandate</td>
+<td>Slow — when the architecture genuinely changes</td>
+</tr>
+<tr>
+<td><code>openspec/specs/&lt;module&gt;/spec.md</code></td>
+<td>The contract for one module</td>
+<td>Same-commit as any behavior change to that module</td>
+</tr>
+<tr>
+<td><a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a></td>
+<td>Chronological &quot;you are here&quot;</td>
+<td>Every session/phase boundary</td>
+</tr>
+<tr>
+<td><a href="artifacts/BACKLOG.md"><code>docs/BACKLOG.md</code></a></td>
+<td>Query-free current-state snapshot</td>
+<td>Same-commit as any status change</td>
+</tr>
+<tr>
+<td><a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a></td>
+<td>Decision tree for new data storage</td>
+<td>Rare — only when the decision framework itself changes</td>
+</tr>
+<tr>
+<td><a href="artifacts/SCHEMA_CHANGE.md"><code>docs/SCHEMA_CHANGE.md</code></a></td>
+<td>Permanent structured log of every schema change</td>
+<td>Same-commit as every migration</td>
+</tr>
+<tr>
+<td><code>docs/GO_LIVE_CHECKLIST.md</code></td>
+<td>Living readiness checklist for production launch</td>
+<td>Inline, same-PR, whenever an item&#39;s status flips</td>
+</tr>
+<tr>
+<td><code>docs/COMPLIANCE.md</code></td>
+<td>Data-protection/regulatory posture (e.g. DPDP Act)</td>
+<td>When compliance requirements change</td>
+</tr>
+<tr>
+<td><code>docs/UI_STRATEGY.md</code></td>
+<td>The end-to-end process for spec-first UI work</td>
+<td>Rare</td>
+</tr>
+<tr>
+<td><a href="artifacts/TOKEN_OPTIMIZATION_PRACTICE.md"><code>docs/TOKEN_OPTIMIZATION_PRACTICE.md</code></a></td>
+<td>Durable record of cost-optimization techniques</td>
+<td>Same-PR as any new technique discovered</td>
+</tr>
+<tr>
+<td><code>docs/VERSIONING.md</code></td>
+<td>How requirements baselines are dated and tagged</td>
+<td>Rare — only on a new baseline cut</td>
+</tr>
+<tr>
+<td><code>.claude/agents/*.md</code></td>
+<td>One file per subagent — its real contract (model, tools, prompt)</td>
+<td>When a role&#39;s responsibilities or tier change</td>
+</tr>
+<tr>
+<td><code>.claude/rules/*.md</code></td>
+<td>Domain-specific guardrails loaded globally (e.g. UX/UI)</td>
+<td>When that domain&#39;s standards change</td>
+</tr>
+</tbody></table>
+<p><strong>The pattern across every row:</strong> each file has exactly one job, and the update
+cadence is proportional to how expensive it would be for that file to go stale. The
+files that change every commit (spec, backlog, schema-change log) are the ones where
+staleness is cheapest to create and most expensive to leave unnoticed — so they carry
+explicit, binding &quot;update inline, same commit&quot; rules. The files that change rarely
+(architecture, the schema decision tree) don&#39;t need that same discipline, because
+drift there is slow and visible.</p>
+<h2>8. The orchestration model</h2>
+<h3>8.1 There is no meta-orchestrator agent</h3>
+<p>The most common misconception about multi-agent systems: that there&#39;s a tower of
+agents, with something at the top orchestrating everything below it. That&#39;s not what
+this repository does. <strong>The main-loop session — a human-supervised Claude Code
+conversation — is the orchestrator.</strong> It reads <code>CLAUDE.md</code>&#39;s stated pipeline:</p>
+<pre><code>backend-engineer → unit-test-engineer → functional-test-engineer →
+integration-test-engineer → principal-reviewer → human approves merge
+</code></pre>
+<p>...and dispatches specialist subagents accordingly, every module, every session. No
+separate process watches the main loop do this. The discipline is: <code>CLAUDE.md</code> is
+re-injected into context every turn, and the main loop is expected to have read it.</p>
+<h3>8.2 Where each subagent&#39;s actual contract lives</h3>
+<p><code>CLAUDE.md</code>&#39;s roster is a <em>pointer</em>. The binding contract — system prompt, tools, model,
+default effort — lives in one file per subagent under <code>.claude/agents/</code>. File names and
+<code>name:</code> frontmatter are load-bearing: <code>principal-reviewer.md</code>&#39;s <code>name: principal-reviewer</code>
+must match the string <code>CLAUDE.md</code> uses, and its <code>model: opus</code> / <code>effort: high</code> must agree
+with the Model Tier mandate&#39;s independent statement of the same rule — two files, one
+binding fact, checkable by inspection.</p>
+<p>Not every agent in a session is project-defined this way — some come from a separately
+installed plugin (cheap, general-purpose lookups/edits/diff-review, not domain-specific).
+Knowing which agents are this project&#39;s binding contracts vs. general tooling matters when
+reasoning about why an agent behaved a certain way.</p>
+<h3>8.3 The three-layer enforcement model</h3>
+<p>No single mechanism guarantees the rulebook is followed. Three independent layers do:</p>
+<ol>
+<li><strong>Self-enforcement by the main loop.</strong> It follows <code>CLAUDE.md</code> because the file is
+re-injected every turn and the main loop is instructed to treat project instructions
+as binding, overriding its own generic defaults.</li>
+<li><strong><code>principal-reviewer</code> as the actual gate.</strong> This is the layer that matters most in
+practice — it independently re-reads the relevant spec and <code>CLAUDE.md</code>, and runs its
+own mandate-compliance checklist against the <em>real diff</em>, not against what an
+upstream agent claims it did. In this project&#39;s real history, review rounds
+routinely catch things the main loop or an implementing agent missed: a doc left
+stale, a test that would silently pass even if the fix it&#39;s meant to guard were
+reverted, a spec line that needed syncing to match new observable behavior. Each of
+those is closed in a follow-up round before the change is allowed to proceed —
+which is the entire point of having an independent reviewer instead of trusting
+self-report.</li>
+<li><strong>Human final approval.</strong> Regardless of how clean the reviewer&#39;s verdict is, merge
+approval is a separate, explicit human step, every time.</li>
+</ol>
+<h3>8.4 The override-resistance design</h3>
+<p>Two of this project&#39;s rules state, in their own text, that they cannot be lifted by
+any number of user requests in any session — only an edit to <code>CLAUDE.md</code> itself
+changes them. Other rules use a softer &quot;three consecutive requests&quot; pattern: the agent
+must name the gate and push back on the first two asks, and only lift it, scoped to
+that one instance, on the third. This tiering is deliberate: the hard-override-proof
+rules protect against the specific, already-expensive failures named in §9 below; the
+softer rules protect against ordinary carelessness, where a small amount of friction is
+enough.</p>
+<h3>8.5 Model + effort routing — a lever picked per task type, not per session</h3>
+<p>Two independent knobs, both pinned per-agent in <code>.claude/agents/*.md</code> frontmatter,
+never left to inherit from whatever the main loop happens to be running:</p>
+<table>
+<thead>
+<tr>
+<th>Task type</th>
+<th>Agent</th>
+<th>Model</th>
+<th>Effort</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Backend API/service/DB</td>
+<td><code>backend-engineer</code></td>
+<td>sonnet</td>
+<td>high</td>
+</tr>
+<tr>
+<td>Frontend/UI</td>
+<td><a href="artifacts/agent-ux-ui-engineer.md"><code>ux-ui-engineer</code></a></td>
+<td>sonnet</td>
+<td>high</td>
+</tr>
+<tr>
+<td>Unit tests (mocked)</td>
+<td><a href="artifacts/agent-unit-test-engineer.md"><code>unit-test-engineer</code></a></td>
+<td>sonnet</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>Functional/integration tests</td>
+<td><code>functional-test-engineer</code>, <a href="artifacts/agent-integration-test-engineer.md"><code>integration-test-engineer</code></a></td>
+<td>sonnet</td>
+<td>medium</td>
+</tr>
+<tr>
+<td>Merge-readiness review (the one chokepoint)</td>
+<td><code>principal-reviewer</code></td>
+<td><strong>opus</strong></td>
+<td>high</td>
+</tr>
+<tr>
+<td>On-demand deep dive (failure modes, DR)</td>
+<td><a href="artifacts/agent-principal-reliability-engineer.md"><code>principal-reliability-engineer</code></a></td>
+<td><strong>opus</strong></td>
+<td>xhigh</td>
+</tr>
+<tr>
+<td>On-demand deep dive (perf, query plans)</td>
+<td><a href="artifacts/agent-principal-performance-auditor.md"><code>principal-performance-auditor</code></a></td>
+<td><strong>opus</strong></td>
+<td>xhigh</td>
+</tr>
+<tr>
+<td>&quot;Where is X / what calls Y&quot; lookups</td>
+<td><code>cavecrew-investigator</code></td>
+<td>cheap fixed tier</td>
+<td>low</td>
+</tr>
+<tr>
+<td>Bounded 1–2 file edit</td>
+<td><code>cavecrew-builder</code></td>
+<td>cheap fixed tier</td>
+<td>low</td>
+</tr>
+</tbody></table>
+<p><strong>Why only 3 of 8 run Opus:</strong> <code>principal-reviewer</code> is the single gate every change
+passes through exactly once; the two specialists are on-demand for the highest
+blast-radius categories only. Everywhere else, Sonnet&#39;s ceiling was never the
+constraint — paying Opus rates there buys no quality the pipeline doesn&#39;t already get
+structurally. Max reasoning effort is reserved the same way: never a standing default,
+only for a run that genuinely needs it (a security-sensitive review, for instance).</p>
+<h2>9. The mandate lifecycle — how rules are born</h2>
+<p>This is the section worth studying most closely if your goal is to build your own
+agentic system&#39;s rulebook, not just operate this one.</p>
+<h3>9.1 The pattern</h3>
+<p>Every binding section of <code>CLAUDE.md</code> in this project follows the same shape:</p>
+<blockquote>
+<p><strong>Name the incident. State the rule that closes it. Cite what would have caught it
+earlier, if anything would have.</strong></p>
+</blockquote>
+<p>A rule with no stated incident reads as a guess about what <em>might</em> go wrong. A rule
+with a named incident reads as a fix for something that <em>did</em>. The difference matters
+enormously in practice — a guess is easy to rationalize skipping under time pressure; a
+named, expensive incident is much harder to wave away, because the cost is written down
+in the rule itself, not left to the reader&#39;s imagination.</p>
+<h3>9.2 Three real examples from this repository</h3>
+<p><strong>Gate 5 — the full subagent pipeline, no override.</strong> Born from a specific session
+where three consecutive bug fixes were made entirely in the main loop — no dispatched
+root-cause investigation, no reviewed implementation, no sign-off before merge — and
+the resulting cost escalation from the rework this caused is what produced the rule.
+The rule text states the date and the exact failure mode, not an abstracted version of
+it.</p>
+<p><strong>The Model Tier &amp; CI Independence mandate.</strong> Born from a status review that
+discovered two separate things going wrong for structural reasons, not because anyone
+was careless: (a) a senior review role needed multiple rounds to close out even a
+single change, even running on a capable model — suggesting the model tier itself
+wasn&#39;t matched to the stakes of that role; and (b) a CI pipeline had, for the entire
+life of the repository, run linting as the <em>first sequential step</em> of one job — meaning
+type-checking and the full test suite had <strong>never run once</strong>, because the first check
+never failed until that specific review. Real errors had been silently hidden the
+entire time, not because of one bad commit, but because of how the pipeline itself was
+shaped. The mandate closes both: a permanent model-tier split for the highest-stakes
+roles, and a rule that CI jobs must run as independent, parallel jobs — never
+sequential steps where one early failure masks everything behind it.</p>
+<p><strong>The backfill mandate.</strong> Born from a migration that shipped a technically-true &quot;no
+rows affected&quot; docstring for a new column, while a real pre-existing row&#39;s value was
+actually derivable from an already-existing authoritative source and simply wasn&#39;t
+backfilled — which surfaced later as a shipped feature silently misbehaving for one
+real, previously-decided record. The rule now requires an explicit backfill-or-justify
+decision on every such migration, with a reviewer required to affirmatively confirm it
+was considered — silence is not treated as an acceptable default.</p>
+<h3>9.3 What to take from this if you&#39;re building your own system</h3>
+<p>When you write your own agentic project&#39;s rulebook:</p>
+<ul>
+<li>Write the incident into the rule itself, not a separate changelog nobody re-reads.</li>
+<li>Calibrate override resistance to the cost of the failure — &quot;no override, ever&quot; only
+for genuinely expensive, already-happened-once failures; softer friction elsewhere.</li>
+<li>Let an independent reviewer check compliance against the actual diff, never trust
+the implementing agent&#39;s self-report.</li>
+<li>Name the rule after what it prevents (&quot;Gate 5: full subagent pipeline&quot;), not a
+number — memorable enough to survive a rushed Friday afternoon.</li>
+</ul>
+<h2>10. A complete worked example</h2>
+<p>Trace one real class of change through every layer described above, in order:</p>
+<ol>
+<li><strong>A tech-debt item is diagnosed.</strong> Root cause is confirmed against the actual spec
+acceptance criterion — not assumed from reading the code alone. If the code and the
+spec disagree, the working assumption is that the code is wrong, until proven
+otherwise by re-reading the spec&#39;s exact wording.</li>
+<li><strong>The fix is scoped to the correct architectural layer</strong> — a query-ordering defect
+belongs in the repository, not the service; a missing test belongs in the test
+suite, not a code comment explaining why it&#39;s fine to skip.</li>
+<li><strong>Unit tests run before any other agent is dispatched</strong> (Regression Prevention Gate<ol>
+<li>— catching the majority of regressions in seconds, before a more expensive review
+pass is even requested.</li>
+</ol>
+</li>
+<li><strong><code>principal-reviewer</code> runs a full mandate-compliance checklist</strong> against the actual
+diff. In this project&#39;s real history, this step is rarely a rubber stamp on the
+first pass — it routinely finds something concrete: a documentation file that
+wasn&#39;t updated in the same commit as the code change it describes, a test that would
+pass even if the exact fix it&#39;s supposed to guard were silently reverted, a spec
+line that needed a one-sentence update to match new, now-observable behavior.</li>
+<li><strong>Findings are remediated and re-reviewed</strong> — as many rounds as it takes, each one
+narrower than the last, until the reviewer&#39;s checklist has no remaining failing
+dimension.</li>
+<li><strong>A pull request is raised carrying a provenance block</strong> — which agent implemented
+the change, and which reviewer signed off, with the verdict recorded as a
+machine-readable commit trailer, not just prose in a PR description.</li>
+<li><strong><code>docs/BACKLOG.md</code> is updated in the same change</strong> that closes the tracked item —
+so the very next session, cold, with zero memory of any of the above, can read one
+file and know the item is done, not still open.</li>
+<li><strong>A human approves the merge</strong>, separately from and after the reviewer&#39;s verdict.</li>
+</ol>
+<p>Every single step above is a real, binding, named rule from <code>CLAUDE.md</code> — none of it is
+informal convention. That&#39;s the entire difference between a governed agentic codebase
+and an ungoverned one: not that mistakes never happen, but that every mistake that
+<em>has</em> happened left behind a rule that makes the same mistake structurally harder to
+repeat.</p>
+<h2>11. Token-optimized development — a binding discipline, not a suggestion</h2>
+<p>Compute cost is real money against real value delivered. This project treats it as a
+governed discipline with its own living playbook (<code>docs/TOKEN_OPTIMIZATION_PRACTICE.md</code>,
+excerpted in §3.10 below), not an occasional cost-cutting pass.</p>
+<p><strong>How it evolved.</strong> Started (2026-06-18) as a 7-discipline playbook after one $100 session
+prompted a post-build cost review. Grew, dated entry by dated entry, every time a real
+session surfaced a new waste pattern: model-availability failures wasting ~$15–20 mid-run
+(→ verify-once-per-session rule), a review needing 3 rounds because model tier didn&#39;t match
+the stakes of the role (→ the two-tier Opus/Sonnet roster), a playbook section caught
+silently drifting one commit behind its own binding rule (→ the &quot;report what you applied,
+every task, no exceptions&quot; showcase rule). By 2026-07-24 the core disciplines — right agent
+for the task, spec pre-read before building, cost alert before <em>and</em> after every task, no
+size carve-out — were promoted from &quot;playbook advice&quot; into <code>CLAUDE.md</code> itself, enforced
+under the same no-override class as Gate 5.</p>
+<p><strong>Where caveman and superpowers fit in.</strong> Neither is this project&#39;s own invention — both
+are installed tooling this project leans on:</p>
+<ul>
+<li><strong>Caveman mode</strong> strips filler prose (articles, hedging, pleasantries) from every
+response automatically, persisting across the whole session — measured ~15–25% output-token
+reduction with zero loss of technical substance. It&#39;s why this very document reads terser
+once you notice it.</li>
+<li><strong>Superpowers&#39; skill-invocation discipline</strong> forces a fork before any build: if a spec
+already exists, go straight to dispatching agents against it; if none exists, brainstorm
+and propose one first (<code>/opsx:propose</code>) rather than building on an assumption that turns
+into a expensive rework cycle later. This is the upstream fix for the single costliest
+failure mode measured on this project: a preventable review-rejection cycle, which costs
+as much as the original build.</li>
+</ul>
+<p>Both are orthogonal to the ATS-specific playbook above — one compresses <em>prose</em>, the other
+compresses <em>wasted exploration</em> — and both are active by default, not opt-in per task.</p>
+<h2>12. Evolution of the execution methodology — the project&#39;s own changelog of itself</h2>
+<p>The mandate lifecycle in §9 describes <em>how</em> rules get born. This project also keeps a
+dedicated, dated changelog of the pipeline&#39;s own structural evolution —
+<code>docs/EXECUTION_METHODOLOGY.md</code> (excerpted in §3.11 below), regenerated in the same PR as
+any agent-roster, CI, or mandate change, per a binding living-doc rule.</p>
+<p><strong>What it captured on its first (2026-07-24) entry</strong> — a same-day review found two
+structural gaps, neither fixable by &quot;try harder&quot;: (1) backend CI ran lint → typecheck →
+test as <em>sequential steps in one job</em>, so a failing first step meant the type-checker and
+the full test suite had <strong>never run to completion once in the repo&#39;s history</strong> — silently
+hiding 52 mypy errors and 18 test failures the whole time; (2) the one senior review gate
+every change passes through was on the same model tier as every routine agent, and needed
+3 rounds to close a single change because of it. The fix, recorded as a formal before→now
+table in that document: CI jobs split into independent parallel jobs with no dependency
+between them, plus a permanent two-tier model roster (§8.5 above) for the 3
+chokepoint/specialist roles only.</p>
+<p><strong>Same-day validation, recorded in the doc itself:</strong> the retiered <code>principal-reviewer</code>
+reviewed the very PR that created it, and caught 4 real defects across two rounds —
+including, pointedly, a dependency-drift check sequenced <em>after</em> lint in the same job,
+reproducing the exact masking pattern the whole mandate exists to close. The new
+independent lint job&#39;s first real run separately surfaced 804 previously-invisible
+findings from an unpinned tool version, within hours. Both are cited as direct, same-day
+proof that the structural fix works, not a hoped-for improvement.</p>
+<h2>13. Glossary</h2>
+<p><strong>Binding rule</strong> — a <code>CLAUDE.md</code> rule stated as non-optional, typically citing the
+incident that produced it.</p>
+<p><strong>Gate</strong> — a binding rule that blocks progression to the next step until satisfied
+(e.g., unit tests must pass before another agent is dispatched).</p>
+<p><strong>Mandate</strong> — a binding rule broad enough to span multiple gates or a whole category of
+work (e.g., the Model Tier &amp; CI Independence mandate).</p>
+<p><strong>Override resistance</strong> — how hard a rule is to bypass: &quot;3-request&quot; (soft, can be
+lifted after three consecutive explicit asks) vs. &quot;no override&quot; (hard, changeable only
+by editing <code>CLAUDE.md</code> itself).</p>
+<p><strong>Orchestrator</strong> — the human-supervised main-loop session that reads <code>CLAUDE.md</code> and
+dispatches subagents accordingly. Not a separate agent.</p>
+<p><strong>Subagent</strong> — a specialist agent dispatched by the orchestrator for one bounded task
+(e.g., <code>backend-engineer</code>, <code>principal-reviewer</code>). Its real contract lives in
+<code>.claude/agents/&lt;name&gt;.md</code>.</p>
+<p><strong>Review gate</strong> — the specific role (<code>principal-reviewer</code> in this project) that
+independently re-checks work against the rulebook before human merge approval, rather
+than trusting the implementing agent&#39;s self-report.</p>
+<p><strong>Living document</strong> — a file whose binding rule requires it to be updated in the same
+commit as the change it describes, so it never drifts out of sync with the code (e.g.,
+<code>docs/BACKLOG.md</code>, <code>docs/SCHEMA_CHANGE.md</code>).</p>
+<p><strong>Spec-first</strong> — the discipline that the spec (<code>openspec/specs/&lt;module&gt;/spec.md</code>) is
+written or updated <em>before</em> code changes, never the reverse — the spec is the contract,
+the code implements it.</p>
+<hr>
+<h1>Part 3 — Reference Copies (the real files, read-only)</h1>
+<p>Parts 1/2 keep saying &quot;go open <code>CLAUDE.md</code>&quot; or &quot;go read the module&#39;s <code>spec.md</code>.&quot; A
+shared-link recipient has no repo access — by design, read-only, non-negotiable. What
+follows is real content pulled from the actual repo, condensed to fit one shareable
+doc (full line counts noted per file) — enough to see the real shape and reuse it.</p>
+<p>One file below is a placeholder stub, smaller than Parts 1/2 describe it. Left in
+as-is: a real codebase has files that lag their own docs — more honest than tidied up.</p>
+<h2>3.1 <a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a> — the working agreement (condensed; full file ~380 lines)</h2>
+<pre><code class="language-markdown"># CLAUDE.md — ATS Code Standards &amp; Working Agreement
+Claude Code reads this before EVERY task. All generated code complies.
+
+## Project
+Stack: Python 3.12 + FastAPI (async) + PostgreSQL 16 (SQLAlchemy 2.0 async + Alembic)
++ Redis 7 + Celery. Frontend: Next.js 14 + TypeScript + TanStack Query + shadcn/ui.
+Cloud: AWS ap-south-1. Specs: openspec/specs/&lt;module&gt;/spec.md — source of truth.
+
+## Architecture (Router → Service → Repository — strict)
+router.py: HTTP only. service.py: ALL business logic, no raw DB. repository.py: ALL
+DB access, no business logic. Inter-module calls go through the other module&#39;s
+service interface ONLY.
+
+## Code quality (non-negotiable)
+Type hints on every parameter/return. Docstring on every public function/route.
+Max 40 lines/function, 300 lines/file. structlog only — never print(). Never log
+PII (email, mobile, resume text) — log ids instead. 80% min test coverage.
+No N+1 (selectinload). Soft deletes (deleted_at). Audit every mutation. Optimistic
+concurrency via version column. Idempotency-Key on all mutating endpoints.
+
+## Engineering mandate (binding)
+Write the minimum code that makes the function run correctly and efficiently — not
+one line more. No speculative features, unused params, dead branches, &quot;might need
+later&quot; abstractions. Before finishing, re-read the spec&#39;s acceptance criteria and
+delete anything not traceable to one. The code that IS written must be optimized
+(async I/O, no N+1, indexed/bounded/paginated, heavy work on Celery off the request
+path), modular (strict layering, one responsibility per function, WHY-comments
+only), and maintainable (docs updated in the same commit, never later).
+
+## Database schema evolution (binding — full rule + incident in §6 above)
+Decision tree before any new data: metadata JSONB → lookup_values →
+custom_field_definitions → tags → real column, in that order; never EAV.
+Additive-only migrations, one reversible Alembic revision per change, logged in
+docs/SCHEMA_CHANGE.md same commit. Backfill mandate: derive the value from its
+authoritative source or explicitly justify why not — &quot;no rows affected&quot; alone
+is insufficient.
+
+## Subagents (delegate — see .claude/agents/)
+backend-engineer (implement to spec) → unit-test-engineer (mock the repository) →
+functional-test-engineer (smoke test the REAL running stack — hard gate, reports
+bugs, does not fix them) → integration-test-engineer (full e2e) → principal-reviewer
+(SENIOR review gate, opus/high — the one accountable sign-off before merge is
+requested). principal-reliability-engineer / principal-performance-auditor are
+on-demand opus/xhigh specialists pulled in for deep dives. The human approves merge.
+
+## Regression prevention gates
+Gates 1–4 (unit tests before functional tests; user-visible tech debt fixed next
+session; spec read before any enum/transition change; cavecrew-builder for tiny
+fixes) override only via 3 consecutive explicit asks, never one request. Gate 5
+— full subagent pipeline on EVERY bug fix, ZERO exceptions, no override at all —
+added after a session ran 3 bug fixes straight through the main loop, no review
+gate, costs escalated.
+
+## Agent provenance &amp; review gate
+Every commit carries Agent: &lt;producing-agent&gt; and Reviewed-by: &lt;reviewer — verdict&gt;
+trailers. The principal-reviewer verdict is the merge-readiness signal; the human
+still approves the merge.
+
+## Git
+Branch per feature (dev/&lt;phase&gt;-&lt;feature&gt;), conventional commits, PR for every
+feature, never push directly to main. After every merge to main: pull + migrate,
+confirm local and main are at the same Alembic head before starting new work.
+</code></pre>
+<h2>3.2 <a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a> — the code map (condensed; full file 296 lines)</h2>
+<pre><code class="language-markdown"># Architecture
+The ATS accepts candidate profiles and job descriptions, uses Claude AI agents to
+extract structured data and rank candidate-position fit, and tracks each candidate
+through sourcing → screening → interview → offer → onboarding. Multi-tenant,
+India-only. Splits into a synchronous request path (HTTP → DB) and an async
+pipeline (upload → Claude extraction → matching) connected by a job queue.
+
+## Code map
+ats-platform/
+├── backend/app/    FastAPI app: core/ (platform, no logic), shared/ (crypto,
+│                   storage, outbox, audit), modules/ (one folder per capability)
+├── frontend/       Next.js 14 UI
+├── infrastructure/ Terraform (AWS ap-south-1)
+├── openspec/       Living specs — source of truth for behaviour
+└── .claude/        CLAUDE.md + agents/ subagents
+
+modules/: security (build first, all else depends on it) → organizations →
+departments → positions → candidates (+ AI agents) → screening → interviews →
+reporting → consent → data_privacy.
+
+## Architecture Invariants (load-bearing — breaking one is a design bug)
+- Layering one-directional: no business logic in routers/repositories, no SQL/HTTP
+  in services. Cross-module access only via the other module&#39;s service.
+- PII never plaintext at rest or in logs — only *_enc + *_hash; logs carry
+  candidate_id, never PII. Tenant data isolated via RLS, not just the app layer.
+- AI output is advisory only — never a final decision, always human-reviewed,
+  async only, consent-gated (DPDP).
+- Every state change captured (hash-chained audit rows); events go through a
+  transactional outbox, never dispatched inline.
+- Writes concurrency-safe (version column) and retry-safe (Idempotency-Key).
+  Schema grows additively — JSONB → custom fields → lookup values → tags before
+  a real column; never EAV.
+
+## Where to make a change
+New endpoint → the module&#39;s spec.md first. New field → SCHEMA_EVOLUTION.md decides
+where. New background job → modules/&lt;x&gt;/tasks.py + the right Celery queue.
+</code></pre>
+<h2>3.3 <a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a> — the honest surprise (full copy, 3 lines)</h2>
+<p>Parts 1/2 describe this as holding a decision tree (JSONB → lookup_values → custom
+fields → tags → real column). The actual file, in full, is this:</p>
+<pre><code class="language-markdown"># Schema Evolution
+
+Place the v2.0 baseline artifact here (see VERSION.md placement table).
+</code></pre>
+<p>A placeholder. The real rule lives in <code>CLAUDE.md</code> §3.1 above and is restated as an
+Architecture Invariant in §3.2 — those are the actual source of truth today; this
+file is a planned, not-yet-filled destination for the fuller standalone version.</p>
+<h2>3.4 <a href="artifacts/SCHEMA_CHANGE.md"><code>docs/SCHEMA_CHANGE.md</code></a> — the changelog (excerpt of 1,680 lines)</h2>
+<p>Every entry follows this template, newest first, append-only (corrections are new
+entries referencing the prior one, never edits):</p>
+<pre><code class="language-markdown">### [YYYY-MM-DD] &lt;short title&gt; — &lt;Alembic revision id | &quot;baseline&quot;&gt;
+- Baseline / Author / Trigger (spec or code change, linked)
+- Module(s) / Change type (add column, add enum value, add RLS policy, etc.)
+- Storage decision: mechanism chosen per SCHEMA_EVOLUTION.md, WHY if a real column
+- Backward compat: how existing rows &amp; running code stay unaffected
+- Migration: Alembic revision id; downgrade implemented? yes/no
+- Validation / Rollback / Notes
+</code></pre>
+<p>One real entry, condensed:</p>
+<pre><code class="language-markdown">### [2026-07-21] Drop ck_interview_skip_reason — 0052_drop_ivw_skip_reason_ck
+Trigger: a functional test found POST /interviews/{id}/skip returning 500 when
+skip_reason was omitted for an stg_labs-category level — the service layer already
+correctly allowed this, but a DB-level CHECK constraint was never relaxed to match.
+Fix: drop the CHECK; the service-layer check is already the correct, sufficient,
+fully-tested enforcement point (a table-local CHECK can&#39;t reference a different
+table&#39;s column without denormalizing or a trigger — rejected as unneeded
+complexity). Backward compat: purely additive-safe, removes a restriction only.
+Downgrade implemented: yes.
+</code></pre>
+<h2>3.5 <a href="artifacts/positions-spec.md"><code>openspec/specs/positions/spec.md</code></a> — a module spec (excerpt of 974 lines)</h2>
+<p>Every module has a spec this size or larger. Shape: versioned header → Purpose →
+numbered endpoints with exact request/response shapes and error codes:</p>
+<pre><code class="language-markdown"># Position Module Specification
+
+## 1. Purpose
+Manages open positions for STG Labs portfolio companies. Supports JD upload with
+AI extraction, count management with full history, and interview level setup.
+
+## 3. API Endpoints
+
+### POST /api/v1/positions
+Auth: Bearer — roles hr_admin, recruiter
+Request: organization_id (required), title (required, 3-255 chars), position_count
+(required, min 1), approved_at (REQUIRED — TAT anchor), hold_reason (REQUIRED when
+status = on_hold)
+Response 201: PositionResponse; also creates a position_history row (created)
+Response 400: VALIDATION_ERROR · 404: ORGANIZATION_NOT_FOUND | DEPARTMENT_NOT_FOUND
+
+### GET /api/v1/positions
+Query: organization_id, status (open/in_progress/.../closed), title (ILIKE partial),
+ageing_bucket (lte_7 / 8_to_15 / 16_to_30 / 31_to_45 / 46_to_90 / 91_to_120 / over_120)
+</code></pre>
+<p>974 lines total covers every remaining endpoint, ~60 acceptance criteria, the full
+business-rule list, the permissions matrix, and the exact error-code table
+backend-engineer reads before writing any code.</p>
+<h2>3.6 <code>.claude/agents/*.md</code> — the eight subagent contracts</h2>
+<p>Two shown near-full (the contrasting pair: implementer vs. the review gate); the
+other six as their real frontmatter + one-line role, since the full prompts are
+paraphrased faithfully in Parts 1/2 above.</p>
+<h3><a href="artifacts/agent-backend-engineer.md"><code>backend-engineer.md</code></a> (sonnet/high)</h3>
+<pre><code class="language-markdown">You are a senior backend engineer on the ATS Platform. Read
+openspec/specs/&lt;module&gt;/spec.md first — the source of truth. Build only what the
+spec&#39;s acceptance criteria require; delete anything not traceable to one.
+
+MANDATORY before writing any code: read §audit (exact action strings),
+§permissions (exact roles), §errors (exact codes+status) — the 3 most common
+CHANGES-REQUESTED triggers; reading first saves a full review cycle.
+
+Router → Service → Repository, strict. Type hints + docstring on every public
+function/route. structlog only, never print(). Soft-delete + audit every
+mutation. selectinload — zero N+1.
+
+Output: implement on branch, run ruff + mypy, report what was built. Do NOT
+create a PR — report and let the human request it.
+</code></pre>
+<h3><a href="artifacts/agent-principal-reviewer.md"><code>principal-reviewer.md</code></a> (opus/high)</h3>
+<pre><code class="language-markdown">You are the Principal Engineer for the ATS Platform and the final review gate
+before any change is proposed for merge. You do not rubber-stamp, and you do not
+defer to &quot;it works&quot; — working is the floor, not the bar.
+
+Review in priority order: (1) Minimalism — every line traces to an acceptance
+criterion. (2) Optimization — no N+1, indexed/bounded/paginated, async correctness.
+(3) Modularity — strict layering, size caps. (4) Maintainability + living docs.
+(5) Reliability — Idempotency-Key, optimistic concurrency, soft-delete + audit.
+(6) Performance at enterprise volume. (7) Security &amp; DPDP compliance. (8) Tests
+≥80%, never weakened to go green. (9) Schema evolution rule followed if touched.
+
+Output: Verdict (APPROVE / APPROVE-WITH-NITS / CHANGES-REQUESTED) · Findings by
+severity, file:line, why, concrete fix · Mandate-compliance checklist · Provenance
+line for the commit trailer.
+</code></pre>
+<h3>The other six, by contract (full files: 37–215 lines each)</h3>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>model/effort</th>
+<th>One-line role</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="artifacts/agent-unit-test-engineer.md"><code>unit-test-engineer</code></a></td>
+<td>sonnet/medium</td>
+<td>Mocks the repository layer; async-context-manager mock pattern, failure-cascade tests</td>
+</tr>
+<tr>
+<td><a href="artifacts/agent-functional-test-engineer.md"><code>functional-test-engineer</code></a></td>
+<td>sonnet/medium</td>
+<td>Smoke-tests the REAL stack; verifies live server loaded new code FIRST; <code>[BLOCK MERGE]</code> gate</td>
+</tr>
+<tr>
+<td><a href="artifacts/agent-integration-test-engineer.md"><code>integration-test-engineer</code></a></td>
+<td>sonnet/medium</td>
+<td>Full e2e with real DB/Redis/Celery, <code>RUN_DB_TESTS=1</code> guarded</td>
+</tr>
+<tr>
+<td><a href="artifacts/agent-principal-reliability-engineer.md"><code>principal-reliability-engineer</code></a></td>
+<td>opus/xhigh</td>
+<td>On-demand: Celery reliability, LLM-gateway circuit-breakers, DB pool sizing</td>
+</tr>
+<tr>
+<td><a href="artifacts/agent-principal-performance-auditor.md"><code>principal-performance-auditor</code></a></td>
+<td>opus/xhigh</td>
+<td>On-demand: query plans, N+1 hunts, load-testing</td>
+</tr>
+<tr>
+<td><a href="artifacts/agent-ux-ui-engineer.md"><code>ux-ui-engineer</code></a></td>
+<td>sonnet/high</td>
+<td>Next.js UI; MUST read the UX/UI guardrails first; WCAG 2.2 AA non-negotiable</td>
+</tr>
+</tbody></table>
+<h2>3.7 <a href="artifacts/ats-ux-ui-guardrails.md"><code>.claude/rules/ats-ux-ui-guardrails.md</code></a> — the UI rulebook (excerpt of 824 lines)</h2>
+<pre><code class="language-markdown">## 3. Non-negotiable product principles
+1. Task-first, not module-first — show what needs action, who owns it, why, what&#39;s next.
+2. Pipeline clarity — state, owner, blocker, next action, age, history, always visible.
+3. Sensitive data minimization — show only what the role/task needs.
+4. Human accountability — AI/automation never hides the reason for a recommendation.
+5. Accessibility by default — keyboard, semantic markup, contrast, non-color indicators.
+6. Enterprise scale — every list/dashboard handles high volume, many tenants, many roles.
+7. Recoverable workflows — drafts, previews, validation, safe recovery from failure.
+</code></pre>
+<p>824 lines cover 35 sections total (dashboards, pipeline/workflow, forms, interview
+scheduling, offers/onboarding, accessibility, a screen-state checklist, and a
+production-UI definition-of-done).</p>
+<h2>3.8 <a href="artifacts/BACKLOG.md"><code>docs/BACKLOG.md</code></a> — a point-in-time snapshot (dated 2026-07-28)</h2>
+<p>A <strong>living document that changes almost every session</strong> — this is what was open on
+the date shown, not a current status:</p>
+<pre><code class="language-markdown"># ATS Platform — Backlog &amp; Tech Debt Reference
+Status legend: 🔴 Not started · 🟡 In progress · ✅ Done · ⏸️ Parked · ❓ Needs verification
+
+## 1. Active execution queue
+| # | Item | Status |
+|---|------|--------|
+| 1 | NFR Phase 3 — repo-wide dead-code + missing-docstring sweep | ✅ Live on production |
+| 2 | Notifications real fan-out — email via AWS SES | 🟡 Code complete, reviewer APPROVE, merge blocked on CI quota |
+
+## 4. Tech debt — data/query correctness
+- 🔴 category_rank SQL duplicated across 3 modules — kept manually in sync, never
+  extracted to a shared fragment; divergence risk.
+- 🔴 Organizations/Departments DELETE endpoints documented in spec, never built.
+
+## How items move through this doc
+New item found → 🔴. Work starts → 🟡. Merged/shipped → ✅ with the PR reference.
+Deferred by user choice → ⏸️ with the reason. Unsure whether still open → ❓, verify.
+</code></pre>
+<h2>3.9 <a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a> — the restore point (excerpt, full file 600+ lines)</h2>
+<p>The file every session reads first after a compaction, before anything else:</p>
+<pre><code class="language-markdown"># Resume pointer — &quot;you are here&quot;
+Read this FIRST after any compaction or new session. Git-tracked and durable —
+survives a new machine or a cleared session, unlike an auto-memory entry.
+
+## Execution Queue (2026-07-24, one PR per item)
+| # | Item | Status |
+|---|------|--------|
+| 1 | NFR Phase 3 | Is Live on Production |
+| 2 | Notifications real fan-out | Code complete, PR APPROVE, merge blocked on CI quota |
+
+Item 1 result: removed 3 dead backend functions + their dead-only test; added
+missing docstrings in the 2 of 11 investigator-flagged modules with a REAL gap
+(the other 9 were false positives, confirmed by independent re-verification — a
+~77% false-positive rate worth remembering for future sweeps). 3 review rounds;
+round 1 and 2 each caught a real spec-drift; round 3 APPROVE-WITH-NITS.
+</code></pre>
+<p>A live, ever-growing narrative — hundreds of dated entries recording what
+happened, why, and what it cost, so a brand-new agent (or person) can pick up
+mid-project without re-asking what already happened.</p>
+<h2>3.10 <a href="artifacts/TOKEN_OPTIMIZATION_PRACTICE.md"><code>docs/TOKEN_OPTIMIZATION_PRACTICE.md</code></a> — the cost playbook (excerpt of 542 lines)</h2>
+<pre><code class="language-markdown"># Token-Optimized AI-Assisted Development — Playbook
+Living document — updated whenever a new technique is identified or refined.
+
+## The core insight
+AI compute cost scales with output tokens (~5x the cost of input tokens).
+Undisciplined development produces excess output tokens two ways: (1) wrong agent
+for the task — a broad agent reads more context, writes more prose than a specific
+one; (2) rework cycles — a preventable CHANGES-REQUESTED costs as much as the
+original build. Discipline targets both, in that order.
+
+## D1. Agent routing — use the most specific agent, always
+Before spawning an agent: &quot;is there a more specific agent for this?&quot; If yes, use
+it. Never `general-purpose` as a fallback when a specialized agent covers the work.
+
+## D4. Cost alerts — mandatory BEFORE and AFTER every task, no size carve-out
+Every task states a [COST ALERT] estimate before starting and the actual
+cost/tokens spent after finishing, scaled to size (one line for a doc edit, full
+breakdown for a module build) — never skipped regardless of how small the task looks.
+
+## D13. Two-tier model roster — the 3 chokepoint/specialist roles run Opus
+principal-reviewer needed 3 rounds at Sonnet/high to close one change — two
+genuine reasoning-depth misses, not visibility gaps. Fix: tier up the one
+chokepoint every change passes through, plus the two on-demand deep-dive
+specialists. Net incremental cost: ~$10-15/month total — trivial against the cost
+of a single defect either role exists to catch.
+
+## D15. Practice showcase — name the practice, name the saving
+After completing any task, name which specific playbook practice was applied and
+state concretely how it reduced *this task&#39;s* actual spend. A generic restatement
+doesn&#39;t count. An explicit &quot;N/A&quot; is required if nothing meaningfully applied.
+
+## Part 3: Cost benchmarks (measured on this project)
+| Activity | Without discipline | With discipline |
+|---|---|---|
+| Full module build | ~$80-100 | ~$30-45 (~55-60% saving) |
+| Preventable CHANGES-REQUESTED cycle | ~$10-15 | ~$0 (spec pre-read) |
+
+Update this playbook in the SAME PR as the finding that triggered it — a stale
+playbook is worse than no playbook.
+</code></pre>
+<p>15 disciplines (D1-D15) total in the real file; this excerpt shows the highest-value ones.</p>
+<h2>3.11 <a href="artifacts/EXECUTION_METHODOLOGY.html"><code>docs/EXECUTION_METHODOLOGY.md</code></a> — the pipeline&#39;s own changelog (excerpt)</h2>
+<p>Originally an HTML report; converted to markdown for this excerpt. Records what
+changed in the agent pipeline, model/effort tiering, and binding project rules,
+dated per revision:</p>
+<pre><code class="language-markdown"># ATS Platform — Execution Methodology
+Last updated: 2026-07-24 · Living document — update in the same PR as any
+agent/CI/mandate change
+
+## 1. Why this changed
+Two structural gaps found 2026-07-23/24, neither fixed by &quot;try harder&quot;:
+- CI masking: backend-ci.yml ran ruff -&gt; mypy -&gt; pytest as sequential steps in
+  ONE job. The first failing step stopped the job — mypy and the full pytest
+  suite had NEVER run to completion, once, in the repo&#39;s entire history.
+- Review depth at the single chokepoint: principal-reviewer took 3 rounds to
+  close one change even at high effort, because it shared a model tier with
+  every routine agent — no tier reserved for the highest-leverage review work.
+
+## 2. Workflow: before -&gt; now
+| Aspect | Before | Now |
+|---|---|---|
+| Backend CI | One job: ruff -&gt; mypy -&gt; pytest sequential | 4 independent parallel jobs: lint, dependency-drift, typecheck, test |
+| Model/effort tiering | Single-tier: everyone on Sonnet | Two-tier: 3 chokepoint/specialist roles on Opus, fixed |
+
+## 5. First real-world validation (same day)
+The retiered principal-reviewer reviewed its own creation, caught 4 genuine
+defects — including a dependency-drift check sequenced after lint in the same
+job, reproducing the exact masking pattern the mandate exists to close.
+</code></pre>
+<hr>
+<p><em>End of reference copies — real, dated content pulled from the live repository.
+Reuse, adapt, or build your own version of any of it.</em></p>
+<div class="footer">Generated by Claude Code &middot; ATS Platform — STG Labs &middot; Baseline v2.2 (11-Jun-2026)</div></body></html>
