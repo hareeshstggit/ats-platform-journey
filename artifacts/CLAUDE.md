@@ -316,6 +316,59 @@ found and purged if teardown fails:
   - Other entities (offers, interviews, screenings): linked to test candidates/positions —
     cleaned up explicitly in the FK-safe hard-delete order above, NOT assumed to cascade
 
+**Rule 6 — Dependency/integration-point mapping is mandatory BEFORE dispatching any build
+that changes an existing shipped feature's contract or scope (binding — added 2026-07-31
+after the interview-pipeline-progress-report incident).**
+This incident: the report's ask went through 3 separate clarification cycles (status-dropdown
+scope, then which statuses, then single-level vs all-levels) instead of one front-loaded pass —
+a direct violation of this project's own documented anti-pattern in
+`docs/TOKEN_OPTIMIZATION_PRACTICE.md` (front-load ambiguity resolution; run all foreseeable
+edge-case checks in one batched pass; ask once). Worse, `design.md` for the resulting
+architecture change mapped the implementation files (SQL/service/schema) but missed: the UI
+entry point (no trigger existed yet to reach all-levels mode at all), the shared-component/type
+consumers of the response shape (`pipeline-progress-chart-tile.tsx`,
+`pipeline-progress-grid.tsx` would have silently broken), and an unstated row-identity invariant
+(pagination grain changing from one-row-per-position to one-row-per-position×level). Each gap
+surfaced only as a review-round finding, not at design time — the single biggest cost driver of
+the whole build.
+Binding rule: before dispatching `backend-engineer`/`ux-ui-engineer` on any change that alters
+an EXISTING shipped feature's response shape, status/enum set, grouping/pagination grain, or
+permission surface, the main loop must produce and confirm, in one pass, before writing
+`design.md`:
+  1. Every UI entry point that reaches the changed capability today (not just the primary
+     screen) — a changed backend contract with no matching UI trigger is an incomplete design.
+  2. Every consumer of the shared type/response shape being changed (`grep` the type name across
+     `frontend/src` and the backend schema's importers) — list them by file, don't assume "the
+     obvious ones."
+  3. Any invariant implicit in the CURRENT behavior that the change could silently break (e.g.
+     "one row per X" becoming "one row per X per Y") — state it explicitly, even if it seems
+     obvious, because it is exactly what a downstream consumer silently depends on.
+  4. All foreseeable scope-defining questions for the user asked TOGETHER in one clarification
+     pass, not iteratively discovered across multiple round-trips.
+This mapping is a required section of `design.md` itself (not a separate document) — a
+`design.md` missing it is not ready for `backend-engineer`/`ux-ui-engineer` dispatch.
+
+**Rule 7 — Live query-plan (`EXPLAIN`) verification is mandatory for any change touching
+aggregation, ordering, or pagination grain, at BUILD time, not deferred to review (binding —
+added 2026-07-31, same incident as Rule 6).**
+Round 2 of `principal-reviewer`'s review found that round 1's "fix" for a redundant
+correlated-subquery evaluation had NOT actually taken effect — the code, its docstring, and
+`docs/BACKLOG.md` all claimed the fix landed, and every test passed, yet a live
+`EXPLAIN (ANALYZE, BUFFERS)` still showed 2 `SubPlan`s. This is the load-bearing lesson: passing
+unit/functional tests confirm correct RESULTS, not correct QUERY PLANS — a query can return the
+right answer while doing 2x the necessary work, and no amount of reading the code or re-running
+the test suite reveals that; only a live `EXPLAIN` does. The gap existed because the fix was
+verified by re-reading the diff, never by actually running it against Postgres.
+Binding rule: whenever a change modifies a `GROUP BY`, adds/changes a window function
+(`RANK()`/`ROW_NUMBER()`/etc.), a correlated subquery, an `ORDER BY` tied to pagination, or the
+grain a query aggregates/paginates over, the agent making the change (not just the reviewer)
+MUST run `EXPLAIN (ANALYZE, BUFFERS)` against the real local Postgres for at least one
+representative query BEFORE reporting the task as done, and paste the plan's key evidence (no
+duplicate `SubPlan`/`SeqScan` where an index or single evaluation is expected) into its report.
+`principal-reviewer` independently re-runs its own `EXPLAIN` regardless — this rule does not
+replace that check, it moves the same check earlier so a wrong "fixed" report never reaches
+review in the first place.
+
 ## Regression prevention gates (binding — Gates 1–4 overridable only via 3-request rule; Gate 5 has NO override)
 
 These gates exist because regression rework consumed 60–70% of agent cost in multiple sessions

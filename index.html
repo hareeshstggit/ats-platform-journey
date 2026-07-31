@@ -102,22 +102,22 @@ business logic in an architecture doc, or business rules in code comments instea
 <tr>
 <td><strong>Standards</strong></td>
 <td>What rules apply to <em>everything</em>, no exceptions?</td>
-<td><a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a></td>
+<td><code>CLAUDE.md</code></td>
 </tr>
 <tr>
 <td><strong>Architecture</strong></td>
 <td>Why is the system shaped this way?</td>
-<td><a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a></td>
+<td><code>docs/ARCHITECTURE.md</code></td>
 </tr>
 <tr>
 <td><strong>Memory</strong></td>
 <td>What happened, and where are we right now?</td>
-<td><a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a>, <code>docs/BACKLOG.md</code></td>
+<td><code>memory/resume-pointer.md</code>, <code>docs/BACKLOG.md</code></td>
 </tr>
 <tr>
 <td><strong>Evolution</strong></td>
 <td>How does the schema/system change without breaking prod?</td>
-<td><a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a>, <code>docs/SCHEMA_CHANGE.md</code></td>
+<td><code>docs/SCHEMA_EVOLUTION.md</code>, <code>docs/SCHEMA_CHANGE.md</code></td>
 </tr>
 </tbody></table>
 <p>Read them in that order for any new module. Spec first — always. <code>CLAUDE.md</code> itself says
@@ -134,16 +134,16 @@ code is wrong until proven otherwise.</li>
 <li><strong>Error codes and permissions per endpoint</strong> — read this <em>before</em> writing any code
 against the endpoint, not after.</li>
 </ul>
-<h3>2.2 Standards — <a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a></h3>
+<h3>2.2 Standards — <code>CLAUDE.md</code></h3>
 <p>The file every agent reads before every task (its own first line says so). Skim its
 table of contents once. You&#39;ll see escalating tiers: ordinary code-quality rules, then
 binding process gates, then a small number of &quot;no override&quot; sections. Notice that most
 binding sections name the failure they prevent, right in the rule text.</p>
-<h3>2.3 Architecture — <a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a></h3>
+<h3>2.3 Architecture — <code>docs/ARCHITECTURE.md</code></h3>
 <p>Where <code>CLAUDE.md</code> says <em>what the rules are</em>, this file says <em>why the system is shaped
 this way</em> — the code map, module boundaries, the full expansion of the Engineering
 Mandate. Read this once per module you touch for the first time.</p>
-<h3>2.4 Memory — <a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a> + <code>docs/BACKLOG.md</code></h3>
+<h3>2.4 Memory — <code>memory/resume-pointer.md</code> + <code>docs/BACKLOG.md</code></h3>
 <ul>
 <li><strong><code>resume-pointer.md</code></strong> — chronological narrative, &quot;you are here.&quot; Read this FIRST
 after any compaction or new session.</li>
@@ -155,7 +155,7 @@ branch&#39;s copy is a snapshot from whenever it forked. Look for a line in this
 <code>BACKLOG.md</code> acknowledging exactly that, written live during a real multi-branch
 session — a governance system that names its own blind spots is more trustworthy than
 one that pretends not to have any.</p>
-<h3>2.5 Evolution — <a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a> + <code>docs/SCHEMA_CHANGE.md</code></h3>
+<h3>2.5 Evolution — <code>docs/SCHEMA_EVOLUTION.md</code> + <code>docs/SCHEMA_CHANGE.md</code></h3>
 <ul>
 <li><strong><code>SCHEMA_EVOLUTION.md</code></strong> — a decision tree, consulted <em>before</em> any new data is
 stored: JSONB → lookup_values → custom_field_definitions → tags → only then a real
@@ -208,27 +208,27 @@ doesn&#39;t cite one, ask why not.</li>
 <td>The contract for one module</td>
 </tr>
 <tr>
-<td><a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a></td>
+<td><code>CLAUDE.md</code></td>
 <td>Universal binding rules, re-read every task</td>
 </tr>
 <tr>
-<td><a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a></td>
+<td><code>docs/ARCHITECTURE.md</code></td>
 <td>Why the system is shaped this way</td>
 </tr>
 <tr>
-<td><a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a></td>
+<td><code>memory/resume-pointer.md</code></td>
 <td>Chronological &quot;you are here&quot;</td>
 </tr>
 <tr>
-<td><a href="artifacts/BACKLOG.md"><code>docs/BACKLOG.md</code></a></td>
+<td><code>docs/BACKLOG.md</code></td>
 <td>Query-free current-state snapshot</td>
 </tr>
 <tr>
-<td><a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a></td>
+<td><code>docs/SCHEMA_EVOLUTION.md</code></td>
 <td>Decision tree for new data storage</td>
 </tr>
 <tr>
-<td><a href="artifacts/SCHEMA_CHANGE.md"><code>docs/SCHEMA_CHANGE.md</code></a></td>
+<td><code>docs/SCHEMA_CHANGE.md</code></td>
 <td>Structured log of every schema change</td>
 </tr>
 <tr>
@@ -299,7 +299,7 @@ and the codebase&#39;s own history has caught real violations of it — e.g. a m
 importing another module&#39;s <code>Repository</code> class directly instead of going through its
 <code>Service</code>, discovered during a routine decomposition review and logged in
 <code>docs/BACKLOG.md</code> as a tracked architecture defect rather than silently left alone.</p>
-<h2>3. The Standards Layer — <a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a></h2>
+<h2>3. The Standards Layer — <code>CLAUDE.md</code></h2>
 <p><code>CLAUDE.md</code> is the single most important file in the repository. Its own first line
 states its job: <em>&quot;Claude Code reads this before EVERY task. All generated code
 complies.&quot;</em> It is re-injected into an agent&#39;s context at the start of every
@@ -346,7 +346,7 @@ the failure it prevents, in the rule text itself.</strong> A rule with no stated
 as a guess. A rule with a named incident reads as a fix — and is far harder to
 rationalize skipping &quot;just this once,&quot; because the cost of skipping it is written down
 right there.</p>
-<h2>4. The Architecture Layer — <a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a></h2>
+<h2>4. The Architecture Layer — <code>docs/ARCHITECTURE.md</code></h2>
 <p>If <code>CLAUDE.md</code> is the compressed rulebook, <code>docs/ARCHITECTURE.md</code> is the expansion —
 the &quot;why,&quot; not just the &quot;what.&quot; It carries:</p>
 <ul>
@@ -372,7 +372,7 @@ re-verified every turn.</p>
 single session doesn&#39;t need it. An agentic system that spans days needs an answer to:
 <em>how does a brand-new session, with zero memory of anything, know what&#39;s already true?</em></p>
 <p>The answer is a deliberate three-file split, each with a distinct job:</p>
-<h3>5.1 <a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a> — the chronological narrative</h3>
+<h3>5.1 <code>memory/resume-pointer.md</code> — the chronological narrative</h3>
 <p>This is the <strong>first file read after any compaction or new session</strong>, before even the
 specs. It answers &quot;what happened, when, and why&quot; — a running log of resolved work,
 in-progress work, and the exact state something was left in. It is git-tracked, which
@@ -381,7 +381,7 @@ file survives both, because it&#39;s just a file in the repository like any othe
 <p>The file states its own failure mode explicitly: if an agent can&#39;t restore context and
 this file is missing or stale, <em>that itself is the bug to report</em> — the file&#39;s own
 maintenance is treated as load-bearing infrastructure, not a nice-to-have.</p>
-<h3>5.2 <a href="artifacts/BACKLOG.md"><code>docs/BACKLOG.md</code></a> — the query-free current-state snapshot</h3>
+<h3>5.2 <code>docs/BACKLOG.md</code> — the query-free current-state snapshot</h3>
 <p>Where <code>resume-pointer.md</code> is a <em>story</em>, this file is a <em>snapshot</em> — no dates, no
 narrative, just what&#39;s true right now: the active execution queue, PRs pending merge,
 tech debt by category, deferred features. Its own binding rule, stated at the top of
@@ -411,7 +411,7 @@ reconcile.</strong></p>
 <p>Schema changes are the single highest-blast-radius kind of change a codebase makes —
 they&#39;re hard to reverse, and a mistake can silently corrupt data rather than just
 crash. This project handles it with a decision tree plus a permanent log.</p>
-<h3>6.1 <a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a> — consulted <em>before</em> every new kind of data</h3>
+<h3>6.1 <code>docs/SCHEMA_EVOLUTION.md</code> — consulted <em>before</em> every new kind of data</h3>
 <p>The rule: before storing any new attribute, walk this order, cheapest-safe-option
 first, and only escalate when the cheaper option genuinely doesn&#39;t fit:</p>
 <ol>
@@ -431,7 +431,7 @@ retyped in the same release the running code depends on it. Removing something o
 happens in phases — add new, backfill, switch reads/writes, drop old <em>later</em>, never all
 at once. Every migration is also <strong>reversible</strong> — a real downgrade, not a stub — and
 validated against existing data both directions before it ships.</p>
-<h3>6.3 <a href="artifacts/SCHEMA_CHANGE.md"><code>docs/SCHEMA_CHANGE.md</code></a> — the permanent, structured log</h3>
+<h3>6.3 <code>docs/SCHEMA_CHANGE.md</code> — the permanent, structured log</h3>
 <p>Every schema change, no exceptions, gets one entry: date, baseline, author, the
 <em>trigger</em> (what feature or fix required it), the change type, which storage mechanism
 was chosen from the §6.1 decision tree (and why, if a real column was needed), the
@@ -460,12 +460,12 @@ default, a reviewer must affirmatively confirm one was considered.</p>
 </tr>
 </thead>
 <tbody><tr>
-<td><a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a></td>
+<td><code>CLAUDE.md</code></td>
 <td>Universal binding rules, re-read every task</td>
 <td>Rare — only when a new failure earns a new rule</td>
 </tr>
 <tr>
-<td><a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a></td>
+<td><code>docs/ARCHITECTURE.md</code></td>
 <td>Why the system is shaped this way; code map; full engineering mandate</td>
 <td>Slow — when the architecture genuinely changes</td>
 </tr>
@@ -475,22 +475,22 @@ default, a reviewer must affirmatively confirm one was considered.</p>
 <td>Same-commit as any behavior change to that module</td>
 </tr>
 <tr>
-<td><a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a></td>
+<td><code>memory/resume-pointer.md</code></td>
 <td>Chronological &quot;you are here&quot;</td>
 <td>Every session/phase boundary</td>
 </tr>
 <tr>
-<td><a href="artifacts/BACKLOG.md"><code>docs/BACKLOG.md</code></a></td>
+<td><code>docs/BACKLOG.md</code></td>
 <td>Query-free current-state snapshot</td>
 <td>Same-commit as any status change</td>
 </tr>
 <tr>
-<td><a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a></td>
+<td><code>docs/SCHEMA_EVOLUTION.md</code></td>
 <td>Decision tree for new data storage</td>
 <td>Rare — only when the decision framework itself changes</td>
 </tr>
 <tr>
-<td><a href="artifacts/SCHEMA_CHANGE.md"><code>docs/SCHEMA_CHANGE.md</code></a></td>
+<td><code>docs/SCHEMA_CHANGE.md</code></td>
 <td>Permanent structured log of every schema change</td>
 <td>Same-commit as every migration</td>
 </tr>
@@ -510,7 +510,7 @@ default, a reviewer must affirmatively confirm one was considered.</p>
 <td>Rare</td>
 </tr>
 <tr>
-<td><a href="artifacts/TOKEN_OPTIMIZATION_PRACTICE.md"><code>docs/TOKEN_OPTIMIZATION_PRACTICE.md</code></a></td>
+<td><code>docs/TOKEN_OPTIMIZATION_PRACTICE.md</code></td>
 <td>Durable record of cost-optimization techniques</td>
 <td>Same-PR as any new technique discovered</td>
 </tr>
@@ -623,19 +623,19 @@ never left to inherit from whatever the main loop happens to be running:</p>
 </tr>
 <tr>
 <td>Frontend/UI</td>
-<td><a href="artifacts/agent-ux-ui-engineer.md"><code>ux-ui-engineer</code></a></td>
+<td><code>ux-ui-engineer</code></td>
 <td>sonnet</td>
 <td>high</td>
 </tr>
 <tr>
 <td>Unit tests (mocked)</td>
-<td><a href="artifacts/agent-unit-test-engineer.md"><code>unit-test-engineer</code></a></td>
+<td><code>unit-test-engineer</code></td>
 <td>sonnet</td>
 <td>medium</td>
 </tr>
 <tr>
 <td>Functional/integration tests</td>
-<td><code>functional-test-engineer</code>, <a href="artifacts/agent-integration-test-engineer.md"><code>integration-test-engineer</code></a></td>
+<td><code>functional-test-engineer</code>, <code>integration-test-engineer</code></td>
 <td>sonnet</td>
 <td>medium</td>
 </tr>
@@ -647,13 +647,13 @@ never left to inherit from whatever the main loop happens to be running:</p>
 </tr>
 <tr>
 <td>On-demand deep dive (failure modes, DR)</td>
-<td><a href="artifacts/agent-principal-reliability-engineer.md"><code>principal-reliability-engineer</code></a></td>
+<td><code>principal-reliability-engineer</code></td>
 <td><strong>opus</strong></td>
 <td>xhigh</td>
 </tr>
 <tr>
 <td>On-demand deep dive (perf, query plans)</td>
-<td><a href="artifacts/agent-principal-performance-auditor.md"><code>principal-performance-auditor</code></a></td>
+<td><code>principal-performance-auditor</code></td>
 <td><strong>opus</strong></td>
 <td>xhigh</td>
 </tr>
@@ -712,6 +712,26 @@ sequential steps where one early failure masks everything behind it.</p>
 <p><strong>The backfill mandate</strong> — full incident and rule in §6.4 above. Same pattern: a
 technically-true migration docstring, a silently-misbehaving shipped feature, a rule
 requiring an explicit backfill-or-justify decision instead of silence.</p>
+<p><strong>The Dependency-Mapping &amp; Live-EXPLAIN-Verification rules (Rules 6-7, 2026-07-31).</strong>
+Born from a single feature — reshaping an interview-pipeline reporting endpoint to show
+all interview levels at once instead of one at a time — that took three separate rounds
+of user clarification to scope, then three more rounds of <code>principal-reviewer</code> findings
+to build correctly. The user asked directly for a retrospective, naming this &quot;the 2nd or
+3rd time Claude has struggled to get to root cause&quot; and asking whether the dependencies
+and integration points had been properly mapped up front. The honest answer was no, for
+two distinct structural reasons — not carelessness: (a) the change&#39;s <code>design.md</code> mapped
+implementation files but never asked &quot;what UI entry point reaches this,&quot; &quot;what else
+consumes this response shape,&quot; or &quot;what invariant does the current row grain silently
+guarantee&quot; — each gap surfaced only as an expensive review-round finding, never at design
+time; (b) a review round found a &quot;fixed&quot; performance defect — a redundant correlated
+subquery — had NOT actually been fixed, despite every test passing and the code and docs
+both claiming otherwise; only a live <code>EXPLAIN (ANALYZE, BUFFERS)</code> revealed the duplicate
+query-plan node still there. Two rules closed the two gaps: Rule 6 makes the
+dependency/integration-point mapping above a required section of <code>design.md</code> itself,
+completed before any build is dispatched; Rule 7 requires the <em>building</em> agent — not just
+the reviewer — to run a live <code>EXPLAIN</code> at build time for any change touching aggregation,
+ordering, or pagination grain, because passing tests confirm correct results, never
+correct query plans.</p>
 <h3>9.3 What to take from this if you&#39;re building your own system</h3>
 <p>When you write your own agentic project&#39;s rulebook:</p>
 <ul>
@@ -844,7 +864,7 @@ follows is real content pulled from the actual repo, condensed to fit one sharea
 doc (full line counts noted per file) — enough to see the real shape and reuse it.</p>
 <p>One file below is a placeholder stub, smaller than Parts 1/2 describe it. Left in
 as-is: a real codebase has files that lag their own docs — more honest than tidied up.</p>
-<h2>3.1 <a href="artifacts/CLAUDE.md"><code>CLAUDE.md</code></a> — the working agreement (condensed; full file ~380 lines)</h2>
+<h2>3.1 <code>CLAUDE.md</code> — the working agreement (condensed; full file ~380 lines)</h2>
 <pre><code class="language-markdown"># CLAUDE.md — ATS Code Standards &amp; Working Agreement
 Claude Code reads this before EVERY task. All generated code complies.
 
@@ -906,7 +926,7 @@ Branch per feature (dev/&lt;phase&gt;-&lt;feature&gt;), conventional commits, PR
 feature, never push directly to main. After every merge to main: pull + migrate,
 confirm local and main are at the same Alembic head before starting new work.
 </code></pre>
-<h2>3.2 <a href="artifacts/ARCHITECTURE.md"><code>docs/ARCHITECTURE.md</code></a> — the code map (condensed; full file 296 lines)</h2>
+<h2>3.2 <code>docs/ARCHITECTURE.md</code> — the code map (condensed; full file 296 lines)</h2>
 <pre><code class="language-markdown"># Architecture
 The ATS accepts candidate profiles and job descriptions, uses Claude AI agents to
 extract structured data and rank candidate-position fit, and tracks each candidate
@@ -944,7 +964,7 @@ reporting → consent → data_privacy.
 New endpoint → the module&#39;s spec.md first. New field → SCHEMA_EVOLUTION.md decides
 where. New background job → modules/&lt;x&gt;/tasks.py + the right Celery queue.
 </code></pre>
-<h2>3.3 <a href="artifacts/SCHEMA_EVOLUTION.md"><code>docs/SCHEMA_EVOLUTION.md</code></a> — the honest surprise (full copy, 3 lines)</h2>
+<h2>3.3 <code>docs/SCHEMA_EVOLUTION.md</code> — the honest surprise (full copy, 3 lines)</h2>
 <p>Parts 1/2 describe this as holding a decision tree (JSONB → lookup_values → custom
 fields → tags → real column). The actual file, in full, is this:</p>
 <pre><code class="language-markdown"># Schema Evolution
@@ -954,7 +974,7 @@ Place the v2.0 baseline artifact here (see VERSION.md placement table).
 <p>A placeholder. The real rule lives in <code>CLAUDE.md</code> §3.1 above and is restated as an
 Architecture Invariant in §3.2 — those are the actual source of truth today; this
 file is a planned, not-yet-filled destination for the fuller standalone version.</p>
-<h2>3.4 <a href="artifacts/SCHEMA_CHANGE.md"><code>docs/SCHEMA_CHANGE.md</code></a> — the changelog (excerpt of 1,680 lines)</h2>
+<h2>3.4 <code>docs/SCHEMA_CHANGE.md</code> — the changelog (excerpt of 1,680 lines)</h2>
 <p>Every entry follows this template, newest first, append-only (corrections are new
 entries referencing the prior one, never edits):</p>
 <pre><code class="language-markdown">### [YYYY-MM-DD] &lt;short title&gt; — &lt;Alembic revision id | &quot;baseline&quot;&gt;
@@ -976,7 +996,7 @@ table&#39;s column without denormalizing or a trigger — rejected as unneeded
 complexity). Backward compat: purely additive-safe, removes a restriction only.
 Downgrade implemented: yes.
 </code></pre>
-<h2>3.5 <a href="artifacts/positions-spec.md"><code>openspec/specs/positions/spec.md</code></a> — a module spec (excerpt of 974 lines)</h2>
+<h2>3.5 <code>openspec/specs/positions/spec.md</code> — a module spec (excerpt of 974 lines)</h2>
 <p>Every module has a spec this size or larger. Shape: versioned header → Purpose →
 numbered endpoints with exact request/response shapes and error codes:</p>
 <pre><code class="language-markdown"># Position Module Specification
@@ -1005,7 +1025,7 @@ backend-engineer reads before writing any code.</p>
 <h2>3.6 <code>.claude/agents/*.md</code> — the eight subagent contracts</h2>
 <p>Two near-full (implementer vs. review gate); the other six as real frontmatter +
 one-line role — full prompts are paraphrased faithfully in Parts 1/2 above.</p>
-<h3><a href="artifacts/agent-backend-engineer.md"><code>backend-engineer.md</code></a> (sonnet/high)</h3>
+<h3><code>backend-engineer.md</code> (sonnet/high)</h3>
 <pre><code class="language-markdown">You are a senior backend engineer on the ATS Platform. Read
 openspec/specs/&lt;module&gt;/spec.md first — the source of truth. Build only what the
 spec&#39;s acceptance criteria require; delete anything not traceable to one.
@@ -1021,7 +1041,7 @@ mutation. selectinload — zero N+1.
 Output: implement on branch, run ruff + mypy, report what was built. Do NOT
 create a PR — report and let the human request it.
 </code></pre>
-<h3><a href="artifacts/agent-principal-reviewer.md"><code>principal-reviewer.md</code></a> (opus/high)</h3>
+<h3><code>principal-reviewer.md</code> (opus/high)</h3>
 <pre><code class="language-markdown">You are the Principal Engineer for the ATS Platform and the final review gate
 before any change is proposed for merge. You do not rubber-stamp, and you do not
 defer to &quot;it works&quot; — working is the floor, not the bar.
@@ -1047,37 +1067,37 @@ line for the commit trailer.
 </tr>
 </thead>
 <tbody><tr>
-<td><a href="artifacts/agent-unit-test-engineer.md"><code>unit-test-engineer</code></a></td>
+<td><code>unit-test-engineer</code></td>
 <td>sonnet/medium</td>
 <td>Mocks the repository layer; async-context-manager mock pattern, failure-cascade tests</td>
 </tr>
 <tr>
-<td><a href="artifacts/agent-functional-test-engineer.md"><code>functional-test-engineer</code></a></td>
+<td><code>functional-test-engineer</code></td>
 <td>sonnet/medium</td>
 <td>Smoke-tests the REAL stack; verifies live server loaded new code FIRST; <code>[BLOCK MERGE]</code> gate</td>
 </tr>
 <tr>
-<td><a href="artifacts/agent-integration-test-engineer.md"><code>integration-test-engineer</code></a></td>
+<td><code>integration-test-engineer</code></td>
 <td>sonnet/medium</td>
 <td>Full e2e with real DB/Redis/Celery, <code>RUN_DB_TESTS=1</code> guarded</td>
 </tr>
 <tr>
-<td><a href="artifacts/agent-principal-reliability-engineer.md"><code>principal-reliability-engineer</code></a></td>
+<td><code>principal-reliability-engineer</code></td>
 <td>opus/xhigh</td>
 <td>On-demand: Celery reliability, LLM-gateway circuit-breakers, DB pool sizing</td>
 </tr>
 <tr>
-<td><a href="artifacts/agent-principal-performance-auditor.md"><code>principal-performance-auditor</code></a></td>
+<td><code>principal-performance-auditor</code></td>
 <td>opus/xhigh</td>
 <td>On-demand: query plans, N+1 hunts, load-testing</td>
 </tr>
 <tr>
-<td><a href="artifacts/agent-ux-ui-engineer.md"><code>ux-ui-engineer</code></a></td>
+<td><code>ux-ui-engineer</code></td>
 <td>sonnet/high</td>
 <td>Next.js UI; MUST read the UX/UI guardrails first; WCAG 2.2 AA non-negotiable</td>
 </tr>
 </tbody></table>
-<h2>3.7 <a href="artifacts/ats-ux-ui-guardrails.md"><code>.claude/rules/ats-ux-ui-guardrails.md</code></a> — the UI rulebook (excerpt of 824 lines)</h2>
+<h2>3.7 <code>.claude/rules/ats-ux-ui-guardrails.md</code> — the UI rulebook (excerpt of 824 lines)</h2>
 <pre><code class="language-markdown">## 3. Non-negotiable product principles
 1. Task-first, not module-first — show what needs action, who owns it, why, what&#39;s next.
 2. Pipeline clarity — state, owner, blocker, next action, age, history, always visible.
@@ -1090,7 +1110,7 @@ line for the commit trailer.
 <p>824 lines cover 35 sections total (dashboards, pipeline/workflow, forms, interview
 scheduling, offers/onboarding, accessibility, a screen-state checklist, and a
 production-UI definition-of-done).</p>
-<h2>3.8 <a href="artifacts/BACKLOG.md"><code>docs/BACKLOG.md</code></a> — a point-in-time snapshot (dated 2026-07-28)</h2>
+<h2>3.8 <code>docs/BACKLOG.md</code> — a point-in-time snapshot (dated 2026-07-28)</h2>
 <p>A <strong>living document that changes almost every session</strong> — this is what was open on
 the date shown, not a current status:</p>
 <pre><code class="language-markdown"># ATS Platform — Backlog &amp; Tech Debt Reference
@@ -1111,7 +1131,7 @@ Status legend: 🔴 Not started · 🟡 In progress · ✅ Done · ⏸️ Parked
 New item found → 🔴. Work starts → 🟡. Merged/shipped → ✅ with the PR reference.
 Deferred by user choice → ⏸️ with the reason. Unsure whether still open → ❓, verify.
 </code></pre>
-<h2>3.9 <a href="artifacts/resume-pointer.md"><code>memory/resume-pointer.md</code></a> — the restore point (excerpt, full file 600+ lines)</h2>
+<h2>3.9 <code>memory/resume-pointer.md</code> — the restore point (excerpt, full file 600+ lines)</h2>
 <p>The file every session reads first after a compaction, before anything else:</p>
 <pre><code class="language-markdown"># Resume pointer — &quot;you are here&quot;
 Read this FIRST after any compaction or new session. Git-tracked and durable —
@@ -1132,7 +1152,7 @@ round 1 and 2 each caught a real spec-drift; round 3 APPROVE-WITH-NITS.
 <p>A live, ever-growing narrative — hundreds of dated entries recording what
 happened, why, and what it cost, so a brand-new agent (or person) can pick up
 mid-project without re-asking what already happened.</p>
-<h2>3.10 <a href="artifacts/TOKEN_OPTIMIZATION_PRACTICE.md"><code>docs/TOKEN_OPTIMIZATION_PRACTICE.md</code></a> — the cost playbook (excerpt of 542 lines)</h2>
+<h2>3.10 <code>docs/TOKEN_OPTIMIZATION_PRACTICE.md</code> — the cost playbook (excerpt of 542 lines)</h2>
 <pre><code class="language-markdown"># Token-Optimized AI-Assisted Development — Playbook
 Living document — updated whenever a new technique is identified or refined.
 
@@ -1174,7 +1194,7 @@ Update this playbook in the SAME PR as the finding that triggered it — a stale
 playbook is worse than no playbook.
 </code></pre>
 <p>15 disciplines (D1-D15) total in the real file; this excerpt shows the highest-value ones.</p>
-<h2>3.11 <a href="artifacts/EXECUTION_METHODOLOGY.html"><code>docs/EXECUTION_METHODOLOGY.md</code></a> — the pipeline&#39;s own changelog (excerpt)</h2>
+<h2>3.11 <code>docs/EXECUTION_METHODOLOGY.md</code> — the pipeline&#39;s own changelog (excerpt)</h2>
 <p>Originally an HTML report; converted to markdown for this excerpt. Records what
 changed in the agent pipeline, model/effort tiering, and binding project rules,
 dated per revision:</p>
