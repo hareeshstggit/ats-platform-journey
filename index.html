@@ -168,7 +168,10 @@ Part 2 tells that story in full if you&#39;d rather read it than dig for it.</p>
 <h2>3. Who&#39;s actually driving — the orchestration model</h2>
 <p><strong>There is no separate orchestrator agent.</strong> The main-loop session — human-supervised —
 <em>is</em> the orchestrator. Find <code>CLAUDE.md</code>&#39;s &quot;Subagents&quot; section and read the pipeline it
-states directly: <code>backend-engineer → unit-test-engineer → functional-test-engineer → integration-test-engineer → principal-reviewer → human approves merge</code>.</p>
+states directly: <code>backend-engineer → unit-test-engineer → functional-test-engineer → integration-test-engineer → principal-reviewer → human approves merge</code>. &quot;Human-supervised&quot;
+governs decisions — approvals, scope, priority, design calls, new rules from failures —
+not the work itself: once dispatched, each agent runs its slice end to end, autonomously.
+Part 2 §8.1 unpacks this fully.</p>
 <p><strong>Where each subagent&#39;s real contract lives:</strong> <code>.claude/agents/*.md</code> — one file per
 named subagent. Open <code>.claude/agents/principal-reviewer.md</code> and check its frontmatter
 (<code>model:</code>, <code>effort:</code>) against what <code>CLAUDE.md</code>&#39;s Model Tier mandate says that role
@@ -422,14 +425,12 @@ genuinely relational. Never an EAV (entity-attribute-value) pattern.</li>
 <p>This exists specifically to stop the slow accumulation of one-off nullable columns
 added for every feature request — a real, common failure mode in long-lived schemas.</p>
 <h3>6.2 The additive-only migration rule</h3>
-<p>Every schema change must be <strong>backward-compatible only</strong>: new columns are nullable or
-carry a default; existing indexes, constraints, and RLS policies are preserved; nothing
-populated is ever dropped, renamed, or retyped in the same release the running code
-depends on it. A change that genuinely needs to remove something old happens in
-phases across releases — add new, backfill, switch reads/writes, drop old <em>later</em> —
-never all at once.</p>
-<p>Every migration must also be <strong>reversible</strong> — a real, working downgrade path, not a
-stub — and validated against existing data in both directions before it ships.</p>
+<p>Every schema change is <strong>backward-compatible only</strong>: new columns nullable or defaulted;
+existing indexes/constraints/RLS preserved; nothing populated is dropped, renamed, or
+retyped in the same release the running code depends on it. Removing something old
+happens in phases — add new, backfill, switch reads/writes, drop old <em>later</em>, never all
+at once. Every migration is also <strong>reversible</strong> — a real downgrade, not a stub — and
+validated against existing data both directions before it ships.</p>
 <h3>6.3 <a href="artifacts/SCHEMA_CHANGE.md"><code>docs/SCHEMA_CHANGE.md</code></a> — the permanent, structured log</h3>
 <p>Every schema change, no exceptions, gets one entry: date, baseline, author, the
 <em>trigger</em> (what feature or fix required it), the change type, which storage mechanism
@@ -438,18 +439,16 @@ migration&#39;s revision id, a backward-compatibility/rollback note, and the lin
 spec/PR. This is the answer to a question a live database schema can never answer on
 its own: <em>why does this column exist, and was it deliberate?</em></p>
 <h3>6.4 The backfill mandate — a rule earned by a real incident</h3>
-<p>A subtle trap this project actually hit: a new column can be &quot;technically true&quot; when
-its migration says &quot;no existing rows affected, backfills to NULL&quot; — while being
-<em>functionally wrong</em>, because the value already existed somewhere else (a status
-history table, a related entity) and just wasn&#39;t backfilled. NULL for &quot;this was already
-decided before the column existed&quot; is indistinguishable from NULL for &quot;never decided&quot; —
-and any feature reading that column will silently misbehave for every pre-existing row.</p>
-<p>The rule this incident produced: every such migration must explicitly do one of two
-things — (a) write an idempotent backfill script deriving the correct value from the
-authoritative source wherever it can be determined unambiguously, or (b) explicitly
-document, in both the migration and the schema-change log, <em>why</em> no backfill was
-possible or needed. Silence on the question is not an acceptable default — a reviewer
-must affirmatively confirm one of the two was considered, never assume it away.</p>
+<p>A subtle trap this project actually hit: a migration can be &quot;technically true&quot; saying
+&quot;no existing rows affected, backfills to NULL&quot; while being <em>functionally wrong</em>, because
+the value already existed elsewhere (a status history table, a related entity) and just
+wasn&#39;t backfilled — NULL for &quot;already decided before the column existed&quot; is
+indistinguishable from NULL for &quot;never decided,&quot; so any feature reading that column
+misbehaves silently for every pre-existing row.</p>
+<p>Rule this incident produced: every such migration must explicitly (a) write an
+idempotent backfill deriving the value from its authoritative source wherever
+unambiguous, or (b) document why none was possible — silence is not an acceptable
+default, a reviewer must affirmatively confirm one was considered.</p>
 <h2>7. The markdown file directory</h2>
 <p>A comprehensive catalog — what exists, what it&#39;s for, and how often it changes:</p>
 <table>
@@ -547,9 +546,24 @@ conversation — is the orchestrator.</strong> It reads <code>CLAUDE.md</code>&#
 <pre><code>backend-engineer → unit-test-engineer → functional-test-engineer →
 integration-test-engineer → principal-reviewer → human approves merge
 </code></pre>
-<p>...and dispatches specialist subagents accordingly, every module, every session. No
-separate process watches the main loop do this. The discipline is: <code>CLAUDE.md</code> is
-re-injected into context every turn, and the main loop is expected to have read it.</p>
+<p>...and dispatches specialist subagents accordingly, every module, every session.</p>
+<p><strong>&quot;Human-supervised&quot; does not mean &quot;hand-held.&quot;</strong> Once dispatched, a subagent runs its
+assigned slice — UX/UI, feature build, unit tests, functional tests, review — <strong>end to
+end, autonomously, no prompt-by-prompt steering inside that work.</strong> A <code>backend-engineer</code>
+run doesn&#39;t pause mid-task for a human to confirm the next line; it builds the whole
+slice and reports back. What the human-in-the-loop conversation actually governs is a
+narrower set of decision points, not the execution itself: <strong>approvals</strong> (merging a
+reviewed PR — always the human&#39;s last step, never delegated); <strong>scope confirmations</strong>
+(what a feature means, before agents are dispatched — Rule 1 in §9: clarify before
+building, never after); <strong>priority decisions</strong> (what&#39;s next, what waits); <strong>architecture/
+design judgment calls</strong> a spec doesn&#39;t already settle; <strong>confirming a genuine fork an
+agent or the orchestrator surfaces</strong> (the orchestrator doesn&#39;t guess); and <strong>rule
+creation from failure</strong> — a new binding mandate gets authored into <code>CLAUDE.md</code> here
+(§9), after which both orchestrator and every subagent are bound by it autonomously,
+with no turn-by-turn reminder needed.</p>
+<p>Dispatch, execution, and reporting are autonomous. Direction, judgment, and final
+sign-off are the human&#39;s. No separate process watches the main loop do this — the
+discipline is <code>CLAUDE.md</code> re-injected every turn, read before every dispatch.</p>
 <h3>8.2 Where each subagent&#39;s actual contract lives</h3>
 <p><code>CLAUDE.md</code>&#39;s roster is a <em>pointer</em>. The binding contract — system prompt, tools, model,
 default effort — lives in one file per subagent under <code>.claude/agents/</code>. File names and
@@ -695,13 +709,9 @@ entire time, not because of one bad commit, but because of how the pipeline itse
 shaped. The mandate closes both: a permanent model-tier split for the highest-stakes
 roles, and a rule that CI jobs must run as independent, parallel jobs — never
 sequential steps where one early failure masks everything behind it.</p>
-<p><strong>The backfill mandate.</strong> Born from a migration that shipped a technically-true &quot;no
-rows affected&quot; docstring for a new column, while a real pre-existing row&#39;s value was
-actually derivable from an already-existing authoritative source and simply wasn&#39;t
-backfilled — which surfaced later as a shipped feature silently misbehaving for one
-real, previously-decided record. The rule now requires an explicit backfill-or-justify
-decision on every such migration, with a reviewer required to affirmatively confirm it
-was considered — silence is not treated as an acceptable default.</p>
+<p><strong>The backfill mandate</strong> — full incident and rule in §6.4 above. Same pattern: a
+technically-true migration docstring, a silently-misbehaving shipped feature, a rule
+requiring an explicit backfill-or-justify decision instead of silence.</p>
 <h3>9.3 What to take from this if you&#39;re building your own system</h3>
 <p>When you write your own agentic project&#39;s rulebook:</p>
 <ul>
@@ -881,17 +891,15 @@ requested). principal-reliability-engineer / principal-performance-auditor are
 on-demand opus/xhigh specialists pulled in for deep dives. The human approves merge.
 
 ## Regression prevention gates
-Gates 1–4 (unit tests before functional tests; user-visible tech debt fixed next
-session; spec read before any enum/transition change; cavecrew-builder for tiny
-fixes) override only via 3 consecutive explicit asks, never one request. Gate 5
-— full subagent pipeline on EVERY bug fix, ZERO exceptions, no override at all —
-added after a session ran 3 bug fixes straight through the main loop, no review
-gate, costs escalated.
+Gates 1–4 (unit tests before functional tests; tech debt fixed next session; spec read
+before enum/transition changes; cavecrew-builder for tiny fixes) override only via 3
+consecutive explicit asks. Gate 5 — full pipeline on EVERY bug fix, ZERO exceptions,
+no override — added after 3 bug fixes ran through the main loop with no review gate.
 
 ## Agent provenance &amp; review gate
 Every commit carries Agent: &lt;producing-agent&gt; and Reviewed-by: &lt;reviewer — verdict&gt;
-trailers. The principal-reviewer verdict is the merge-readiness signal; the human
-still approves the merge.
+trailers. principal-reviewer&#39;s verdict is the merge-readiness signal; human still
+approves the merge.
 
 ## Git
 Branch per feature (dev/&lt;phase&gt;-&lt;feature&gt;), conventional commits, PR for every
@@ -995,9 +1003,8 @@ ageing_bucket (lte_7 / 8_to_15 / 16_to_30 / 31_to_45 / 46_to_90 / 91_to_120 / ov
 business-rule list, the permissions matrix, and the exact error-code table
 backend-engineer reads before writing any code.</p>
 <h2>3.6 <code>.claude/agents/*.md</code> — the eight subagent contracts</h2>
-<p>Two shown near-full (the contrasting pair: implementer vs. the review gate); the
-other six as their real frontmatter + one-line role, since the full prompts are
-paraphrased faithfully in Parts 1/2 above.</p>
+<p>Two near-full (implementer vs. review gate); the other six as real frontmatter +
+one-line role — full prompts are paraphrased faithfully in Parts 1/2 above.</p>
 <h3><a href="artifacts/agent-backend-engineer.md"><code>backend-engineer.md</code></a> (sonnet/high)</h3>
 <pre><code class="language-markdown">You are a senior backend engineer on the ATS Platform. Read
 openspec/specs/&lt;module&gt;/spec.md first — the source of truth. Build only what the
