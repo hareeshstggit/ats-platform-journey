@@ -56,11 +56,24 @@ in `openspec/changes/async-pipeline-durability/`) is the durable plan — read `
 Decisions D1-D10 and the phase sequencing before resuming this work.
 
 **Phase 1 (D1 enqueue-after-commit, D2 bounded missing-row retry, D5 `retry_count` migration `0054`,
-D6 retrigger-extraction concurrency+display_name guard) — implemented on `fix/async-pipeline-phase1`,
-`principal-reviewer` round in progress, not yet merged.** Phases 2-6 (generalized reconciler + beat
-scheduling, `acks_late` hardening, LLM timeouts, UI stuck-row surfacing, AWS Terraform) NOT started —
-see `tasks.md` §2-7 for the exact checklist, and design.md's Migration Plan for why the phase order
-matters (D6 before D2's `acks_late` dependents, D3/D4 before D7).
+D6 retrigger-extraction concurrency+display_name guard) — merged PR #214, 2026-08-05.** Took 4
+`principal-reviewer` rounds (CHANGES-REQUESTED x3, then APPROVE-WITH-NITS) — every round involved live
+execution/mutation-testing, not static review; caught real defects each time (wrong migration table
+targeting the human-decision `screening_decisions` table instead of an AI-pipeline one, a fabricated
+test-file citation, a dead default-parameter whose default value reproduced the incident's exact
+pattern, 3 provably-flaky time-coupled tests, an overclaimed guarantee that survived into a delta spec
+and would have re-corrupted the main spec at archive time, and the frontend never being touched despite
+the backend changing what its 409 error means). Core mechanism (enqueue-after-commit ordering, the
+version-guarded retrigger claim under real concurrency) independently verified multiple times against
+real Postgres. Local dev DB synced to `0054 (head)`.
+
+Also cleaned up **188 leaked Celery worker processes** that had accumulated during this session's own
+verification runs (not historical — all from today) — killed and restarted via the watchdog to a single
+stable worker. Separate finding, not part of Phase 1's diff.
+
+Phases 2-6 (generalized reconciler + beat scheduling, `acks_late` hardening, LLM timeouts, UI stuck-row
+surfacing, AWS Terraform) NOT started — see `tasks.md` §2-7 for the exact checklist, and design.md's
+Migration Plan for why the phase order matters (D6 before D2's `acks_late` dependents, D3/D4 before D7).
 
 ## RESOLVED 2026-08-05 — 3 queued chart follow-ups merged (PR #212)
 
