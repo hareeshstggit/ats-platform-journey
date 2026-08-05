@@ -7,23 +7,30 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-08-05) — user's explicit instruction: surface this list before anything else
+## RESUME HERE FIRST (2026-08-06) — user's explicit instruction: surface this list before anything else
 
-User paused 2026-08-04 evening with "will resume tomorrow of testing the AI features developed
-today" and explicitly asked that THIS list be brought up first, unprompted, at the start of the
-next session:
+User paused 2026-08-05 night with "Pause here. Let us resume tomorrow morning" and has a standing
+instruction from a prior session to bring the resume list up first, unprompted:
 
-1. **Test the 4 Gemini-driven AI features live** — JD extraction, screening-question generation,
-   candidate screening/matching, interview kit generation. All merged (PR #211), all
-   permanently on in `.env`, all independently live-verified already this session — but the
-   user has not yet tried them live themselves. Confirm `scripts/dev-stack-watchdog.ps1` is
-   still running (auto-starts at logon via the Startup-folder shortcut) before testing, so
-   Celery/Postgres/Redis/backend are all confirmed up first.
-2. **PR #210 (CI test infrastructure) is still open and unresolved** — `e2e` job genuinely
+1. **Continue `async-pipeline-durability` — Phase 2 next (self-healing reconciler + beat
+   scheduling).** Phase 1 (the actual incident root-cause fix) is merged — PR #214, 2026-08-05,
+   5 principal-reviewer rounds, see the section below for full detail. Phases 2-6 (generalized
+   reconciler/beat, `acks_late` hardening, LLM timeouts, UI stuck-row surfacing, AWS Terraform)
+   are NOT started — `openspec/changes/async-pipeline-durability/tasks.md` §2-7 is the exact
+   checklist. **Cost checkpoint before resuming**: Phase 1 alone ran well past its ~$60-90
+   estimate (5 review rounds x2 features this session) — confirm with the user whether to
+   continue at the same review intensity for Phases 2-6, or adjust scope/rigor, before dispatching.
+2. **Test the 4 Gemini-driven AI features live** — JD extraction, screening-question generation,
+   candidate screening/matching, interview kit generation. Still not user-tested live themselves
+   (carried over from 2026-08-04/05). Confirm `scripts/dev-stack-watchdog.ps1` is running first —
+   note it silently died at least once already this week (M5 finding, `async-pipeline-durability`
+   design.md) from an unhandled Podman-not-ready error at logon; verify actual process state, not
+   just the Startup-shortcut's existence.
+3. **PR #210 (CI test infrastructure) is still open and unresolved** — `e2e` job genuinely
    broken across 2 fix attempts, real root cause never found (see the section below for full
-   detail). Not blocking AI testing, but flag its existence.
+   detail). Not blocking, but flag its existence.
 
-## IN PROGRESS 2026-08-05 — live async-pipeline incident, OpenSpec change `async-pipeline-durability` in flight, Phase 1 under review
+## RESOLVED 2026-08-05 — live async-pipeline incident root-caused and fixed, Phase 1 merged (PR #214)
 
 A bulk upload of ~50-55 resumes left 48 candidates permanently stuck at `extraction_status=
 'pending'` for 4+ hours — discovered by the user, not by any alert. Whole local dev stack (Postgres/
