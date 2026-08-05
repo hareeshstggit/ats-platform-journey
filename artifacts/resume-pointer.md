@@ -23,6 +23,45 @@ next session:
    broken across 2 fix attempts, real root cause never found (see the section below for full
    detail). Not blocking AI testing, but flag its existence.
 
+## IN PROGRESS 2026-08-05 — live async-pipeline incident, OpenSpec change `async-pipeline-durability` in flight, Phase 1 under review
+
+A bulk upload of ~50-55 resumes left 48 candidates permanently stuck at `extraction_status=
+'pending'` for 4+ hours — discovered by the user, not by any alert. Whole local dev stack (Postgres/
+Redis/backend/Celery/frontend) was also down; the watchdog's Startup-shortcut wasn't actually
+running (a starter, not a supervisor — restarting it manually and running the 48 stuck rows through
+the existing `retrigger-extraction` path fixed THAT batch, 51/51 completed 0 failed, but did not fix
+the underlying bug).
+
+`principal-reliability-engineer`'s structural analysis (full report in this session's transcript,
+condensed into `openspec/changes/async-pipeline-durability/design.md`) found the incident is NOT a
+one-off crash: bulk upload enqueues extraction from inside a DB savepoint, before the outer commit —
+the worker almost always wins the race, finds no row, and used to silently `return` with no retry, no
+failure state. This fires on every bulk upload regardless of stack health — the same failure mode the
+`positions`/JD module already found and fixed (never generalized to candidates/screening/kits). 4 more
+criticals found: no `acks_late` (worker death loses in-flight work), no Redis persistence (broker is
+the only record of pending work and isn't durable), **no `celery beat` process runs anywhere** (zero
+self-healing — a half-built `reconcile_screenings` reconciler exists, coded, never scheduled), and the
+AWS Terraform for ElastiCache/ECS/monitoring is an empty skeleton (`docs/GO_LIVE_CHECKLIST.md`'s
+"Authored, not applied" row overstates this — corrected as part of this change).
+
+User's explicit stakes: "If this doesn't work properly as expected, I would consider this entire
+project to be a failure." User-confirmed scope decisions (binding for this change): 1-minute
+stuck-row SLA (tighter than the reliability engineer's 5-min recommendation — raises re-drive
+frequency, which is why Phase 1's idempotency/claim guard had to ship first), 3 max re-drive attempts,
+AWS Terraform build-out IN this same change (not split off), stuck-row alerts in BOTH logs/metrics AND
+the UI.
+
+**OpenSpec change `async-pipeline-durability`** (proposal/design/5 delta specs/7-phase tasks.md, all
+in `openspec/changes/async-pipeline-durability/`) is the durable plan — read `design.md` for the full
+Decisions D1-D10 and the phase sequencing before resuming this work.
+
+**Phase 1 (D1 enqueue-after-commit, D2 bounded missing-row retry, D5 `retry_count` migration `0054`,
+D6 retrigger-extraction concurrency+display_name guard) — implemented on `fix/async-pipeline-phase1`,
+`principal-reviewer` round in progress, not yet merged.** Phases 2-6 (generalized reconciler + beat
+scheduling, `acks_late` hardening, LLM timeouts, UI stuck-row surfacing, AWS Terraform) NOT started —
+see `tasks.md` §2-7 for the exact checklist, and design.md's Migration Plan for why the phase order
+matters (D6 before D2's `acks_late` dependents, D3/D4 before D7).
+
 ## RESOLVED 2026-08-05 — 3 queued chart follow-ups merged (PR #212)
 
 All 3 chart follow-ups from the list above are done and merged: (a) real root cause of the
@@ -176,7 +215,12 @@ rendering bug for status groups with uneven per-position interview-level counts 
 D9-D14's chart-label rework, not the "8-level position" premise an earlier round chased — that
 turned out to be a false RLS-unscoped-query artifact; real org level counts never exceed 6, the
 existing ceiling assumption was correct all along). Plus a live-feedback polish mid-review
-(tightened chart bar/cell gaps so all 12 STG12 positions fit without horizontal scroll).
+(tightened chart bar/cell gaps) — **superseded 2026-08-05 by fix/pipeline-chart-responsive-page-
+size**: that gap-tightening only masked the underlying issue at one assumed ~1600px+ viewport; it
+did NOT make all 12 STG12 positions fit without horizontal scroll on real narrower/scaled
+viewports (e.g. Windows 125%/150% display scaling), which the later fix addresses by fitting the
+page size to the measured width (showing fewer positions on a narrower viewport) instead of
+another fixed-width guess.
 
 **Notable process incident:** a background agent self-chained a child sub-task that committed
 work against explicit "do not commit" instructions, then — on discovering a later legitimate
