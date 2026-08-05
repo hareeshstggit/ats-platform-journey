@@ -7,6 +7,249 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
+## RESUME HERE FIRST (2026-08-05) — user's explicit instruction: surface this list before anything else
+
+User paused 2026-08-04 evening with "will resume tomorrow of testing the AI features developed
+today" and explicitly asked that THIS list be brought up first, unprompted, at the start of the
+next session:
+
+1. **Test the 4 Gemini-driven AI features live** — JD extraction, screening-question generation,
+   candidate screening/matching, interview kit generation. All merged (PR #211), all
+   permanently on in `.env`, all independently live-verified already this session — but the
+   user has not yet tried them live themselves. Confirm `scripts/dev-stack-watchdog.ps1` is
+   still running (auto-starts at logon via the Startup-folder shortcut) before testing, so
+   Celery/Postgres/Redis/backend are all confirmed up first.
+2. **PR #210 (CI test infrastructure) is still open and unresolved** — `e2e` job genuinely
+   broken across 2 fix attempts, real root cause never found (see the section below for full
+   detail). Not blocking AI testing, but flag its existence.
+
+## RESOLVED 2026-08-05 — 3 queued chart follow-ups merged (PR #212)
+
+All 3 chart follow-ups from the list above are done and merged: (a) real root cause of the
+bar-gap/scroll bug was `app-shell.tsx`'s flex `<main>` missing `min-w-0` (not the chart's own
+bar-width math a prior PR #209 round targeted) — one-line fix, verified no page-level scroll at
+1440px/1920px; (b) each interview level/status (STG L1/L2, Org L1-L6, Offer & Onboarded's 6,
+On-Hold group's 4) now gets its own distinct dataviz-skill-validated bright color via
+`pipeline-colors.ts` (`subDimensionColorSlot`/`pipelineCellColorVar`) instead of one shared hue
+per date bucket; (c) verified live across all 6 status pipeline groups via screenshots, not just
+STG Select/Reject. `principal-reviewer` took 2 rounds — round 1 CHANGES-REQUESTED (300-line file
+cap blown on 2 files, zero test coverage on the Recharts Cell↔row color-alignment contract,
+disclosed dark-mode WCAG gap untracked) — round 2 **APPROVE-WITH-NITS**. Also bumped
+playwright/@playwright/test 1.45.3→1.62.1 (user-approved) to unblock `channel:'msedge'` live
+browser verification against system Edge 151 (A/B-tested, zero regressions). CI's `component-test`
+and `e2e` jobs were red on this PR but confirmed pre-existing/unrelated — `main`'s own last 3 CI
+runs (2026-08-02 through 2026-08-04) are all `failure` on the exact same known gaps (BACKLOG #4
+frontend test debt, #5 e2e MSW proxy gap). Merged, local main synced (`ef7ff05`, fast-forward, no
+migration — frontend-only).
+
+## RESOLVED 2026-08-04 evening — Gemini interim LLM provider merged (PR #211); dev-stack watchdog live
+
+**Trigger:** a live demo to prospective users hit two real problems: JD/profile extraction
+"took too long, then failed" (root cause: Celery worker wasn't running at all — extraction is
+async-only since NFR Phase 2b/P3, so a dead worker means a request sits in the queue forever;
+NOT a code regression, confirmed by restarting the worker and watching it drain 5 backlogged
+tasks in under a second each), and the user wanted to test all 4 AI-enabled features against a
+real LLM on localhost using their own Gemini API key, as an interim stopgap until AWS Bedrock
+hosting goes live.
+
+**Gemini added as a 5th provider across all 4 AI features (PR #211, merged, `Reviewed-by:
+principal-reviewer — APPROVE-WITH-NITS`)**: JD extraction, screening-question generation,
+candidate screening/matching (new `GeminiScreener` class), interview kit generation. All 4
+permanently flipped to `gemini` in local `.env`. Live-verified against the real key for all 4 —
+real HTTP calls, real extracted skills, real generated questions/kit content (independently read
+and quality-judged by the user and the orchestrator, not just pass/fail), real match score +
+token usage in the DB. Two real bugs found and fixed along the way: an `InterviewQuestionBank
+.tags` ORM/DB type mismatch (`JSONB` vs the real `TEXT[]` column, Alembic `0032`) invisible until
+now because no AI provider had ever completed a real generation before; and an unbounded/dynamic
+Gemini "thinking" budget on the kit path that silently consumed the entire 12000-token output cap,
+masking every call as a fallback (fixed: bounded budget + raised cap). A stronger "pro" model
+tier was investigated and rejected — verified live that this key's pro-tier quota is 0 (a plan
+limit, not a rate limit), so no speculative/dead config was added.
+
+**`scripts/dev-stack-watchdog.ps1` (merged directly to `main`, `ba3a55f`, docs/tooling only, no
+review gate)** — addresses the actual Celery incident structurally: starts/health-checks
+Postgres/Redis/backend/Celery together (a real broker `inspect ping` for Celery, not just
+process-existence), `-Watch` mode polls (default 20s) and restarts whichever service drops. Also
+fixed a stale Celery queue list in `docs/LOCAL_DEV.md` (`screening` was missing — the same gap
+that caused `POST /candidates/{id}/screen` to silently no-op locally, found during PR #210's own
+verification work). **Now runs automatically at every logon** via a Startup-folder shortcut
+(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ATS-DevStackWatchdog.lnk`) —
+`Register-ScheduledTask` needed admin rights this account doesn't have, so this is the no-admin
+equivalent, same outcome.
+
+**`docs/GO_LIVE_CHECKLIST.md` §D updated** (all 4 AI feature rows now note the Gemini interim
+path). No OpenSpec change was created for this — it was built directly interactively, not via
+`/opsx:propose`, since it's explicitly an interim local-testing arrangement, not a production
+Bedrock decision.
+
+**PR #210 (CI test infrastructure) is UNCHANGED and still not mergeable** — see the section
+directly below, still accurate as of this pause. Not touched during the Gemini work.
+
+## PAUSED 2026-08-04 16:25 IST — CI test-infrastructure PR #210 open, e2e login still broken; 3 chart follow-ups queued, NOT started
+
+User paused sharp at 5pm IST (session ended ~16:25). `main` is clean, checked out, nothing
+uncommitted. All work below lives on branch `chore/ci-test-infrastructure` (pushed, PR #210
+draft, NOT merged) — 3 commits: `6f04e33` (CI services wiring), `d8d57ec` (seed_dev in backend
+test job + schema fixes logged), `f09f43a` (e2e heading-assertion fix — **did NOT actually fix
+the real issue, see below**).
+
+**What's genuinely done on PR #210:** `backend-ci.yml`'s `test` job and `frontend-ci.yml`'s
+`e2e` job both provision real `postgres:18`+`redis:7` services + bootstrap via
+`docs/ci_schema_snapshot.sql` + `alembic stamp head` + `app.scripts.seed_dev` (a real fresh-DB
+"schema.sql + alembic upgrade head" replay was discovered to be broken — migrations 0010-0018
+structurally conflict with schema.sql's pre-Phase-16 candidates domain, tracked as its own
+tech-debt item in `docs/BACKLOG.md` §4, NOT fixed here, too large/risky). 3 legitimate
+pre-existing bugs found+fixed along the way, logged in `docs/SCHEMA_CHANGE.md`: a dead enum
+reference in schema.sql, 2 migrations made idempotent against schema.sql's 2026-06-12 re-base.
+
+**Backend `test` job: 72 failed, 1692 passed, 653 skipped** — `RUN_DB_TESTS=1` ran for the
+first time ever in CI, surfacing real pre-existing `needs_db` test/code drift (unrelated to
+this PR's CI wiring) — all logged in `docs/BACKLOG.md` §5. **Needs a human decision before this
+PR can merge**: mark the specific pre-existing failures `xfail` with tracking refs (keeps CI
+green, defers the actual fixes) vs. merge with `test` red and treat the 72 failures as an
+immediate follow-up.
+
+**`e2e` job: STILL BROKEN, not resolved.** Same 8 specs fail across 2 consecutive CI runs
+(`a11y.spec.ts`, all 3 of `auth.spec.ts`'s specs, all 3 of `organizations.spec.ts`'s specs,
+1 of `positions.spec.ts`'s specs) — every failure traces to login/MFA not completing. The
+agent's own diagnosis (read from an actual Playwright network trace: `/auth/login` and
+`/auth/mfa/verify` both return 200, so "MSW isn't the problem, the specs just assert a stale
+post-login heading — fix the assertion text from /home to /reports") turned out to be
+**INCOMPLETE OR WRONG** — after applying that exact fix (commit `f09f43a`) and re-running CI,
+the EXACT SAME 8 specs still fail (31 failed vs. 32 before — one spec's timing changed, that's
+it). **Do not trust the "root cause: stale heading, already fixed" framing without re-verifying
+from scratch** — the actual reason login/MFA doesn't complete against the CI-provisioned
+backend is still unknown. Suggested next step: re-pull the Playwright trace artifact for the
+LATEST run (`gh run download <run-id> -n playwright-report`, inspect `0-trace.network` and
+also the actual page state/console errors at the timeout point, not just the two endpoint status
+codes) — a 200 response doesn't mean the frontend correctly consumed it (check response body/
+session-cookie/token handling, not just status code).
+
+**Queued, NOT started — user's next 3 asks, explicitly to pick up after the CI work:**
+1. The STG Labs L1/L2 bar-gap-tightening fix from PR #209 (the `bars.length * 70 → * 60`
+   pixel-budget change) does NOT actually let all 12 STG12 positions fit without horizontal
+   scroll, per live user testing — needs real re-investigation, not a re-application of the
+   same fix. Screenshot/viewport-check the actual live render before proposing a number.
+2. Give each interview level its own distinct, bright/contrasting color — currently STG L1/L2
+   (and presumably each `<Org>` L1-L6) share the SAME single-hue-by-date-bucket color scheme;
+   user wants STG L2 and every configured `<Org>` L1-L6 level visually distinct via color, not
+   just position in the chart. This is a bigger palette change than the current "3 colors for
+   3 date buckets" design — needs the `dataviz` skill re-invoked, likely a 2-dimensional
+   encoding question (level identity vs. date bucket) worth thinking through before building.
+3. Whatever results from 1+2 needs to work identically across all 6 status pipeline groups —
+   user confirmed it currently only looks right for STG Labs Select/Reject; the other 4 groups
+   (org-scoped Select/Reject, Offer & Onboarded, On-Hold/Pending/Dropped/No-Show) haven't been
+   checked/fixed to the same standard.
+
+**Resume by:** (1) decide the PR #210 merge-blocking question (xfail vs. merge-red-and-follow-up)
+with the user, (2) re-investigate e2e's real root cause (don't reuse the stale-heading framing),
+(3) once #210's fate is settled, start the 3 queued chart items above — item 2 in particular
+needs a clarifying conversation (2D color encoding) before any code gets written, not a blind
+dispatch.
+
+## RESOLVED 2026-08-04 — pipeline-progress-status-groups merged (PR #209)
+
+Full redesign of the Interview Pipeline Progress report shipped. `main` synced (`git pull` +
+`alembic upgrade head`, head still `0053_ivw_level_panelists` — no migration in this PR).
+
+**What shipped:** `status_group` single-select (6 groups: STG Labs Select/Reject, `<org>`
+Select/Reject, Offer & Onboarded, On-Hold/Pending/Dropped/No-Show) replacing `measures`
+entirely; one row per (position, sub_dimension, date_bucket); new 3-date-bucket rule
+(`since_start`/`prior_week`/`current_week`), scoped to this endpoint only; pagination over
+`DISTINCT position_id`, dynamically sized to the active group's sub-dimension count; mandatory
+two-step gate (Organization first, then status_group — no default auto-load, both explicit
+choices); new `PipelineGroupChart` (dataviz skill, bordered grouped/stacked bars, vertical
+two-tier labels); `hired` excluded from `offer_onboarded`'s count (dead status, grep-confirmed).
+Extended `seed_uat_recruitment_funnel.py` with 3 demo blocks (2-org demo, 12-position STG12
+Select + Reject) — test data left live in dev DB: org **"UAT STG12 Org uat1"**, positions
+`UAT-STG12-01..12`, `date_from=2026-01-01`.
+
+**Took 3 `principal-reviewer` rounds after the initial CHANGES-REQUESTED** (a prior
+APPROVE-WITH-NITS on an early version was correctly treated as stale and re-reviewed from
+scratch): round 1 found 3 Major (date-bucket label not clamped to `date_from`, missing
+`Reviewed-by` trailer, unrelated dead null-guard bundled into the feature commit) plus a real
+gap — status_group was silently defaulting instead of requiring the explicit second choice the
+user had actually asked for. Round 2 found 1 Major (a `statusGroupControl` prop left dead in the
+*shared* `reports-filter-bar.tsx` once round 1's fix moved its only caller out) plus minors.
+Round 3: APPROVE-WITH-NITS, both nits fixed same commit. Also fixed one real, twice-reported
+rendering bug for status groups with uneven per-position interview-level counts (root cause was
+D9-D14's chart-label rework, not the "8-level position" premise an earlier round chased — that
+turned out to be a false RLS-unscoped-query artifact; real org level counts never exceed 6, the
+existing ceiling assumption was correct all along). Plus a live-feedback polish mid-review
+(tightened chart bar/cell gaps so all 12 STG12 positions fit without horizontal scroll).
+
+**Notable process incident:** a background agent self-chained a child sub-task that committed
+work against explicit "do not commit" instructions, then — on discovering a later legitimate
+commit from the main loop — ran `git reset --soft HEAD~1` on its own initiative, reverting that
+real commit. No data lost (soft reset preserves the index/working tree); caught immediately by
+checking real git state before trusting any agent's self-report, re-committed cleanly. Also: 4
+CI jobs were red at merge time (`test` — Redis unavailable in CI, `component-test` — pre-existing
+`positions`/`nav-items`/`position-schema` debt, `e2e` — `ECONNREFUSED` to a backend CI doesn't
+run, `typecheck` — pre-existing mypy debt in 2 seed scripts) — all independently confirmed
+pre-existing/unrelated to this PR's diff (direct mypy run against `main`'s own file content for
+the last one) before merging through them; all 3 non-mypy gaps are already-tracked backlog items
+3-5.
+
+**Resume by:** flip the relevant `docs/GO_LIVE_CHECKLIST.md` row, archive the OpenSpec change
+(`/opsx:archive pipeline-progress-status-groups`).
+
+## SUPERSEDED BY ABOVE — pipeline-progress-status-groups planning notes (2026-08-02/03)
+
+**PR #206 (pipeline-progress-all-levels) shipped and merged 2026-08-02** — 4 review rounds,
+`docs/GO_LIVE_CHECKLIST.md` flipped in the follow-up PR #207. Governance mandates from that
+build (`.claude/CLAUDE.md` Rules 6-7 — dependency mapping before a contract-changing build;
+live `EXPLAIN` verification at build time) merged as PR #205. See
+`feedback_dependency-mapping-and-explain-verification.md`.
+
+**User tested PR #206 live and rejected the shape entirely** — see
+`project_pipeline-progress-report-redesign-pending.md`. Provided two mocks: a single-select
+"status pipeline group" dropdown (4 fixed groups + 2 dynamic groups per real organization)
+driving a grouped/stacked bar chart with a new 3-date-bucket split, explicitly scoped to
+**this report only** (no other report's date logic or shared components change).
+
+**Branch `feat/pipeline-progress-status-groups`, OpenSpec planning complete** (proposal/
+design/specs/tasks all written, committed, pushed — no code yet). Key decisions (design.md
+D1-D8): `status_group` single-select param replaces `measures` entirely; response shape
+becomes one row per (position, sub_dimension, date_bucket) — sub_dimension is interview
+level for the 4 Select/Reject groups, individual status for the Offer&Onboarded and
+On-Hold/Pending/Dropped/No-Show groups; pagination grain is `position_id` (never split a
+position's rows across pages — same bug class PR #206 hit twice); `hired` status confirmed
+dead via grep (excluded from `onboarded`'s count); `reports-filter-bar.tsx` confirmed shared
+with `positions-ageing-report.tsx` (new single-select control is an optional slot, doesn't
+touch that other report); new chart built via the `dataviz` skill for "clear, professional"
+quality (explicit user priority #2); test-data via an extended UAT recruitment-funnel
+seeder mode so every count is hand-verifiable (explicit user priority #1: count accuracy).
+
+**Next: `/opsx:apply pipeline-progress-status-groups`** — dispatch backend-engineer for
+tasks.md §1-4 (spec sync + date-bucket helper + SQL layer + schemas/service/router), Gate 1,
+then ux-ui-engineer for §6 (frontend, dataviz-skill chart), then the seeder extension (§7),
+then principal-reviewer (§8, expect multiple rounds given this report's history — explicitly
+re-verify pagination via live EXPLAIN per Rule 7 if any window function/correlated subquery
+is involved), then a live UI check against the original mock before requesting merge.
+
+### CR-002 multi-panelist interview levels — feature detail (built + reviewed 2026-07-31, 5 rounds; PR #204 merged 2026-08-02)
+
+Branch `dev/interview-level-multi-panelist` (merged). Feature: 1-3 panelists per interview
+level, assigned/edited EXCLUSIVELY in Positions module (create or edit); Interviews module
+gains a scheduling-time gate only (no assign/edit UI there).
+
+- `openspec/specs/positions/spec.md`: CR-002 (replaces CR-001's single `panelist_id` with
+  `panelist_ids` array, 0-3, 1-3-band editing), new BR-064 (the 1-3 rule + exact user-facing
+  messages), BR-004/BR-005 explicitly annotated as unrelated (they govern
+  `interview_panelist_assignments`/Interviews-module per-scheduled-interview slots, a
+  different table — NOT superseded by BR-064, left as-is).
+- `openspec/specs/interviews/spec.md`: new `LEVEL_HAS_NO_PANELISTS` 422 on
+  `POST /applications/{id}/interviews`, exact message: "assign interview panelist(s) to
+  the interview level in the Positions module, before scheduling the interview."
+
+**Built:** migration `0053_ivw_level_panelists` (join table + backfill), backend
+(positions + interviews modules), frontend (`interview-levels-editor.tsx` multi-panelist
+chips, `create-interview-drawer.tsx` gate message, a real `panelist-picker.tsx` refocus
+bug fixed along the way), unit + functional + component tests all green. 5 principal-reviewer
+rounds (a real Critical caught round 1 — the old CR-001 auto-assign silently broke feedback
+submission; fixed via a legacy-column dual-write) → APPROVE-WITH-NITS. 3 non-blocking minors
+deferred to `docs/BACKLOG.md` §4.
+
 ## Execution Queue (2026-07-24, user-ordered, one PR per item, month-end budget push)
 
 | # | Item | Status |
@@ -90,6 +333,55 @@ candidates at similar per-unit cost.
 **3 branches now queued for a PR/merge pass once GitHub Actions quota refills (2026-08-01):**
 `dev/notifications-email-fanout` (PR #196, APPROVE), `dev/seed-legal-transaction-demo`
 (commit `288c685`), `dev/seed-uat-recruitment-funnel` (commit `411bc04`).
+
+## RESOLVED 2026-07-29 — NFR Phase 2b P0-P7/P6 done, PR #197 open pending CI
+
+Started 2026-07-28 (principal-performance-auditor diagnosis, P0-P9). Paused overnight per user's
+11pm IST stop, resumed 2026-07-29 morning after localhost restart. All of P0-P5 and P7/P6 are now
+done, reviewed, and pushed to `dev/nfr-phase2b-perf-fixes` / **PR #197** (open against `main`,
+20+ commits). Only P8/P9 remain, explicitly deferred to pre-go-live per the auditor's own framing.
+
+**P0-P5**: 4 principal-reviewer rounds on the branch's first change set, each catching real,
+narrowing issues (commit-ordering race in JD extraction, a missing frontend poll, a bug in that
+poll fix itself, then 2 mutation-tested test-coverage gaps) — round 4 closed APPROVE-WITH-NITS,
+nits fixed same-day.
+
+**P7/P6** (~5 DB round trips per authenticated request): `set_rls_context` collapsed from 2
+sequential `set_config` calls to 1 multi-column statement; `User.role` `lazy="selectin"` →
+`"joined"` (folds into the user's own SELECT); `Role.permissions` `lazy="selectin"` → `"raise"`
+(never read via the ORM relationship — real permission check is a Redis-cached column query in
+`core/permissions.py` — this was a pure wasted round trip, confirmed via grep with no legitimate
+ORM-level reader anywhere in the codebase); 4 repositories' (candidates/departments/organizations/
+interview_panelists) separate count+rows queries collapsed to `COUNT(*) OVER()`, matching the
+established correct pattern (`interviews/repository.py:130`). 2 principal-reviewer rounds closed
+this APPROVE-WITH-NITS → nits fixed → unqualified approve. Live functional-test coverage added
+for both change sets (cross-org RLS isolation held under alternating-org requests, pagination
+totals correct, auth/role-gating unaffected by `lazy="raise"`).
+
+**Process note (see `[[feedback_agent-self-chaining-review-dispatch]]`):** during P7/P6 remediation,
+a dispatched `backend-engineer` self-chained 2 more `principal-reviewer` rounds and pushed a commit
++ rewrote the PR body directly, without reporting back first. Independently re-verified the actual
+git state (diff, tests, ruff, mypy) afterward — technical work was sound, but this is the second
+time this session a subagent has bypassed orchestrator sequencing; briefs now need an explicit
+"report back, don't self-dispatch" line every time, not just once.
+
+**Also found+fixed this morning (unrelated to the perf branch):** Postgres/Redis containers had
+silently exited (containers stay in `podman ps -a` as "Exited" until manually restarted — they do
+NOT auto-restart on Windows reboot/sleep by default), which killed backend + Celery worker too.
+Restarted all four. Root-caused a "reports not showing new UAT data" question from the user as a
+non-bug: the UAT-seeded positions' `approved_at` dates span Jan–Jul 2026 (a realistic multi-month
+backfill, not "today"), and the Positions Ageing report requires an explicit `date_from`/`date_to`
+with no default — if the browser's selected range doesn't reach back to January the new rows are
+correctly excluded, not stale. Flagged the missing-default-date-range as a minor UX gap, not fixed.
+
+**docs/BACKLOG.md §8 has the full per-finding table** — read it before doing any more NFR 2b work.
+
+**Next up:** P7/P6-adjacent follow-ups (both non-blocking, tracked in BACKLOG §8/§5): the
+departments sort-order spec-vs-code drift (real defect, needs its own change), the organizations
+stale test-assertion fix, and 2 more repos (`departments/repository.py`, `positions/repository.py`)
+that still do their own redundant `set_config` round trip. Then: merge PR #197 once GH Actions
+quota refills 2026-07-31 and CI goes green (needs human approval per standing rule). Then NFR
+Phase 2c (load-testing harness) — tool choice (Locust/k6/custom) is an open decision for the user.
 
 ## RESOLVED 2026-07-28 — real HTTP-based seed script built, verified, committed (PR not yet raised)
 

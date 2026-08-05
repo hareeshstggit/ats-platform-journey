@@ -4,7 +4,7 @@
 
 # ATS Platform — Backlog & Tech Debt Reference
 
-**Last updated: 2026-07-28**  ·  Maintainer: Claude Code, on behalf of hareesh@stg.com
+**Last updated: 2026-08-05**  ·  Maintainer: Claude Code, on behalf of hareesh@stg.com
 
 Single, query-free reference for every open item — active queue, pending merges, tech debt,
 deferred features. Check here first; no need to ask for a backlog recap.
@@ -25,18 +25,16 @@ narrative, only current state.
 | # | Item | Status |
 |---|------|--------|
 | 1 | NFR Phase 3 — repo-wide dead-code + missing-docstring sweep | ✅ Live on production (PR #195) |
-| 2 | Notifications real fan-out — email via AWS SES for interview.scheduled/offer.sent | 🟡 Code complete, principal-reviewer APPROVE, merge blocked on GitHub Actions quota (PR #196) |
+| 2 | Notifications real fan-out — email via AWS SES for interview.scheduled/offer.sent | ✅ Merged (PR #196) |
 | 3 | CI test gap — Postgres/Redis services not provisioned (18 backend tests fail in CI) | 🔴 Queued (3rd) |
 | 4 | Frontend test debt — nav-items.test.ts, position-schema.test.ts, others (6+ pre-existing failures) | 🔴 Queued (4th) |
 | 5 | e2e CI job-design gap — MSW can't intercept proxied backend calls | 🔴 Queued (5th) |
 
-## 2. Pending merges (all blocked on GitHub Actions quota, refills 2026-07-31 midnight IST)
+## 2. Pending merges
 
-| Branch | What | Status |
-|---|---|---|
-| `dev/notifications-email-fanout` | PR #196, item 2 above | principal-reviewer APPROVE, ready to merge |
-| `dev/seed-legal-transaction-demo` | Real-HTTP golden-path seed script + reference Excel | Built + verified, PR not yet raised |
-| `dev/seed-uat-recruitment-funnel` | Config-driven UAT funnel seeder (see §9) | Built + verified at 120-candidate proof scale, PR not yet raised |
+None open. (`feat/pipeline-progress-all-levels` PR #206 merged 2026-08-02, then superseded same-week
+by PR #209's status-groups redesign after live user testing rejected #206's shape — see §9 and
+`memory/resume-pointer.md` for the full 3-round review history.)
 
 ## 3. Business-rule gaps (unverified candidates — spot-check before building, none touched since found)
 
@@ -49,41 +47,84 @@ narrative, only current state.
 
 ## 4. Tech debt — data/query correctness
 
-- 🔴 `positions/repository.py::get_interview_level()` (used during interview-creation validation) doesn't filter `is_active`, unlike `child_repository.py::list_levels()` (the dropdown). A deactivated level's ID could theoretically pass validation via a stale cached ID or direct API call — not exploited in practice, worth closing.
-- 🔴 `screening/repository.py::list_decisions()` JOINs to candidates/positions without soft-delete guards (unlike applications' equivalent pattern) — reconfirmed live pattern-class, still not fixed.
+- ✅ `positions/repository.py::get_interview_level()` (2026-07-29, `dev/tech-debt-batch1`) — added `is_active IS TRUE`, matching `child_repository.py::list_levels()`. Sole caller confirmed write-path-only (interview-creation validation); no read/history path affected. Now returns 404 `INTERVIEW_LEVEL_NOT_FOUND` for a deactivated level id at create-time — `interviews/spec.md` 404-trigger line synced in the same branch. Merged with PR #204's multi-panelist eager-load (`selectinload(InterviewLevel.panelists)`) on the same method — both survive together.
+- 🔴 Dead `sys.path.insert(..., "../../..")` + `import sys` in 3 backfill scripts (`backfill_legacy_feedback_outcome.py`, `backfill_owning_recruiter_id.py`, `backfill_panelist_login_accounts.py`) + `seed_uat_dataset.py` (same dead line, same reason) — targets the repo root, which has no `app` package; imports actually resolve via the editable install. Removed from the other 2 (`backfill_level_type_org_correction.py`, `backfill_restore_ai_coe_engmgr_levels.py`) in `dev/tech-debt-batch1`; these 4 pre-date that batch, left alone as out of scope.
+- ✅ `screening/repository.py::list_decisions()` (2026-07-29, `dev/tech-debt-batch1`) — added `AND deleted_at IS NULL` to both JOINs, matching `applications/repository.py`'s pattern.
 - 🔴 `category_rank` SQL duplicated across 3 modules (interviews, reporting, applications) — kept manually in sync, never extracted to a shared fragment; divergence risk.
 - ❓ `positions/schemas.py`'s `InterviewLevelRequest`/`InterviewLevelResponse` missing `level_category` field (code behind spec, BUG-4).
 - 🔴 Organizations/Departments DELETE endpoints documented in spec, never built (4 ACs unverifiable).
+- 🔴 CR-002 multi-panelist-per-level: `positions/levels_service.py::_levels_to_response()` dropped the
+  defensive `if panelist else None` null-guard when mapping `PanelistSummary.panelist_name` — since
+  `interview_panelists` is RLS-protected, a caller for whom RLS filters out the panelist row would hit
+  an `AttributeError` instead of a clean `None`. Restore the guard or document why it's provably unreachable.
+- 🔴 CR-002 multi-panelist-per-level: `positions/models.py` crossed the 300-line cap (279→310) — extract
+  `InterviewLevel`/`InterviewLevelPanelist` into a sibling module, matching the precedent already set by
+  splitting `levels_service.py` out of `subresource_service.py` for the same reason.
+- 🔴 CR-002 multi-panelist-per-level: `InterviewLevel.panelists` relationship uses `lazy="selectin"`,
+  breaking the file's own convention (`panelist` sibling uses `lazy="raise"` deliberately, so a missing
+  eager-load fails loudly instead of silently N+1-ing). Both real read paths already pass an explicit
+  `selectinload`, so `lazy="raise"` should be safe — change it to match convention.
+- 🔴 CR-002 multi-panelist-per-level (`dev/interview-level-multi-panelist`): panelists 2-3 configured
+  via `POST /positions/{id}/interview-levels` do NOT get an automatic `interview_panelist_assignments`
+  slot at interview-creation time — only slot 1 auto-assigns (dual-written to the legacy
+  `interview_levels.panelist_id` column so CR-001's existing auto-assign branch keeps firing).
+  Scheduling with 2-3 panelists currently requires the existing manual
+  `POST /interviews/{id}/panelists` endpoint as a follow-up step. Needs a product decision: extend
+  auto-assign to cover slots 2-3, or leave manual — note BR-004 caps STG slots at 2 while BR-064
+  allows 3 for any level, and `add_panelist` enforces BR-004's cap, so naively extending auto-assign
+  would bypass its own cap for STG levels.
+- ❓ UX inconsistency (spec-faithful on both sides, not a bug): `GET /departments` orders by name ASC (spec AC-004), `GET /organizations` orders by updated_at DESC (no ordering AC) — two sibling admin list screens sort differently. Needs a product decision on whether organizations should get a name-ordering AC to match.
+- ⏸️ Pipeline Progress chart segment ink (`SEGMENT_INK_BY_SLOT` in `pipeline-group-bar-labels.tsx` / `pipeline-colors.ts`) is light-mode-only; 13/18 (slot, bucket) combinations fail WCAG AA on a dark surface — principal-reviewer independently recomputed contrast (M3 finding, CHANGES-REQUESTED on commit `cffee13`, 2026-08-05), worst cases slot 6/since_start 1.15:1, slot 3/since_start 1.21:1, slot 4/since_start 1.22:1, vs the 4.5:1 AA threshold. No user impact today — confirmed no `ThemeProvider` or `.dark`-class-toggling code exists anywhere in `frontend/src/`, so `darkMode: ["class"]` in tailwind.config is unreachable dead config today — but a dark-mode ink table is a prerequisite before any future dark-mode/theme-toggle feature ships.
 
 ## 5. Tech debt — tests/CI
 
 - 🔴 `offers/tests/test_functional_hiring_uniqueness.py` — 3 of 6 tests fail against the live stack (drives hire-uniqueness via a manual status PATCH to `hired`, which is 422-blocked since BR-054). Needs a rewrite to go through the real `POST /offers/{id}/accept` path.
-- 🔴 3 pre-existing failures found during the 2026-07-23 mypy-cleanup pass, root cause not investigated: `tests/unit/test_seed_dev.py::test_run_seed_fresh_creates_users_grants_and_audits`, `departments/tests/test_repository.py::test_list_scopes_to_org_searches_and_orders`, `organizations/tests/test_repository.py::test_list_applies_search_and_active_filters_and_orders_by_name`.
+- 🔴 `tests/unit/test_seed_dev.py::test_run_seed_fresh_creates_users_grants_and_audits` — pre-existing failure from the 2026-07-23 mypy-cleanup pass, root cause still not investigated.
+- ✅ `departments/tests/test_repository.py::test_list_scopes_to_org_searches_and_orders` (2026-07-29, `dev/tech-debt-batch1`) — root-caused as a real code defect (spec AC-004 requires name-order, code ordered by updated_at desc). Fixed the repository, not the test. Independently confirmed by NFR Phase 2b's own review (same root cause, same conclusion) — merged together with PR #197's `COUNT(*) OVER()` windowed-query optimization on the same query.
+- ✅ `organizations/tests/test_repository.py::test_list_applies_search_and_active_filters_and_orders_by_updated_at` (renamed from `..._orders_by_name`, 2026-07-29, `dev/tech-debt-batch1`) — root-caused as a genuinely stale test (organizations spec has no ordering AC). Fixed the test's assertion, repository untouched.
+- 🔴 Pagination edge case inherited from PR #197's `COUNT(*) OVER()` conversion (departments/organizations + 4 other repos): a page request past the end of the result set (`offset >= total`) returns `total = 0` (from `rows[0].total_count if rows else 0`) instead of the true total — the old separate `SELECT count(*)` didn't have this gap. A UI landing on an out-of-range page (e.g. after deletions) would show "0 results" and lose the ability to page back. Found during PR #199's merge-conflict review (2026-08-02); not fixed there (out of scope for that change) — needs its own fix across all 6 converted repos.
 - 🔴 3 pre-existing `positions` module test failures: `test_service.py::test_change_status_stale_version_raises_409` (test itself is stale — needs a rewrite to a real reachable scenario), `test_tasks.py::test_extract_storage_miss_persists_failed` + `test_extract_success_persists_result` (mock/fixture drift, not chased to root cause).
 - 🔴 No frontend component test for `positions-ageing-report.tsx` / `positions-ageing-bucket-strip.tsx`.
 - 🔴 = Execution Queue item 3: backend CI provisions no real Postgres/Redis — ~18 tests fail (Celery result-backend retries, 2 tests dialing Postgres directly).
 - 🔴 = Execution Queue item 4: frontend `nav-items.test.ts` (2 failures, stale expected nav list) + `position-schema.test.ts` (3 failures) — both pre-existing, confirmed multiple times, never fixed.
+- 🔴 `frontend/src/components/positions/interview-org-labels.test.tsx` fails on `main` (pre-existing, root-caused during `dev/interview-level-multi-panelist` review — unrelated to CR-002). The read-only interviewer view in `interview-levels-editor.tsx`'s `!canConfig` branch (~line 175-193) renders only `l.level_label` (e.g. "Bar raiser") and never the org-prefixed `"({Org} : Level-N)"` format the test expects. Needs a fix to either the component (add the org-prefix label to the read-only row) or the test's expectation — flag both `interview-org-labels.test.tsx` and `interview-levels-editor.tsx` when picked up.
 - 🔴 = Execution Queue item 5: `e2e` Playwright job has no backend/DB service — every login-dependent spec times out. Needs either real backend+DB services added to the job, or MSW extended to cover the proxied routes.
 
 ## 6. Tech debt — code hygiene (oversized files, 300-line/40-line caps)
 
-**Explicitly split out of NFR Phase 3 (2026-07-24)** as its own item — 38 files (18 backend + 20 frontend) exceed the 300-line cap, including core service files. High regression risk if split blindly; needs individual per-file decomposition analysis before scheduling. Known offenders: `interviews/service.py` (1412 lines), `interviews/repository.py` (1034), `applications/service.py` (661→666), `applications/_service_helpers.py` (525+), `application-list.tsx`, plus ~34 others (full list was captured during the Phase 3 line-count audit — re-run `wc -l` sweep if the exact list is needed again, file sizes will have shifted).
+**Analysis complete 2026-07-29 — full per-file decomposition plan in `docs/CODE_HYGIENE_DECOMPOSITION_PLAN.md`** (13 parallel read-only planning passes, re-swept to **48 files over 300 lines**, up from 38 at the Phase 3 audit). **Tier 1 ("free wins") executed same day — PR #198 merged**, branch `dev/hygiene-tier1-free-wins` — 14 files split across 9 commits (security/router.py, interviews/router.py, candidates/{tasks,screening/service,router}.py backend; lib/api/candidates.ts, mocks/position-handlers.ts, panelist-list.tsx, position-detail.tsx, interview-levels-editor.tsx, screening-detail.tsx, applications-in-candidate-card.tsx, screening-list.tsx, positions-ageing-report.tsx frontend). principal-reviewer APPROVE-WITH-NITS on round 2 (round 1 CHANGES-REQUESTED: 2 gratuitously-exported helper functions + a test asserting a hardcoded string instead of the task symbol — both fixed; round 2 found 1 doc-contradiction nit — fixed). Zero behavior/API/permission change anywhere — verified via byte-identical OpenAPI dump + route-table diff against `main`. Deferred from Tier 1: `positions/router.py`, `jd-panel.tsx`, `use-positions.ts` (would have conflicted with NFR Phase 2b PR #197 — now merged, safe to resume in Tier 2). Remaining tiers (2-4, including the highest-risk `interviews/service.py` 1413 lines and `applications/service.py`) not started — see the plan doc's "Recommended execution order."
+- 🔴 `frontend/src/components/reports/interview-pipeline-progress-report.tsx` — 366 lines, ~22% over the 300-line cap (was already 332 lines before this change). Grew during the pipeline-progress-all-levels build (all-levels entry point, level column, Select-All wiring); flagged by `ux-ui-engineer` in round 3 but not split there (out of scope for that fix). Needs its own decomposition pass, same as the Tier 1/2 hygiene work above.
 
 ## 7. Tech debt — dependencies & secrets
 
-- 🔴 Hardcoded plaintext DB password in one-time backfill scripts' DSN strings (`backend/app/scripts/backfill_*.py`) — pre-existing convention across all of them, should move to `os.environ`.
+- ✅ Hardcoded plaintext DB password in one-time backfill scripts' DSN strings (`backend/app/scripts/backfill_*.py`, 2026-07-29, `dev/tech-debt-batch1`) — all 5 scripts moved to `get_settings().DATABASE_ADMIN_URL` (existing project helper, not raw `os.environ`), stripping the `+asyncpg` driver suffix these psycopg2-based scripts don't understand.
 - 🔴 3 declared dependencies with zero imports anywhere in `backend/`: `sentry-sdk`, `prometheus-client` (both likely reserved for parked NFR observability work), `openpyxl` (retained as FK target per GO_LIVE_CHECKLIST's Scorecard-CRUD-removed note, PR #50 — confirm genuinely dead or living outside `app/` before removing). Currently `deptry`-ignored, not removed.
 
 ## 8. NFR (parked since 2026-07-10; unpark condition met 2026-07-23 — Dashboard+Reporting shipped)
 
 - ✅ Phase 3 — repo-wide dead-code/quality sweep (PR #195, docstrings+dead-code only; oversized-file hygiene split to §6 above).
-- ⏸️ Phase 2b — perf root-cause diagnosis (nav-response-time regression). Not resumed.
-- ⏸️ Phase 2c — load-testing harness + 200-250 concurrent-user capacity validation. Nothing built yet.
-- ❓ Watch-item: `_pipeline_progress_sql.py`'s event CTEs compute over the full matched-position set before pagination — feeds into Phase 2c when it happens.
+- ✅ Phase 2b — perf root-cause diagnosis + fixes via principal-performance-auditor. Branch `dev/nfr-phase2b-perf-fixes`, **PR #197 merged**. Findings P0-P9:
+  - ✅ P0 — Postgres IPv6 connect tax (`DATABASE_URL`/replica/admin → 127.0.0.1; Redis deliberately untouched, listens IPv6-only on this machine).
+  - ✅ P1 — bcrypt blocking event loop (`security/service.py` verify/hash_password → `run_in_executor`).
+  - ✅ P2 — DB pool undersized (`core/database.py` → explicit pool_size=20/max_overflow=30/pool_recycle=1800).
+  - ✅ P3 — JD extraction async fix. 4 principal-reviewer rounds, each catching real narrowing issues (commit-ordering race, missing frontend polling, a bug in the polling fix itself, then 2 mutation-tested test-coverage gaps) — all closed. Also surfaced and documented a real Windows-only Celery infra issue (`docs/LOCAL_DEV.md`: `--pool=solo` required, default prefork crash-loops on this dev machine — not a code defect, but looks exactly like one from the outside).
+  - ✅ P4 — report queries LIMIT-after-full-computation, fixed in `_pipeline_progress_sql.py` (page_positions CTE pushes LIMIT before the 5 event-join CTEs).
+  - ✅ P5 — unbounded sub-collection endpoints. `applications`/`interviews` `/status-history` now paginate (limit/offset, default 50/max 200); spec updated same-PR. `positions/{id}/history` has the same unbounded shape but lives in `subresource_service.py` — follow-up, not yet scheduled.
+  - ✅ P7/P6 — safely-parallelizable sequential awaits (~5 DB round trips/request), CLOSED. `set_rls_context` (2→1 round trip, unit-tested in `backend/tests/unit/test_core_database.py` including placeholder-to-GUC pairing so a bind-swap can't silently pass), `User.role` selectin→joined, 4 repos' count+rows → `COUNT(*) OVER()` (departments' assertion moved to the passing `test_list_without_search_omits_like` per M2), `Role.permissions` `lazy="selectin"` → `lazy="raise"` per M4 (closes the last round trip; only usage anywhere in `backend/` is a class-level `.join(Role.permissions)` in `security/repository.py`, unaffected by the loader-strategy change). N1 (unused fixture param), N2 (per-fixture post-teardown verification), N3 (idempotent teardown safety net) also closed. principal-reviewer: APPROVE after remediation round.
+    - **Root cause of the pre-existing `departments` test failure, now confirmed and FIXED:** `openspec/specs/departments/spec.md` AC-004 requires the list ordered by name; `departments/repository.py` ordered by `updated_at desc` instead — spec-vs-code drift, a real defect. Corrected on `dev/tech-debt-batch1` (PR #199), merged together with this Phase 2b's `COUNT(*) OVER()` windowed-count optimization on the same query — see §5 above. `organizations`' equivalent failure had no ordering AC in its spec, so that one was a genuinely stale test — fixed alongside (test assertion only, repository untouched).
+    - Follow-up (N5, not blocking): `departments/repository.py` and `positions/repository.py` each still issue their own extra `set_config` round trip on top of `set_rls_context` — same finding family as P7/P6, not yet scheduled.
+  - ⏸️ P8/P9 — index gaps + unrefreshed materialized views. Explicitly pre-production risk per auditor, not a current bottleneck — deferred to pre-go-live.
+- ⏸️ Phase 2c — load-testing harness + 200-250 concurrent-user capacity validation. Auditor's own view: numbers would be meaningless until P0/P2 land (now done) — still nothing built, tool choice (Locust/k6/custom) an open decision for the user.
+- ✅ Watch-item resolved 2026-07-28 (see P4 above): `_pipeline_progress_sql.py`'s event CTEs now join only against the current page's positions, not the full matched-position set.
+- ❓ Watch-item (new, pipeline-progress-all-levels, 2026-07-31/08-02): the single-level fix above does NOT extend to `_pipeline_progress_all_levels_sql.py` — its event CTEs still compute over the FULL matched-position set before pagination (1 LATERAL CTE for on_hold becomes up to 5 for the 4 new cross-cutting measures, and the row grain multiplies by each position's active-level count instead of one row per position). Partially mitigated by measure-scoped SQL generation (`build_all_levels_rows_sql`, principal-reviewer finding 9) which only builds CTEs for requested measures, but the full-matched-set-before-pagination shape itself is unchanged. Two more confirmed-via-live-EXPLAIN cost items, neither addressed by the finding-9 mitigation: (a) the 4 direct-event CTEs (scheduled/selected/rejected/pending) filter on `ash.new_status::text ~ '_selected$'`-style regex instead of an indexable enum equality; (b) the event-CTE-to-`matching_positions` join is a `Join Filter` evaluated on a computed `CASE` expression (deriving `level_key` from `pending_reason`), not an equijoin on an indexable column. Measured at dev scale: 128-151ms for all 9 measures, worst single grain row fans out to 375 join rows. Feeds into Phase 2c when it happens. The `category_rank` double-SubPlan issue (round 1 finding) is fixed — `RANK() OVER (...)` replaced the correlated `COUNT(*)+1` subquery; live EXPLAIN against real populated data (77 positions/809 levels) confirms 0 `SubPlan`s, 1 `WindowAgg`.
 
 ## 9. Feature backlog (not started / deferred)
 
-- ⏸️ Multi-panelist per interview level (schema+backend+frontend) — explicitly deferred, "build when asked."
+- ✅ Multi-panelist per interview level (schema+backend+frontend) — PR #204, principal-reviewer APPROVE-WITH-NITS (5 rounds), merged 2026-08-02; see §4 tech-debt notes on the panelist-2-3 auto-assign gap + 3 deferred minors.
+- ✅ Interview Pipeline Progress report — status-groups redesign (`status_group` single-select, 6
+  groups, 3-date-bucket rule, mandatory org-then-group gate, new bordered/grouped chart) — PR #209,
+  principal-reviewer APPROVE-WITH-NITS (3 rounds), merged 2026-08-04. Supersedes PR #206's
+  9-measure/all-levels shape, which the user rejected on live testing.
 - 🔴 Onboarding workflow — new module, stub only (`position_status_enum.onboarded` marker exists, nothing else).
 - 🔴 Consent + DPDP module — new module, stub only.
 - ✅ Notifications real fan-out — see Execution Queue item 2 / §2 pending merges.
