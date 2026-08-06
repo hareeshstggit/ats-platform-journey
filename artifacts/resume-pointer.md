@@ -9,17 +9,16 @@ below before doing anything else.
 
 ## RESUME HERE FIRST (2026-08-06) — user's explicit instruction: surface this list before anything else
 
-User paused 2026-08-05 night with "Pause here. Let us resume tomorrow morning" and has a standing
-instruction from a prior session to bring the resume list up first, unprompted:
+User's standing instruction (2026-08-06): complete `async-pipeline-durability` Phases 3-6 at the
+same review rigor as Phases 1-2, with a binding-mandate-compliance block on every subagent dispatch
+(zero hallucination, zero extra code, full CLAUDE.md compliance) — see the Phase 3/4 entries below.
 
-1. **Continue `async-pipeline-durability` — Phase 2 next (self-healing reconciler + beat
-   scheduling).** Phase 1 (the actual incident root-cause fix) is merged — PR #214, 2026-08-05,
-   5 principal-reviewer rounds, see the section below for full detail. Phases 2-6 (generalized
-   reconciler/beat, `acks_late` hardening, LLM timeouts, UI stuck-row surfacing, AWS Terraform)
-   are NOT started — `openspec/changes/async-pipeline-durability/tasks.md` §2-7 is the exact
-   checklist. **Cost checkpoint before resuming**: Phase 1 alone ran well past its ~$60-90
-   estimate (5 review rounds x2 features this session) — confirm with the user whether to
-   continue at the same review intensity for Phases 2-6, or adjust scope/rigor, before dispatching.
+1. **Continue `async-pipeline-durability` — Phase 5 next (D9, UI stuck-row surfacing).** Phases
+   1-4 all merged (PR #214/#215/#216/#217) — see the sections below for full detail. Phase 5
+   requires a `ux-ui-engineer` design pass against `.claude/rules/ats-ux-ui-guardrails.md` BEFORE
+   any code (per Rule 6/mandatory pre-work): affected roles, screen inventory, permission model,
+   required states. `tasks.md` §5 is the exact checklist. Phase 6 (D10, AWS Terraform + checklist
+   correction) follows — `tasks.md` §6.
 2. **Test the 4 Gemini-driven AI features live** — JD extraction, screening-question generation,
    candidate screening/matching, interview kit generation. Still not user-tested live themselves
    (carried over from 2026-08-04/05). Confirm `scripts/dev-stack-watchdog.ps1` is running first —
@@ -28,7 +27,12 @@ instruction from a prior session to bring the resume list up first, unprompted:
    just the Startup-shortcut's existence.
 3. **PR #210 (CI test infrastructure) is still open and unresolved** — `e2e` job genuinely
    broken across 2 fix attempts, real root cause never found (see the section below for full
-   detail). Not blocking, but flag its existence.
+   detail). Not blocking, but flag its existence. Note: `main`'s own `backend-ci.yml` `typecheck`
+   and `test` jobs are ALSO currently red on every recent run (133 pre-existing mypy errors in 3
+   untouched files; 19 test failures — all either the tracked "no Postgres/Redis in CI" gap
+   (BACKLOG #3) or a pre-existing `test_seed_dev.py` count-mismatch) — confirmed via
+   `gh run list --branch main` before merging PR #217, so this is a known, tracked gap, not a
+   Phase 4 regression. Do not re-diagnose it per-PR; it is item #3/#4 in the BACKLOG active queue.
 
 ## RESOLVED 2026-08-05 — live async-pipeline incident root-caused and fixed, Phase 1 merged (PR #214)
 
@@ -110,8 +114,25 @@ duplicate). User's explicit standing instruction going into this phase: same rig
 dispatch now carries an explicit binding-mandate-compliance block, not just an implied CLAUDE.md
 read.
 
-Phases 4-6 (LLM timeouts, UI stuck-row surfacing, AWS Terraform) NOT started — see `tasks.md` §4-7
-for the exact checklist.
+**Phase 4 (D8 — LLM client timeouts + circuit breaker) — merged PR #217, 2026-08-06.** 3
+`principal-reviewer` rounds: round 1 found 1 Critical (a tripped Bedrock breaker made a dead code
+path live for the first time, which would have persisted a fabricated `provider="bedrock"`
+zero-score reject as a genuinely-completed, audit-logged screening — fixed by degrading to
+`OfflineScreener` instead, matching Gemini's existing pattern) + 8 Major (lazy-SDK-import
+anti-pattern, SDK-level retries double-counting against the new timeout, Gemini — the actual
+local-dev provider — left completely unbounded, a stale spec claim, a fabricated test count) + 4
+Minor; round 2 independently re-verified all 14 round-1 findings genuinely closed via live
+execution, then found 1 NEW Major by widening Gate 1's own scope to `app/modules/positions/` — an
+unfixed twin of round 1's retry-waste bug on a 6th LLM-gateway caller (`jd_extractor.py`) — plus 3
+Minor + 4 Nit; round 3 (APPROVE-WITH-NITS) independently re-verified round 2's fixes by reading the
+actual diffs rather than trusting self-reports, enumerated all 6 gateway callers from scratch to
+confirm no 7th unfixed site, and ran its own fresh breaker-behaviour script + SDK-shape
+re-derivation. Final Gate 1 (broadened scope, run by the main loop independently, not the
+implementing agent): 1041 passed / 427 skipped / 0 failed. No schema change this phase. Local
+main synced (no new Alembic revision — still `0056 head`).
+
+Phases 5-6 (UI stuck-row surfacing, AWS Terraform) NOT started — see `tasks.md` §5-7 for the exact
+checklist.
 
 ## RESOLVED 2026-08-05 — 3 queued chart follow-ups merged (PR #212)
 
