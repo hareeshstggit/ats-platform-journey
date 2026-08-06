@@ -78,9 +78,22 @@ Also cleaned up **188 leaked Celery worker processes** that had accumulated duri
 verification runs (not historical — all from today) — killed and restarted via the watchdog to a single
 stable worker. Separate finding, not part of Phase 1's diff.
 
-Phases 2-6 (generalized reconciler + beat scheduling, `acks_late` hardening, LLM timeouts, UI stuck-row
-surfacing, AWS Terraform) NOT started — see `tasks.md` §2-7 for the exact checklist, and design.md's
-Migration Plan for why the phase order matters (D6 before D2's `acks_late` dependents, D3/D4 before D7).
+**Phase 2 (D3 real retry/backoff on the 4 AI tasks, D4 generalized stuck-row reconciler + beat
+scheduling) — merged PR #215, 2026-08-06.** 3 `principal-reviewer` rounds (CHANGES-REQUESTED x2 —
+round 1: 3 Critical + 8 Major including an inert version guard on the kit reconciler from a missing
+DB trigger, a would-be ~144k-LLM-calls/day runaway loop from scheduling `reconcile_screenings` at
+1-min with no consent/staleness filter, and 2 beat jobs pointing at placeholder/`NotImplementedError`
+task bodies; round 2: a reported-fixed-but-not-applied DB-pollution test fixture (same class as round
+1's finding), plus retry-count reset missing on user-initiated recovery paths — then APPROVE-WITH-NITS,
+round 3). `reconcile_screenings`, the reporting MV refresh, and DPDP retention enforcement remain
+deliberately UNSCHEDULED (owned follow-ups in `docs/BACKLOG.md` §9, not silently dropped) — none of
+the 3 is safe to schedule yet (consent/staleness/attempt-ledger gap; empty task bodies). One post-merge
+CI-only fix (`botocore` declared explicitly, `deptry` DEP003) landed directly, no new review round
+needed. Local DB synced to `0056 (head)`.
+
+Phases 3-6 (`acks_late` hardening, LLM timeouts, UI stuck-row surfacing, AWS Terraform) NOT started —
+see `tasks.md` §3-7 for the exact checklist, and design.md's Migration Plan for why the phase order
+matters (D3/D4 already shipped satisfies D7's prerequisite; D2/D6 from Phase 1 gate D7's `acks_late`).
 
 ## RESOLVED 2026-08-05 — 3 queued chart follow-ups merged (PR #212)
 
