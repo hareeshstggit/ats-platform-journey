@@ -75,6 +75,23 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   would bypass its own cap for STG levels.
 - ❓ UX inconsistency (spec-faithful on both sides, not a bug): `GET /departments` orders by name ASC (spec AC-004), `GET /organizations` orders by updated_at DESC (no ordering AC) — two sibling admin list screens sort differently. Needs a product decision on whether organizations should get a name-ordering AC to match.
 - ⏸️ Pipeline Progress chart segment ink (`SEGMENT_INK_BY_SLOT` in `pipeline-group-bar-labels.tsx` / `pipeline-colors.ts`) is light-mode-only; 13/18 (slot, bucket) combinations fail WCAG AA on a dark surface — principal-reviewer independently recomputed contrast (M3 finding, CHANGES-REQUESTED on commit `cffee13`, 2026-08-05), worst cases slot 6/since_start 1.15:1, slot 3/since_start 1.21:1, slot 4/since_start 1.22:1, vs the 4.5:1 AA threshold. No user impact today — confirmed no `ThemeProvider` or `.dark`-class-toggling code exists anywhere in `frontend/src/`, so `darkMode: ["class"]` in tailwind.config is unreachable dead config today — but a dark-mode ink table is a prerequisite before any future dark-mode/theme-toggle feature ships.
+- 🔴 Alembic migration `0011_candidate_matches_source_details.py` is UNREPLAYABLE — it can never
+  execute, from a clean environment or anywhere else, via this project's documented bootstrap path
+  (load `docs/schema.sql` → stamp `0001_baseline`, which is stamp-only with zero DDL → `alembic
+  upgrade head`). Two independent reasons, both verified live against real Postgres (principal-
+  reviewer round 3, async-pipeline-durability Phase 3, correcting round 2's wrong premise that this
+  was merely a naming/shape "drift" needing reconciliation): (1) `docs/schema.sql`'s bootstrap
+  already creates `candidate_position_matches` and its FULL (non-partial) `uq_cand_pos_match` index
+  before migration 0011 would ever run, so 0011's own `create_table` + index DDL has no clean state
+  left to apply against; (2) independently, 0011's partial-index predicate
+  (`postgresql_where=status::text != 'dismissed'`) is invalid regardless — Postgres rejects it with
+  `InvalidObjectDefinitionError: functions in index predicate must be marked IMMUTABLE`, since the
+  enum-to-text cast on this column is STABLE, not IMMUTABLE. The live DB (and every environment
+  provisioned the documented way) carries the full index only; `CandidateRepository.upsert_match`'s
+  `ON CONFLICT` target works correctly against it with or without an `index_where=` predicate
+  (verified live both ways) — no code fix is needed for `upsert_match` itself. This migration needs
+  either a real fix (drop the invalid predicate, confirm it's dead code post-bootstrap) or explicit
+  retirement — flagged here, not attempted in this change.
 
 ## 5. Tech debt — tests/CI
 

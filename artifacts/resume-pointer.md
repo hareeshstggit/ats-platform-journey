@@ -91,9 +91,27 @@ the 3 is safe to schedule yet (consent/staleness/attempt-ledger gap; empty task 
 CI-only fix (`botocore` declared explicitly, `deptry` DEP003) landed directly, no new review round
 needed. Local DB synced to `0056 (head)`.
 
-Phases 3-6 (`acks_late` hardening, LLM timeouts, UI stuck-row surfacing, AWS Terraform) NOT started —
-see `tasks.md` §3-7 for the exact checklist, and design.md's Migration Plan for why the phase order
-matters (D3/D4 already shipped satisfies D7's prerequisite; D2/D6 from Phase 1 gate D7's `acks_late`).
+**Phase 3 (D7 — `acks_late`/`task_reject_on_worker_lost`/`prefetch=1` + making all 4 AI task bodies
+safe under redelivery) — merged PR #216, 2026-08-06.** The hardest phase so far: 4
+`principal-reviewer` rounds, every round finding something real via LIVE execution, not reading —
+round 1: the version-guard draft didn't protect against the redelivery case it claimed to (the DB
+trigger bumps version on the claim's OWN write, so a later-arriving duplicate just reads the new
+version and proceeds — 2 Critical + 6 Major); round 2: re-verifying round 1's fix live surfaced a
+NEW Critical (an `ON CONFLICT` clause that worked against the local dev DB's drifted schema but
+fails against what the migration chain actually builds — proved by reproducing the Postgres error
+live); round 3: round 2's own fix premise turned out unreproducible (migration `0011` can never
+execute at all — invalid IMMUTABLE index predicate on an enum column, logged in `docs/BACKLOG.md`
+as its own tracked defect) plus a spec-violating regression (reschedule regenerating completed
+kits, discarding real work); round 4: 2 small Majors (an orphaned doc claim, a missing test class)
+→ APPROVE. `_do_match`'s `upsert_match` rewritten as a genuine atomic `INSERT...ON CONFLICT DO
+UPDATE` along the way (was SELECT-then-write, aborting the whole transaction on a concurrent
+duplicate). User's explicit standing instruction going into this phase: same rigor through Phases
+3-6, zero hallucination, zero extra code, full CLAUDE.md compliance — every subsequent phase
+dispatch now carries an explicit binding-mandate-compliance block, not just an implied CLAUDE.md
+read.
+
+Phases 4-6 (LLM timeouts, UI stuck-row surfacing, AWS Terraform) NOT started — see `tasks.md` §4-7
+for the exact checklist.
 
 ## RESOLVED 2026-08-05 — 3 queued chart follow-ups merged (PR #212)
 
