@@ -150,6 +150,32 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 - ⏸️ **UAT recruitment-funnel data — 500 candidates / 50 positions full scale.** Script built + verified at 120-candidate proof scale (`dev/seed-uat-recruitment-funnel`, §2). Full run explicitly deferred by user (month-end budget) — resume by restoring the 2 dropped categories (Professional Services, Product/Platform Consultants) for the full 14-category run; budget ~4x the candidates at similar per-unit cost.
 - 🔴 **`reconcile_screenings` beat-scheduling precondition (async-pipeline-durability, deferred from Phase 2 by principal-reviewer round 1, C2).** The task is coded and unit-tested (`candidates/screening/tasks.py`) but deliberately NOT registered in `celery_app.py`'s `beat_schedule` — live-measured against the dev DB: 181,820 unscreened pairs, 94% belonging to candidates with no `ai_assisted_evaluation` consent (a permanent skip, not a stuck row), which would create an unbounded LLM-enqueue loop (144,000/day) on the same `screening` queue interview-kit generation now also depends on, if scheduled at any tight cadence today. Needs, before scheduling: (1) a consent filter excluding permanently-ineligible pairs from the sweep entirely, (2) a staleness filter (don't re-enqueue a pair enqueued moments ago), (3) a per-pair attempt ledger + terminal state (mirroring the extraction/matching/kit reconcilers' `retry_count`/terminal-fail contract, which this task currently has no equivalent of at all). Tracked here per `openspec/specs/candidates/spec.md` §9.5 and `candidates/screening/tasks.py`'s own module docstring, both of which point at this entry.
 - 🔴 **DPDP retention enforcement + reporting materialized-view refresh — placeholder task bodies, no owner (async-pipeline-durability, deferred from Phase 2 by principal-reviewer round 1, C3).** Both beat-schedule-worthy jobs were REMOVED from `celery_app.py`'s `beat_schedule` this phase (not added, as an earlier draft of this change incorrectly claimed) because their task bodies are still placeholders: `data_privacy.enforce_data_retention` (`app/modules/data_privacy/tasks.py`) is an empty no-op, `reporting.refresh_reporting_views` (`app/modules/reporting/tasks.py`) raises `NotImplementedError`. The DPDP one is the higher-priority gap — `proposal.md` itself calls it "a live compliance exposure" (specced as a daily storage-limitation sweep, nothing currently anonymises anything). Needs: implement the real task body for each (querying `candidates.retention_expires_at` for the DPDP one; refreshing whichever materialized views `reporting/spec.md` names for the other), THEN add both back to `beat_schedule` (`enforce-dpdp-retention` daily, `refresh-reporting-materialized-views` every 10 min — cadences already decided, just needs real bodies to schedule against).
+- 🔴 **`level_kit_agent.py`'s `_invoke_anthropic`/`_invoke_bedrock` bypass `llm_gateway` entirely
+  (async-pipeline-durability, flagged Phase 4 by principal-reviewer round 1, Major-6).** Both
+  build their own raw, unbounded, unconfigured clients (`anthropic.Anthropic(...)`,
+  `boto3.client("bedrock-runtime", ...)` with no `Config`/timeout) — this is the LEAST-bounded
+  LLM path in the system, on the exact Celery queue (`interviews`/kit generation) Phases 2/3
+  explicitly hardened for retry/redelivery safety. Out of D8's scope to fix (D8 only bounds
+  `llm_gateway`'s own Anthropic/Bedrock/Gemini clients) — needs its own change to either route
+  through `llm_gateway.complete()` (the existing architectural-inconsistency note in
+  `interviews/spec.md`'s changelog already flags this agent as not using the shared gateway) or
+  get its own module-scope timeout-bound clients mirroring `llm_gateway_providers.py`'s pattern.
+- 🔴 **D8's circuit breaker is per-process, not cross-process (async-pipeline-durability, flagged
+  Phase 4 by principal-reviewer round 1, Major-2).** `docker-compose.yml`'s worker runs prefork
+  with no `--concurrency` set (CPU-count child processes), each holding its own in-memory
+  `_breaker_state` dict — a single hung task's Celery-level retries can be redelivered to a
+  different child process each attempt, so one task's retry chain may never accumulate to
+  `LLM_CIRCUIT_BREAKER_THRESHOLD` in any single process. A cross-process (Redis-backed) breaker
+  would close this gap; correctly documented as a known limitation in `core/constants.py` and
+  `llm_gateway.py` rather than fixed, since building one is a bigger scope decision than D8's.
+- 🔴 **`LLM_PROVIDER_TIMEOUT_SECONDS=60.0` is a judgment call, not a measured figure
+  (async-pipeline-durability, flagged Phase 4 by principal-reviewer round 1, Major-4).** No
+  measured Anthropic/Bedrock completion-latency figure exists anywhere in this repo (the only
+  `timeout=30` usages found were 8 unrelated functional-test files hitting localhost over
+  httpx). 60s is a reasoned middle ground (well under Anthropic's own 600s SDK default, with
+  headroom above a normal `max_tokens=4096` completion) but should be revisited with a real
+  measured p95/p99 completion latency once Anthropic/Bedrock actually go live in production,
+  before relying on this bound under real load.
 - 🔴 **Project-wide OpenSpec format migration.** All existing `openspec/specs/<module>/spec.md` files (candidates, interviews, reporting, positions, offers, data-privacy, etc.) use this project's own house format — numbered sections + BR-xxx business rules — not the OpenSpec-tool-native `### Requirement:`/`#### Scenario:` format. Surfaced 2026-08-05 when writing delta specs for `async-pipeline-durability`: no existing requirement headers to copy for a proper MODIFIED block, so those deltas used ADDED throughout. User confirmed (2026-08-05): keep house format for now, don't block the reliability change on this, but track a full project-wide reformat to make every spec file uniformly OpenSpec-native (`### Requirement:` + `#### Scenario:`, one file per module, no numbered-section/BR-xxx house style) as its own future change. Large — one file alone (`candidates/spec.md`) is 1700+ lines.
 
 ---
