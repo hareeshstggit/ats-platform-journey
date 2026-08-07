@@ -7,18 +7,64 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-08-06) — user's explicit instruction: surface this list before anything else
+## RESUME HERE FIRST (2026-08-06 night, paused — "need to go to bed, resume tomorrow")
 
 User's standing instruction (2026-08-06): complete `async-pipeline-durability` Phases 3-6 at the
 same review rigor as Phases 1-2, with a binding-mandate-compliance block on every subagent dispatch
 (zero hallucination, zero extra code, full CLAUDE.md compliance) — see the Phase 3/4 entries below.
+At the end of Phase 6, user wants: a detailed explanation of what was fixed and how, assurance the
+issue won't recur, and the guardrails to prevent future wasteful rework cycles — **owed, not yet
+delivered**, first thing on resume once Phase 6 actually merges.
 
-1. **Continue `async-pipeline-durability` — Phase 5 next (D9, UI stuck-row surfacing).** Phases
-   1-4 all merged (PR #214/#215/#216/#217) — see the sections below for full detail. Phase 5
-   requires a `ux-ui-engineer` design pass against `.claude/rules/ats-ux-ui-guardrails.md` BEFORE
-   any code (per Rule 6/mandatory pre-work): affected roles, screen inventory, permission model,
-   required states. `tasks.md` §5 is the exact checklist. Phase 6 (D10, AWS Terraform + checklist
-   correction) follows — `tasks.md` §6.
+1. **Phase 5 (D9, UI stuck-row surfacing) — MERGED, PR #218, 2026-08-07.** 3 principal-reviewer
+   rounds (2 Critical in the matching-badge logic round 1, a label-regression Major round 2, both
+   fixed; round 3 APPROVE-WITH-NITS after one dead re-export removed). CI showed 4 real (not
+   runner-transient) job failures on merge day — all independently confirmed against known,
+   already-tracked gaps, not Phase 5 regressions: backend `test` (19 failures = BACKLOG #3, no
+   Postgres/Redis in CI), backend `typecheck` (133 pre-existing errors, same 3 files), frontend
+   `component-test` (`nav-items.test.ts`/`position-schema.test.ts` = BACKLOG #4), frontend `e2e`
+   (36 failures, all at the login/MFA step — the SAME pre-existing blocker principal-reviewer's
+   own round-3 control test (`e2e/positions.spec.ts`, unmodified) already reproduced; also
+   confirmed `main`'s own last CI runs are red for the identical reasons before merging). Local
+   main synced, no new Alembic revision this phase (`0056` still head), worktree cleaned up.
+   Known, tracked, NOT fixed by this PR: the e2e login path is unrunnable for every spec in this
+   repo — worth a dedicated fix session (see BACKLOG #5, added this session).
+2. **Phase 6 (D10, AWS Terraform + real Prometheus metrics wiring) — code done, 4 AWS SRE review
+   rounds closed at APPROVE-WITH-NITS, final `principal-reviewer` gate DISPATCHED, verdict NOT YET
+   RECEIVED at pause.** This was the hardest phase of the whole change — 4 rounds of
+   `principal-reliability-engineer` (AWS SRE specialist) found: round 1 — 6 Critical (a broken
+   Prometheus scrape config that would collect nothing; an IAM policy missing the actual EMF
+   log-publish permissions; `treat_missing_data="notBreaching"` making the flagship alarm blind to
+   exactly the 2026-08-05 incident's own signature; an age-gauge capped below its own alarm
+   threshold by an unrelated DB trigger; a metric-writer/metric-server process split with no
+   concurrency pin; an apply-blocking `iam`-module skeleton); round 2 — the round-1 fix ITSELF
+   introduced 2 NEW Criticals, both proven by the reviewer actually EXECUTING the pinned
+   `prometheus_client` library rather than arguing from the code (a Gauge multiprocess-mode default
+   that silently retains a dead worker's stale reading forever; Counter alarms that would fire on
+   every healthy deploy because the series doesn't exist until first failure); round 3 — narrow,
+   an IAM over-correction + a singleton-beat invariant asserted in 3 places but not enforced by
+   Terraform (ECS's default rollout config lets 2 beat schedulers run concurrently on every
+   deploy); round 4 — APPROVE-WITH-NITS, mathematically proved the remaining worker-deploy
+   tradeoff is genuinely the only correct option, found the documented mechanism for it was
+   backwards, fixed. **On resume: check for the `principal-reviewer` final-gate task-notification**
+   (agent id was `aa770c945b4cb7c3a` this session — may already be sitting in the conversation
+   history if it landed overnight). If APPROVE/APPROVE-WITH-NITS: commit with `Agent:
+   backend-engineer` / `Reviewed-by: principal-reviewer — <verdict>` trailers, push, check GH
+   Actions billing usage, open PR, watch CI (learn from tonight — a `cancelled`/"not acquired by
+   Runner" job is a GitHub-side transient, `gh run rerun` it, don't treat it as a real failure),
+   merge, sync main+alembic (no new migration this phase — confirm `alembic current` still shows
+   `0056_ivw_level_kits_upd_trg (head)`), cleanup worktree, sync `resume-pointer.md`+external
+   mirror. If CHANGES-REQUESTED: relay findings back to agent `af042260d864999b8` (this is its
+   5th round on Phase 6 — the pattern this whole phase has followed).
+3. **After BOTH Phase 5 and Phase 6 are merged: deliver the user's explicit closing ask** — a
+   detailed explanation of what was fixed and how, an assurance the original incident class won't
+   recur, and concrete guardrails to prevent wasteful rework cycles going forward (the user
+   explicitly framed this around the real $ and time cost of this session's many review rounds).
+   This is owed BEFORE moving to any new work, not an optional wrap-up — the user asked for it by
+   name as the deliverable for completing Phase 6.
+4. Then: `/opsx:verify` (confirm all 5 delta specs match the shipped implementation),
+   `/opsx:sync`+`/opsx:archive` for `async-pipeline-durability` (tasks.md §7, close-out) — the
+   6-phase change is fully done at that point.
 2. **Test the 4 Gemini-driven AI features live** — JD extraction, screening-question generation,
    candidate screening/matching, interview kit generation. Still not user-tested live themselves
    (carried over from 2026-08-04/05). Confirm `scripts/dev-stack-watchdog.ps1` is running first —

@@ -28,7 +28,7 @@ narrative, only current state.
 | 2 | Notifications real fan-out — email via AWS SES for interview.scheduled/offer.sent | ✅ Merged (PR #196) |
 | 3 | CI test gap — Postgres/Redis services not provisioned (18 backend tests fail in CI) | 🔴 Queued (3rd) |
 | 4 | Frontend test debt — nav-items.test.ts, position-schema.test.ts, others (6+ pre-existing failures) | 🔴 Queued (4th) |
-| 5 | e2e CI job-design gap — MSW can't intercept proxied backend calls | 🔴 Queued (5th) |
+| 5 | e2e CI job-design gap — MSW can't intercept proxied backend calls | 🔴 Queued (5th). **Confirmed 2026-08-07 (PR #218):** every spec now fails at the login/MFA step specifically ("Verify and continue" stuck disabled — the MFA verify call never resolves) — reproduced identically by `organizations.spec.ts`, `positions.spec.ts`, and the new `pipeline-retry-badge.spec.ts` (all pre-existing or unrelated to that PR's own diff), confirming this is a single root cause blocking ALL e2e coverage, not per-spec flakiness. |
 
 ## 2. Pending merges
 
