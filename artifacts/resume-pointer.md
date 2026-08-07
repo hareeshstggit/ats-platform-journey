@@ -7,25 +7,39 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-08-07)
+## RESUME HERE FIRST (2026-08-07, paused — "will resume once I reach home")
 
-1. **Deliver the user's closing ask for `async-pipeline-durability`** — a detailed explanation of
-   what was fixed and how, an assurance the original incident class won't recur, and concrete
-   guardrails to prevent wasteful rework cycles going forward. **Owed, not yet delivered** — say
-   this to the user BEFORE any new work. All 6 phases are merged (see the RESOLVED section below);
-   nothing is blocking this except writing it.
-2. **Test the 4 Gemini-driven AI features live** — JD extraction, screening-question generation,
+`async-pipeline-durability` is fully closed: all 6 phases merged, the user's closing report
+delivered (what was fixed/why it won't recur/guardrails), and the 4 guardrails codified as a new
+binding, no-override mandate in `.claude/CLAUDE.md` — "Live-verification & environment-parity
+mandate" (added 2026-08-07, same class as Gate 5): (1) verify a fix by executing it against the
+real library/service/infra, not by reading the diff; (2) CI on the real target platform (Linux,
+not just local Windows) is part of the definition of done for every phase; (3) provision
+verification tooling (CLI/SDK/credentials) in the main loop's own environment BEFORE dispatching a
+phase, not after a reviewer flags its absence; (4) a specialist review (e.g.
+`principal-reliability-engineer`) never substitutes for the holistic `principal-reviewer` final
+gate — both always run. Also synced to the loose personal copy at `Documents/CLAUDE.md`. Full
+mirror refresh done and live-verified on `hareeshstggit.github.io/ats-platform-journey` (found and
+fixed 4 files — `CLAUDE.md`, `ARCHITECTURE.md`, `SCHEMA_CHANGE.md`, positions spec — that had
+drifted from `main` across this session's many merges without an individual per-file check).
+
+Nothing in flight. Next up, in the order the user last set:
+
+1. **Test the 4 Gemini-driven AI features live** — JD extraction, screening-question generation,
    candidate screening/matching, interview kit generation. Still not user-tested live themselves
    (carried over from 2026-08-04/05). Confirm `scripts/dev-stack-watchdog.ps1` is running first —
    note it silently died at least once already this week (M5 finding, `async-pipeline-durability`
    design.md) from an unhandled Podman-not-ready error at logon; verify actual process state, not
    just the Startup-shortcut's existence.
-3. **PR #210 (CI test infrastructure) is still open and unresolved** — `e2e` job genuinely
+2. **PR #210 (CI test infrastructure) is still open and unresolved** — `e2e` job genuinely
    broken across 2 fix attempts, real root cause never found. Not blocking, but flag its existence.
    Related, newly confirmed this session: BACKLOG #5 (MSW can't intercept proxied backend calls)
    manifests specifically as every e2e spec failing at the login/MFA step — a single root cause,
    not per-spec flakiness. `main`'s own `backend-ci.yml` `typecheck`/`test` are also red on every
    recent run for known, tracked reasons (BACKLOG #3/#4) — don't re-diagnose per-PR.
+3. `async-pipeline-durability`'s own OpenSpec close-out (separate from the user's closing report,
+   already delivered): `/opsx:verify` (confirm all 5 delta specs match the shipped implementation),
+   then `/opsx:sync`+`/opsx:archive`.
 4. Once (1) is delivered: `/opsx:verify` (confirm all 5 delta specs match the shipped
    implementation), then `/opsx:sync`+`/opsx:archive` for `async-pipeline-durability` — the
    6-phase change's own close-out (tasks.md §7), separate from the user's closing report.
