@@ -7,64 +7,13 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-08-06 night, paused — "need to go to bed, resume tomorrow")
+## RESUME HERE FIRST (2026-08-07)
 
-User's standing instruction (2026-08-06): complete `async-pipeline-durability` Phases 3-6 at the
-same review rigor as Phases 1-2, with a binding-mandate-compliance block on every subagent dispatch
-(zero hallucination, zero extra code, full CLAUDE.md compliance) — see the Phase 3/4 entries below.
-At the end of Phase 6, user wants: a detailed explanation of what was fixed and how, assurance the
-issue won't recur, and the guardrails to prevent future wasteful rework cycles — **owed, not yet
-delivered**, first thing on resume once Phase 6 actually merges.
-
-1. **Phase 5 (D9, UI stuck-row surfacing) — MERGED, PR #218, 2026-08-07.** 3 principal-reviewer
-   rounds (2 Critical in the matching-badge logic round 1, a label-regression Major round 2, both
-   fixed; round 3 APPROVE-WITH-NITS after one dead re-export removed). CI showed 4 real (not
-   runner-transient) job failures on merge day — all independently confirmed against known,
-   already-tracked gaps, not Phase 5 regressions: backend `test` (19 failures = BACKLOG #3, no
-   Postgres/Redis in CI), backend `typecheck` (133 pre-existing errors, same 3 files), frontend
-   `component-test` (`nav-items.test.ts`/`position-schema.test.ts` = BACKLOG #4), frontend `e2e`
-   (36 failures, all at the login/MFA step — the SAME pre-existing blocker principal-reviewer's
-   own round-3 control test (`e2e/positions.spec.ts`, unmodified) already reproduced; also
-   confirmed `main`'s own last CI runs are red for the identical reasons before merging). Local
-   main synced, no new Alembic revision this phase (`0056` still head), worktree cleaned up.
-   Known, tracked, NOT fixed by this PR: the e2e login path is unrunnable for every spec in this
-   repo — worth a dedicated fix session (see BACKLOG #5, added this session).
-2. **Phase 6 (D10, AWS Terraform + real Prometheus metrics wiring) — code done, 4 AWS SRE review
-   rounds closed at APPROVE-WITH-NITS, final `principal-reviewer` gate DISPATCHED, verdict NOT YET
-   RECEIVED at pause.** This was the hardest phase of the whole change — 4 rounds of
-   `principal-reliability-engineer` (AWS SRE specialist) found: round 1 — 6 Critical (a broken
-   Prometheus scrape config that would collect nothing; an IAM policy missing the actual EMF
-   log-publish permissions; `treat_missing_data="notBreaching"` making the flagship alarm blind to
-   exactly the 2026-08-05 incident's own signature; an age-gauge capped below its own alarm
-   threshold by an unrelated DB trigger; a metric-writer/metric-server process split with no
-   concurrency pin; an apply-blocking `iam`-module skeleton); round 2 — the round-1 fix ITSELF
-   introduced 2 NEW Criticals, both proven by the reviewer actually EXECUTING the pinned
-   `prometheus_client` library rather than arguing from the code (a Gauge multiprocess-mode default
-   that silently retains a dead worker's stale reading forever; Counter alarms that would fire on
-   every healthy deploy because the series doesn't exist until first failure); round 3 — narrow,
-   an IAM over-correction + a singleton-beat invariant asserted in 3 places but not enforced by
-   Terraform (ECS's default rollout config lets 2 beat schedulers run concurrently on every
-   deploy); round 4 — APPROVE-WITH-NITS, mathematically proved the remaining worker-deploy
-   tradeoff is genuinely the only correct option, found the documented mechanism for it was
-   backwards, fixed. **On resume: check for the `principal-reviewer` final-gate task-notification**
-   (agent id was `aa770c945b4cb7c3a` this session — may already be sitting in the conversation
-   history if it landed overnight). If APPROVE/APPROVE-WITH-NITS: commit with `Agent:
-   backend-engineer` / `Reviewed-by: principal-reviewer — <verdict>` trailers, push, check GH
-   Actions billing usage, open PR, watch CI (learn from tonight — a `cancelled`/"not acquired by
-   Runner" job is a GitHub-side transient, `gh run rerun` it, don't treat it as a real failure),
-   merge, sync main+alembic (no new migration this phase — confirm `alembic current` still shows
-   `0056_ivw_level_kits_upd_trg (head)`), cleanup worktree, sync `resume-pointer.md`+external
-   mirror. If CHANGES-REQUESTED: relay findings back to agent `af042260d864999b8` (this is its
-   5th round on Phase 6 — the pattern this whole phase has followed).
-3. **After BOTH Phase 5 and Phase 6 are merged: deliver the user's explicit closing ask** — a
-   detailed explanation of what was fixed and how, an assurance the original incident class won't
-   recur, and concrete guardrails to prevent wasteful rework cycles going forward (the user
-   explicitly framed this around the real $ and time cost of this session's many review rounds).
-   This is owed BEFORE moving to any new work, not an optional wrap-up — the user asked for it by
-   name as the deliverable for completing Phase 6.
-4. Then: `/opsx:verify` (confirm all 5 delta specs match the shipped implementation),
-   `/opsx:sync`+`/opsx:archive` for `async-pipeline-durability` (tasks.md §7, close-out) — the
-   6-phase change is fully done at that point.
+1. **Deliver the user's closing ask for `async-pipeline-durability`** — a detailed explanation of
+   what was fixed and how, an assurance the original incident class won't recur, and concrete
+   guardrails to prevent wasteful rework cycles going forward. **Owed, not yet delivered** — say
+   this to the user BEFORE any new work. All 6 phases are merged (see the RESOLVED section below);
+   nothing is blocking this except writing it.
 2. **Test the 4 Gemini-driven AI features live** — JD extraction, screening-question generation,
    candidate screening/matching, interview kit generation. Still not user-tested live themselves
    (carried over from 2026-08-04/05). Confirm `scripts/dev-stack-watchdog.ps1` is running first —
@@ -72,13 +21,70 @@ delivered**, first thing on resume once Phase 6 actually merges.
    design.md) from an unhandled Podman-not-ready error at logon; verify actual process state, not
    just the Startup-shortcut's existence.
 3. **PR #210 (CI test infrastructure) is still open and unresolved** — `e2e` job genuinely
-   broken across 2 fix attempts, real root cause never found (see the section below for full
-   detail). Not blocking, but flag its existence. Note: `main`'s own `backend-ci.yml` `typecheck`
-   and `test` jobs are ALSO currently red on every recent run (133 pre-existing mypy errors in 3
-   untouched files; 19 test failures — all either the tracked "no Postgres/Redis in CI" gap
-   (BACKLOG #3) or a pre-existing `test_seed_dev.py` count-mismatch) — confirmed via
-   `gh run list --branch main` before merging PR #217, so this is a known, tracked gap, not a
-   Phase 4 regression. Do not re-diagnose it per-PR; it is item #3/#4 in the BACKLOG active queue.
+   broken across 2 fix attempts, real root cause never found. Not blocking, but flag its existence.
+   Related, newly confirmed this session: BACKLOG #5 (MSW can't intercept proxied backend calls)
+   manifests specifically as every e2e spec failing at the login/MFA step — a single root cause,
+   not per-spec flakiness. `main`'s own `backend-ci.yml` `typecheck`/`test` are also red on every
+   recent run for known, tracked reasons (BACKLOG #3/#4) — don't re-diagnose per-PR.
+4. Once (1) is delivered: `/opsx:verify` (confirm all 5 delta specs match the shipped
+   implementation), then `/opsx:sync`+`/opsx:archive` for `async-pipeline-durability` — the
+   6-phase change's own close-out (tasks.md §7), separate from the user's closing report.
+
+## RESOLVED 2026-08-07 — `async-pipeline-durability` fully merged, all 6 phases (PR #214-#219)
+
+The 2026-08-05 incident (48 candidates stuck 4+ hours, zero alert) is now closed end-to-end:
+detection/retry (Phase 1, PR #214), self-healing reconciler + beat scheduling (Phase 2, PR #215),
+redelivery-safe task bodies (Phase 3, PR #216), LLM client timeouts + circuit breaker (Phase 4,
+PR #217), UI stuck-row surfacing (Phase 5, PR #218), and AWS Terraform + real Prometheus metrics
+wiring (Phase 6, PR #219). Full narrative for Phases 1-4 is in the entries below; Phase 5/6 summary:
+
+**Phase 5 (D9, UI half) — PR #218.** 3 `principal-reviewer` rounds: round 1 found 2 Critical in
+the matching-pipeline badge logic (a retry-count proxy instead of the reconciler's own
+`matching_error`/`last_matched_at` predicate produced both false negatives and false positives)
++ 6 Major; round 2 found the round-1 label fix for one false-wording issue had only been applied
+to 1 of 5 badge call sites; round 3 APPROVE-WITH-NITS after one dead re-export removed. CI showed
+4 real (non-transient) failures on merge day, all independently confirmed against already-tracked
+gaps, not regressions: backend `test`/`typecheck` (BACKLOG #3, mypy baseline), frontend
+`component-test` (BACKLOG #4), frontend `e2e` (36 failures, all at the login/MFA step — same
+pre-existing blocker a control test with an unmodified spec reproduced identically; confirmed
+`main`'s own CI is red for the same reasons). Task 5.4's live Playwright check couldn't complete
+for this same reason — tracked as tech debt (BACKLOG #5), not a Phase 5 defect.
+
+**Phase 6 (D10, Terraform + metrics) — PR #219, the hardest phase of the whole change.** 4 rounds
+of `principal-reliability-engineer` (AWS SRE specialist) on the Terraform/observability design:
+round 1 found 6 Critical (a broken Prometheus scrape config that would collect nothing; an IAM
+policy missing the actual EMF log-publish permissions; an alarm set to ignore missing data — blind
+to exactly this incident's own signature; an age-gauge capped below its own alarm threshold by an
+unrelated DB trigger; a metric-writer/metric-server process split with no concurrency pin; an
+apply-blocking `iam`-module skeleton); round 2 found the round-1 fix ITSELF introduced 2 NEW
+Criticals, both proven by the reviewer actually executing the pinned `prometheus_client` library
+live rather than arguing from the code (a Gauge multiprocess-mode default that silently retains a
+dead worker's stale reading forever; Counter alarms that would fire on every healthy deploy);
+rounds 3-4 narrowed IAM/deployment-config findings to APPROVE-WITH-NITS. `principal-reviewer`'s
+final holistic gate then found something none of the 4 specialist rounds did: the `rediss://` URLs
+this phase's own Terraform authored crash Celery at boot (no `ssl_cert_reqs` parameter) — meaning
+the entire runtime the prior 4 rounds built alarms around would never actually run in production.
+Fixed with a scheme-gated SSL config (which also closed a silent `CERT_NONE` cert-verification-
+disabled hole, found as a bonus); one more re-check caught an em-dash in a security-group
+description invisible to `terraform validate` before closing APPROVE-WITH-NITS. **CI on merge day
+surfaced 2 genuinely new things** (not pre-existing gaps): (a) a real cross-platform bug in the
+new multiprocess metrics tests — Linux CI's default `fork()` start method is unsafe under a
+multi-threaded pytest-asyncio parent process, silently corrupting the child's writes; both
+Windows-local test runs (mine and the implementing agent's) always use `spawn` and could never
+have caught this — fixed by pinning `multiprocessing.get_context("spawn")` explicitly, confirmed
+on real Linux CI after the fix; (b) `terraform-plan.yml` has **no AWS-credentials step at all**,
+unchanged since the original project-scaffold commit — this was the first PR in the project's
+history to touch `infrastructure/terraform/**`, so its `on.pull_request.paths` filter never fired
+before. Not caused by Phase 6, not fixable within any PR's scope (needs a real AWS account +
+GitHub secrets, an infra decision) — tracked as BACKLOG #6. `terraform plan` against real AWS
+credentials remains the one item never run this session (no credentials available); `fmt`/
+`validate` ran clean throughout (I installed Terraform 1.9.8 myself since neither implementing
+agent's sandbox had network access — caught 2 real syntax/charset errors across the review that
+manual code review alone missed).
+
+Both phases: local main synced, no new Alembic revision either phase (`0056` still head),
+worktrees cleaned up, `resume-pointer.md` + `docs/BACKLOG.md` synced to the external
+`ats-platform-journey` GitHub Pages mirror after each merge.
 
 ## RESOLVED 2026-08-05 — live async-pipeline incident root-caused and fixed, Phase 1 merged (PR #214)
 

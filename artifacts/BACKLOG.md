@@ -29,6 +29,7 @@ narrative, only current state.
 | 3 | CI test gap — Postgres/Redis services not provisioned (18 backend tests fail in CI) | 🔴 Queued (3rd) |
 | 4 | Frontend test debt — nav-items.test.ts, position-schema.test.ts, others (6+ pre-existing failures) | 🔴 Queued (4th) |
 | 5 | e2e CI job-design gap — MSW can't intercept proxied backend calls | 🔴 Queued (5th). **Confirmed 2026-08-07 (PR #218):** every spec now fails at the login/MFA step specifically ("Verify and continue" stuck disabled — the MFA verify call never resolves) — reproduced identically by `organizations.spec.ts`, `positions.spec.ts`, and the new `pipeline-retry-badge.spec.ts` (all pre-existing or unrelated to that PR's own diff), confirming this is a single root cause blocking ALL e2e coverage, not per-spec flakiness. |
+| 6 | `terraform-plan.yml` CI check has no path to ever pass — no AWS-credentials step exists anywhere in the workflow (confirmed via `git log`: file untouched since the original project-scaffold commit `537b06d`), so `terraform init -backend-config=environments/<env>/backend.hcl` cannot authenticate to the real S3 backend. **Discovered 2026-08-07 (PR #219, async-pipeline-durability Phase 6)** — this is the FIRST PR in the project's history to touch `infrastructure/terraform/**`, so the workflow's `on.pull_request.paths` filter never triggered it before now. Not caused by Phase 6; not fixable within any single PR's scope — needs a real AWS account, GitHub Actions secrets (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` or an OIDC role), and an `aws-actions/configure-aws-credentials` step added to the workflow, which is an infra/credentials decision requiring explicit user approval, not a code fix. Every future PR touching Terraform will show this same 3-way (`dev`/`staging`/`prod`) failure until it's addressed. | 🔴 Queued (6th) |
 
 ## 2. Pending merges
 
@@ -176,6 +177,110 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   headroom above a normal `max_tokens=4096` completion) but should be revisited with a real
   measured p95/p99 completion latency once Anthropic/Bedrock actually go live in production,
   before relying on this bound under real load.
+- ✅ **RESOLVED (async-pipeline-durability Phase 6, principal-reliability-engineer AWS SRE
+  review round 1, C5).** This entry originally characterized the worker-side metrics gap as
+  "single-process best-effort... an under-count (never fabricated)" — the reviewer correctly
+  identified that characterization as ITSELF wrong: with the original per-child
+  `worker_process_init`/first-bind-wins design, the metric WRITER (whichever prefork child a
+  reconciler task landed on) and the metric SERVER (whichever child won the port race) could be
+  DIFFERENT children, producing a STALE gauge value between the rare cycles that happened to land
+  on the binding child, or an ABSENT series entirely for a pipeline that never did — worse than an
+  under-count, and it directly contradicted `metrics.py`'s own "never left stale" claim. Fixed by
+  switching to `prometheus_client`'s real multiprocess mode: `PROMETHEUS_MULTIPROC_DIR` (set on the
+  worker container only, `docker-compose.yml`/`ecs` module) makes every Counter/Gauge write to a
+  per-PID file instead of process memory; `start_worker_metrics_server` (`shared/metrics.py`) now
+  serves the aggregated result via `multiprocess.MultiProcessCollector`, called ONCE from
+  `celery_app.py`'s `worker_init` signal (fires in the pre-fork parent, not per child — no port
+  race to guard against); `worker_process_shutdown` marks each exiting child's file dead. The API
+  process's own `/metrics` (main.py) still never reflects these values in production (separate ECS
+  task from the worker) — that half of the original finding stands and is now documented directly
+  in `main.py`'s mount comment instead of here.
+  **Round 2 correction (R2-C1)**: round 1's live check above exercised only a Counter, which
+  aggregates correctly under EITHER `multiprocess_mode` — it could not have caught (and did not
+  catch) that the Gauge (`pipeline_oldest_pending_age_seconds`) was left on the DEFAULT
+  `multiprocess_mode='all'`, which exports one series per PID and is never cleaned up by
+  `mark_process_dead` (that only cleans the LIVE modes). Reviewer proved live: one process wrote
+  250 then exited, another wrote 0 then exited, exposition showed BOTH values — a `Maximum`
+  statistic downstream would read 250 forever after the backlog clears. Fixed by setting
+  `multiprocess_mode="livemostrecent"` explicitly; a REAL committed test now exists
+  (`backend/app/shared/tests/test_metrics_multiprocess.py`) exercising the Gauge specifically
+  (not just the Counter), verified to fail against the buggy default and pass against the fix.
+- 🔴 **Worker ECS service pinned to `desired_count=1` — scaling it requires a metrics-shape fix
+  first (async-pipeline-durability Phase 6, AWS SRE review round 2, R2-M2).** `multiprocess_mode`
+  (see the entry above) is per-CONTAINER, not per-cluster — 2+ worker tasks each carry independent,
+  independently-resetting Counter/Gauge state that lands on the SAME CloudWatch dimension set
+  (`pipeline` only). `infrastructure/terraform/modules/ecs/variables.tf`'s `worker_desired_count`
+  carries a Terraform `validation` block hard-failing `plan`/`apply` above 1, specifically so this
+  can't be silently reintroduced by a routine capacity bump. Needs, before ever scaling: either a
+  `TaskId` dimension combined with an alarm shape that SUMs each task's own per-task RATE (NOT a
+  shared cumulative-value SUM — that wouldn't fix resets and would double-count during overlap;
+  each task's own series is monotonic within its lifetime, so its disappearance just ends that
+  series instead of resetting a shared one), or an equivalent per-task-aware aggregation fix.
+  **Round 3/4 correction (R3-M2, wording fixed round 4): the risk is task-replacement counter
+  reset, NOT deploy overlap.** Every worker task replacement (deploy, scale-in, unhealthy-task
+  swap) resets that task's Counter to 0 on death, regardless of `desired_count`. ECS's deployment
+  overlap (`maximumPercent=200%`/`minimumHealthyPercent=100%` — a replacement starts BEFORE the old
+  task drains) is a red herring here: all 3 `pipeline_*` alarms use `Maximum`, so the overlap
+  window itself is a no-op (`max(old=50, new_task=0) == 50`) — applying beat's stop-then-start fix
+  (`deployment_maximum_percent=100`/`deployment_minimum_healthy_percent=0`) here would NOT actually
+  help, which is why it was deliberately not applied; the worker's 120s `stopTimeout` would also
+  make that fix cost 2-3 minutes with zero Celery consumers on all 6 queues on every deploy, a
+  separate and sufficient reason not to. The real risk is narrower than "a noisy RATE dip": a real
+  terminal-failure burst recorded just before a task replacement can be MASKED (silently dropped
+  from the alarm's view, not merely under-reported) by the reset. The gauge-based
+  `pipeline_oldest_pending_age_seconds` alarm is unaffected (not a Counter; recomputed fresh from
+  the DB every sweep regardless of which task runs it) and remains the primary detector for the
+  incident class this phase exists to catch. Documented consistently in the variable description
+  and the runbook.
+- 🔴 **Queue-depth / oldest-message-age alarms scoped out of the monitoring module (async-
+  pipeline-durability Phase 6, D10; principal-reviewer final-gate M2 — this entry was
+  missing, the module's own comment pointed here to nothing).** `infrastructure/terraform/
+  modules/monitoring/main.tf`'s header explains the reasoning but the entry it promised never
+  got written: Redis `LLEN` is not a native CloudWatch metric, and no existing Celery-side
+  gauge exists to extend (checked `celery_app.py`) — building one would mean a guessed custom
+  exporter, out of scope for this phase. The 3 `pipeline_*` alarms (stuck-rows volume,
+  terminal-failures, oldest-pending-age) are the primary signal instead, per design.md's own
+  explicit reasoning ("the actual incident had an EMPTY queue with a FULL table of stranded
+  rows; a queue-depth-only alarm would not have caught it"). If queue-depth/oldest-message-age
+  visibility is ever wanted anyway (e.g. for capacity planning, not incident detection), it
+  needs a Celery-side gauge (there isn't one) publishing via the same `shared/metrics.py`
+  worker-listener path already built.
+- 🔴 **Age-gauge reconciler queries have no dedicated "entered non-terminal state" timestamp
+  column (async-pipeline-durability Phase 6, C4; principal-reviewer final-gate M2 — this entry
+  was missing, `_reconciler_tasks.py`'s own docstring pointed here to nothing).**
+  `candidates/_reconciler_tasks.py`/`interviews/_reconciler_tasks.py`'s
+  `pipeline_oldest_pending_age_seconds` gauge estimates age as `(now() - updated_at) +
+  retry_count * STUCK_ROW_SLA_SECONDS` rather than reading a real elapsed-time column, because
+  no such column exists — `updated_at` gets bumped by the same `fn_set_updated_at_and_version`
+  trigger on every reconciler claim UPDATE, so a bare measure resets every ~60s (the actual C4
+  defect this estimate works around). The estimate assumes beat's actual schedule matches
+  `STUCK_ROW_SLA_SECONDS` (true today, both hardcoded to 60s, but not enforced to stay in sync).
+  A real fix — a dedicated timestamp column set once on first entering the non-terminal state,
+  never touched by the reconciler's own claim UPDATE — needs an additive Alembic migration on
+  `candidates`/`interview_level_kits` (per `docs/SCHEMA_EVOLUTION.md`'s decision tree, a real
+  column: hot-queried, indexed) — not built this phase, tracked here instead of guessed.
+  **Related, logged together (m8, same final-gate round):** all 3 age-gauge queries aggregate
+  over ALL non-terminal rows every 60s (unbounded), while the row-scan they precede is capped
+  at `LIMIT 100` — cost scales with backlog size, in exactly the incident scenario the metric
+  exists to detect. Currently ~1-6ms locally (live `EXPLAIN`-verified, single index scan /
+  Hash Semi Join, no duplicate SubPlan) and off the request path (Celery beat, not an API
+  path) — not a defect today, just a scaling assumption worth re-measuring if the non-terminal
+  backlog ever grows by orders of magnitude.
+- 🔴 **Two pre-go-live Terraform verification items needing real registry/AWS access, neither
+  possible in the authoring sandbox (principal-reviewer final gate, m1 + m4).** (a) `elasticache`
+  module's Redis security group allows ingress from the whole VPC CIDR rather than being scoped
+  to the `ecs` module's task security group specifically — the `ecs` module now exists in the same
+  root plan and `elasticache/outputs.tf` already exports `security_group_id`, so tightening this is
+  possible in principle, but wiring it would make `elasticache` take `ecs`'s task SG as an input
+  while `ecs` already takes `elasticache`'s endpoint as an input, and confirming that doesn't
+  produce a real apply-time cycle needs a `terraform graph`/`plan` run, not available here. (b)
+  `ecs` module's `cloudwatch_agent_image` variable stays at `public.ecr.aws/cloudwatch-agent/
+  cloudwatch-agent:latest` — a floating tag risks a silent upstream schema break (C1/C2's failure
+  mode arriving a different way) but the exact versioned ECR tag could not be verified live
+  (`gallery.ecr.aws/cloudwatch-agent/cloudwatch-agent` is JS-rendered, returned empty content via
+  every fetch attempted — the same JS-rendering limitation the AWS SRE review hit twice already
+  with other AWS docs). Both need someone with real AWS/registry access before go-live, not a
+  guess shipped as if verified.
 - 🔴 **Project-wide OpenSpec format migration.** All existing `openspec/specs/<module>/spec.md` files (candidates, interviews, reporting, positions, offers, data-privacy, etc.) use this project's own house format — numbered sections + BR-xxx business rules — not the OpenSpec-tool-native `### Requirement:`/`#### Scenario:` format. Surfaced 2026-08-05 when writing delta specs for `async-pipeline-durability`: no existing requirement headers to copy for a proper MODIFIED block, so those deltas used ADDED throughout. User confirmed (2026-08-05): keep house format for now, don't block the reliability change on this, but track a full project-wide reformat to make every spec file uniformly OpenSpec-native (`### Requirement:` + `#### Scenario:`, one file per module, no numbered-section/BR-xxx house style) as its own future change. Large — one file alone (`candidates/spec.md`) is 1700+ lines.
 
 ---
