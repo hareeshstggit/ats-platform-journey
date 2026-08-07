@@ -475,6 +475,66 @@ development" below) are enforced under this same no-override class**, not the so
 rule that governs Gates 1–4. They cannot be skipped by any user request, however explicit, in any
 session — only an edit to this file changes them.
 
+## Live-verification & environment-parity mandate (binding — added 2026-08-07, NO override, same class as Gate 5)
+
+This section exists because the `async-pipeline-durability` change (6 phases, 2026-08-05 through
+2026-08-07, closing a live incident where 48 candidates sat stuck for 4+ hours with zero alert) ran
+to many more review rounds than necessary — not because the review rigor was wrong (every single
+phase found a genuinely severe, production-grade defect that only live execution could catch — the
+rigor is what caught them), but because specific, repeatable process gaps let defects survive one
+extra round before being caught, when they could have been caught in the round they were introduced.
+Two concrete incidents from that change anchor this mandate: (1) a "fix" for a circuit-breaker
+Gauge's stale-reading bug set `multiprocess_mode` incorrectly on the first attempt — proven wrong
+only when a reviewer actually executed the pinned `prometheus_client` library against two real
+processes, not by reading the diff; the same fix was accepted as correct by an earlier round that
+had only read the code; (2) a fork-vs-spawn multiprocessing bug and an em-dash in a Terraform
+security-group description were both invisible to every local Windows test run and to
+`terraform validate`, and surfaced only on the first PR that ever ran through real Linux GitHub
+Actions CI — meaning the "definition of done" up to that point had never actually included running
+on the target platform. Every rule below closes one specific instance of "this could have been
+caught a round earlier, for a fraction of the cost."
+
+**1. A proposed fix to a defect touching an external library, service, or infrastructure config
+(Celery, Redis/`rediss://`, Terraform/AWS resource attributes, Prometheus client internals, any
+third-party SDK) is not "done" until it has been executed against the real thing — not merely read
+back or reasoned about.** Reading the diff and confirming it "looks correct" against documentation
+or prior knowledge is not sufficient for this class of change; training data and documentation are
+frequently stale or incomplete for exact library/version behavior (e.g. `multiprocess_mode`
+defaults, `rediss://` SSL parameter requirements, AWS security-group description character-set
+restrictions). The agent making the fix — not only the reviewer — runs the live check BEFORE
+reporting the fix as complete, the same way Rule 7 already requires a live `EXPLAIN` for query-plan
+changes. This closes the incident-1 gap: the wrong fix would not have been accepted as "verified"
+if verification had meant execution instead of a read-through.
+**2. CI on the actual target platform is part of the definition of done for every phase, not a
+follow-up check run only when convenient.** Local test runs (Windows dev machines in this project's
+case) do not exercise platform-specific behavior that differs from the CI runner (Linux) or from
+real cloud APIs (AWS) — `multiprocessing`'s OS-default start method, a Terraform provider's
+per-field validation coverage, and container/OS-level behavior generally. A phase is not complete
+until its actual CI pipeline has run and been read, not merely until local Gate 1 is green. This
+closes the incident-2 gap: both defects were structurally invisible to every check that ran before
+CI, and were only found because CI was watched through to completion rather than treated as a
+formality after local tests passed.
+**3. Tooling required to verify a change lives in the main loop's own environment before the change
+is dispatched, not provisioned reactively after a reviewer flags its absence.** If a phase's own
+verification needs a CLI, SDK, or credential the implementing agent's sandbox cannot reach (no
+network access, no installed binary), the main loop provisions it itself — as happened mid-session
+with the Terraform CLI, after 3 review rounds had already passed without a single real `terraform
+validate` run — before dispatching the next round, not after the next reviewer asks for it again.
+**4. A specialist review is never a substitute for the holistic final-gate review, and both always
+run — never one instead of the other, regardless of how clean the specialist's sign-off looks.**
+4 rounds of a deep AWS-SRE specialist review closed a Terraform/observability change at
+APPROVE-WITH-NITS; the subsequent holistic `principal-reviewer` gate — looking at the same change
+with a wider lens — found a defect (a `rediss://` URL configuration that would crash the application
+at boot) that would have made every one of the specialist's 4 rounds of alarm/metrics work
+inoperable in production, because the specialist's review scope never crossed into "does the
+runtime this alarms on actually start." Skipping the holistic gate after a clean specialist sign-off
+— for time, cost, or because the specialist review already felt thorough — is exactly the shortcut
+this rule forbids. Both gates run on every change that has both a specialist and a holistic review
+step in its pipeline; neither is optional because the other passed.
+
+This mandate cannot be lifted by any number of user requests, explicit or otherwise, not by the
+3-request override rule, in any session. The only way to change it is to edit this file directly.
+
 ## Token-optimized development (binding — every task)
 
 Compute cost is real; discipline keeps it proportionate to value delivered.
@@ -641,6 +701,68 @@ versioned — not buried in chat. This is enforced in the SAME change, never aft
   run `git checkout main && git pull origin main && alembic upgrade head` and confirm
   `alembic current` shows `(head)`. Local dev DB and main must always be at the same
   Alembic head.
+
+### GitHub Actions minutes — usage check is mandatory, not optional (binding — added 2026-08-02)
+
+This project ran multiple sessions (2026-07-30 through 2026-08-02) where every PR's CI checks
+instant-failed with `The job was not started because recent account payments have failed or
+your spending limit needs to be increased` — the Actions minutes allotment was silently
+exhausted, and every merge across that window sat blocked for days with no proactive warning.
+The gap was never checking actual usage against the plan's allotment before triggering more CI
+runs — each new push/PR/rerun just kept consuming minutes into a quota nobody was watching.
+
+**Rule:** before starting any batch of work that will trigger multiple CI runs (several PRs,
+several pushes to open PRs, several `gh run rerun`s) — and at minimum once per session that
+touches CI — check current Actions usage:
+```bash
+gh api users/<owner>/settings/billing/usage
+```
+(the older `settings/billing/actions` endpoint returns `410 — moved`; this is the current
+replacement, grouped by month/SKU — `"Actions Linux"` quantity is the minutes consumed this
+billing cycle, `"unitType":"Minutes"`; `netAmount: 0.0` with `discountAmount == grossAmount`
+means still inside the plan's included allotment, a non-zero `netAmount` means already billing
+past it). For an org-owned repo use `gh api orgs/<org>/settings/billing/usage` instead.
+
+**How this changes behavior, not just observation:** if usage is trending toward the
+allotment, group and batch upcoming commits/merges instead of triggering a fresh CI run per
+small push — same discipline as the existing PR-batching practice
+([[feedback_pr-batching-strategy]]: 5-8 bug fixes per PR), now driven by an actual number
+instead of a guess. Flag it to the user proactively when usage looks like it's approaching
+the allotment — don't wait for the instant-fail signature to be the first sign, the way this
+incident played out.
+
+## External-sharing artifact sync (binding — added 2026-07-30)
+
+The public GitHub Pages repo `hareeshstggit/ats-platform-journey` (a separate, standalone
+repo — `isFork: false`, `parent: null`, zero git relationship to this repo) mirrors
+`ONBOARDING.md` plus 18 real, full, un-condensed reference files for external/cross-org
+sharing (`ShareOnboardingGuide`'s Claude-org-scoped link only reaches STG/STG Labs
+accounts — this Pages site is the only channel that works for anyone outside that org).
+A stale mirror defeats the entire point of a "hardcopy for reuse" — a recipient opening
+the public URL must always see what's actually on `main` today, not a snapshot from
+whenever the mirror was last built.
+
+**Rule:** after EVERY PR merge to `main`, check whether the merge touched any of the 18
+mirrored files or `ONBOARDING.md` itself:
+
+- `.claude/CLAUDE.md`, `docs/ARCHITECTURE.md`, `docs/SCHEMA_EVOLUTION.md`,
+  `docs/SCHEMA_CHANGE.md`, `openspec/specs/positions/spec.md`,
+  `.claude/rules/ats-ux-ui-guardrails.md`, `docs/BACKLOG.md`, `memory/resume-pointer.md`,
+  `docs/TOKEN_OPTIMIZATION_PRACTICE.md`, `docs/EXECUTION_METHODOLOGY.md`, all 8
+  `.claude/agents/*.md` files.
+- If yes: re-copy the changed file(s) byte-perfect (`git show main:<path>` — never
+  hand-retype, avoids transcription risk on large files), and if `ONBOARDING.md` itself
+  changed, rebuild `index.html` (`npx marked --gfm` + the existing styled wrapper), then
+  commit and push to `ats-platform-journey`'s `main` branch. GitHub Pages auto-rebuilds
+  on push — no separate Pages-API call needed after the first-time setup.
+- If no referenced file changed: no action needed for that merge.
+
+This is a same-batch step, not a separate follow-up task — do it as part of closing out
+the merge, the same way `docs/BACKLOG.md`/`memory/resume-pointer.md` get updated inline
+per the Progress capture rule above. Full mechanism, incident history (why gist-hosting
+was tried and rejected — GitHub forces `text/plain`+`nosniff` on all raw gist content,
+verified via `curl -I`), and the exact build steps are recorded in the durable memory
+`project_external-sharing-github-pages.md`.
 
 ## ATS UX/UI guardrail
 

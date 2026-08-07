@@ -98,8 +98,11 @@ exception_handlers.py   Maps every ATSException to the standard error envelope
 crypto.py               KMS envelope encrypt/decrypt + HMAC for searchable PII
 storage.py              S3 upload + pre-signed URLs
 outbox.py               publish_event() + the Celery relay that drains the outbox
+                        (relay_outbox_events runs on a Celery-beat schedule, added 2026-07-24)
 audit.py                write_audit_log() with hash-chaining
-email.py                SMTP sender + templates
+email.py                Dev-only OTP/MFA delivery stub (login flow) -- logs intent, never a
+                        real send. Real email fan-out for business events lives in
+                        modules/notifications/, not here (see Code map above).
 pagination.py           Shared paged-response shape
 ```
 
@@ -117,6 +120,8 @@ positions       Roles to fill: JD upload, panelists, count/JD/status history.
 candidates      Profile upload (bulk), dedup, and the AI agents (below).
 screening       Recruiter shortlist / reject decisions with reasons.
 interviews      Interview levels, scheduling, status model, panel feedback.
+offers          Offer lifecycle: draft, approval, PDF, accept/decline.
+notifications   Email fan-out (AWS SES) for outbox events -- interview.scheduled, offer.sent.
 reporting       Read-only analytics over materialized views.
 consent         DPDP consent capture/withdrawal; gates candidate AI processing.
 data_privacy    Data-subject requests (access/erasure) + retention enforcement.

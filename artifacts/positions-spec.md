@@ -20,6 +20,17 @@
 > create-vs-edit distinction needed. See interviews/spec.md's BR-SEQ-001 (the
 > corresponding usage-time sequencing gate this config-time validation feeds) and
 > openspec/changes/interview-status-lifecycle-phaseb/design.md D9.
+> Change set 2026-08-04 (gemini-llm-provider): §2 JD_EXTRACTION_PROVIDER gains a `gemini`
+> option (Gemini via the shared `llm_gateway`, requires GEMINI_API_KEY) — a real-LLM path
+> for local testing until AWS Bedrock access is live, not a production provider decision.
+> `JD_EXTRACTION_PROVIDER` is now permanently set to `gemini` in local dev. §2's retries-
+> exhausted behavior CHANGED: on all 3 retries exhausted (for anthropic/bedrock/gemini
+> alike — quota exhaustion, network blip, malformed response, etc.), JDExtractorAgent now
+> FALLS BACK to `local_nlp` (status='completed', provider='local_nlp') instead of returning
+> status='failed' — a JD upload never hard-fails once retries run out. A missing API key
+> (checked before any retry, anthropic/gemini only) still returns status='failed'
+> immediately, unchanged. Live-verified end-to-end for JD extraction; the fallback path
+> itself is unit-tested (mocked gateway exception on every attempt).
 
 ---
 
@@ -59,9 +70,11 @@ Provider: PLUGGABLE via `JD_EXTRACTION_PROVIDER` (implementation note, v2.2) —
           'local_nlp' (DEFAULT: offline gazetteer + section parser, no API key/network) or
           'anthropic' (claude-sonnet-4-6 via Anthropic API — requires ANTHROPIC_API_KEY) or
           'bedrock' (claude-sonnet-4-6 via AWS Bedrock bedrock-runtime, IAM role — no key on
-          ECS Fargate; enable via BEDROCK_MODEL_ID + BEDROCK_REGION). local_nlp is the default so
-          JD extraction works with zero external approvals; switch to anthropic/bedrock when a
-          key or IAM role is available (config flip, no code change).
+          ECS Fargate; enable via BEDROCK_MODEL_ID + BEDROCK_REGION) or 'gemini' (Gemini via
+          Google AI API — requires GEMINI_API_KEY; interim local-testing path pending AWS
+          Bedrock go-live, added 2026-08-04). local_nlp is the default so JD extraction works
+          with zero external approvals; switch providers when a key or IAM role is available
+          (config flip, no code change).
 Trigger : Fired after every JD file upload (single version)
 
 Extracted fields (persisted to job_descriptions table):
@@ -75,7 +88,12 @@ Agent prompt contract:
   - Return strict JSON with exact field names above
   - Return null for fields not found — never invent content
   - Retry 3 times on API failure with exponential backoff (1s, 2s, 4s)
-  - On all retries exhausted: extraction_status = "failed", log ERROR
+  - On all retries exhausted (added 2026-08-04, gemini-llm-provider): fall back to
+    `local_nlp` — extraction_status = "completed", provider = "local_nlp", log WARNING
+    (`jd_extraction_retries_exhausted_falling_back_to_local`, error_type only, never JD
+    content). Never a hard failure once retries run out; applies uniformly to
+    anthropic/bedrock/gemini. A missing API key (checked before any retry) still returns
+    extraction_status = "failed" immediately — unchanged.
 
 Position AI Requirement (from requirements doc):
   - Every time a position is created: capture Date & Time of creation
@@ -239,6 +257,8 @@ Response 202 : JDUploadResponse
     - Marks previous JD is_current = FALSE
     - Creates new job_description record with is_current = TRUE
     - Enqueues JDExtractorAgent Celery task
+    - Enqueue failure (broker unavailable) is logged and does NOT fail the request —
+      the JD stays 'processing' and is recoverable via POST /jd/re-extract.
     - Writes position_history record: change_type = 'jd_change'
 Response 400 : INVALID_FILE_TYPE | FILE_TOO_LARGE
 
@@ -252,6 +272,8 @@ Auth    : Bearer — roles: hr_admin, recruiter
 Notes   : Re-runs skill extraction on the current JD without uploading a new file.
           No new JD version is created; only extracted skill fields are refreshed.
           Use after gazetteer updates. Accepted at any time (no status guard).
+          Enqueue failure (broker unavailable) is logged and does NOT fail the request —
+          the JD stays 'processing' and is recoverable via POST /jd/re-extract.
 Response 202 : JDUploadResponse (same schema as POST /jd)
 Response 404 : JD_NOT_FOUND
 
@@ -285,21 +307,40 @@ Request :
       "level_label"    : "string — e.g. 'STG Labs Level-1', 'Infosys Level-2'",
       "level_category" : "stg_labs | organization (REQUIRED — P27)",
       "sequence_order" : "integer (1 = first in pipeline)",
-      "panelist_id"    : "uuid | null — optional assigned interviewer (CR-001)"
+      "panelist_ids"   : "array of uuid, 1-3 items, optional (level may be created with zero panelists and have them added later in Positions edit mode) (CR-002)"
     }
   ]
 Response 201 : List[InterviewLevelResponse]
   Creates/replaces the interview level configuration for this position.
-  Each level may optionally carry a panelist_id linking to the global panelist master.
+  Each level may carry 0-3 panelists linking to the global panelist master.
   Used when setting up the interview pipeline before candidates are mapped.
   InterviewLevelResponse includes:
-    panelist_id    : uuid | null
-    panelist_name  : string | null  (populated from eager-loaded InterviewPanelist.name)
+    panelists      : array of { panelist_id, panelist_name } (0-3 items, ordered by
+                     sequence_number 1-3 — assignment order, not interview order)
     level_category : 'stg_labs' | 'organization'
 Errors:
-  400 VALIDATION_ERROR   — level_category missing or not one of 'stg_labs'/'organization'
-  404 PANELIST_NOT_FOUND — panelist_id does not exist or is soft-deleted
-  422 PANELIST_INACTIVE  — referenced panelist exists but is deactivated
+  400 VALIDATION_ERROR         — level_category missing or not one of 'stg_labs'/'organization'
+  400 PANELIST_MIN_REQUIRED    — an update would drop panelist_ids below 1 for a level that
+                                 already has panelists. Message: "at least one interview
+                                 panelist need to be assigned to the interview level."
+                                 Only fires when reducing an already-populated level below 1;
+                                 creating a level with zero panelists is allowed (see above).
+  422 PANELIST_MAX_EXCEEDED    — panelist_ids has more than 3 entries. Message: "Max 3
+                                 interview panelists could be added for any interview level."
+  404 PANELIST_NOT_FOUND       — a panelist_id does not exist or is soft-deleted
+  422 PANELIST_INACTIVE        — a referenced panelist exists but is deactivated
+  422 PANELIST_DUPLICATE       — same panelist_id repeated within panelist_ids for one level
+
+**CR-002 (this change, supersedes CR-001's single-panelist shape):** interview levels
+support 1-3 panelists per level instead of one. `panelist_id` (singular) is replaced by
+`panelist_ids` (array) on both request and response. Panelist assignment is created and
+edited EXCLUSIVELY here — in the Positions module, at position-create time or in
+Positions edit mode. The Interviews module does not assign or edit panelists; it only
+reads the configured list and gates on it (see interviews/spec.md's scheduling endpoint).
+
+**Migration note:** existing single `panelist_id` values backfill into the new
+multi-panelist structure as the sole (sequence_number = 1) entry for that level —
+additive, no data loss, per CLAUDE.md's backfill mandate.
 
 **Known gap (spec-sync audit 2026-07-10, tracked as BUG-4 in
 test_functional_p27_pos_close_autoclose.py:648):** `InterviewLevelRequest` and
@@ -324,7 +365,7 @@ Note (P27): level_category drives two downstream behaviours:
 ### GET /api/v1/positions/{id}/interview-levels
 Auth    : Bearer — all authenticated roles
 Response 200 : List[InterviewLevelResponse] ordered by sequence_order
-  Each row includes panelist_id, panelist_name (null when no panelist assigned),
+  Each row includes panelists (0-3 items, empty array when none assigned),
   and level_category ('stg_labs' | 'organization').
 
 ### GET /api/v1/positions/{id}/history
@@ -355,7 +396,23 @@ BR-003b Every status change is recorded in position_history with the timestamp
         (change_type = 'status_change') via the DB trigger — satisfies the v2
         requirement to capture status-change date & time.
 BR-004  [Deferred Phase 18/20] STG Labs panelists: maximum 2 (sequence_number 1 and 2 only).
+        Unrelated to BR-064 below — this governs interview_panelist_assignments
+        (per-scheduled-interview slots, Interviews module), not interview_levels'
+        configured panelist roster (Positions module). Left as-is by this change.
 BR-005  [Deferred Phase 18/20] Organisation panelists: maximum 4 (sequence_number 1 through 4).
+        Same distinction as BR-004 — unrelated to BR-064, left as-is.
+BR-064  (this change) Interview level panelist count: 1-3 per level, any level_category,
+        editable up/down within that band, in the Positions module only (create or edit).
+        Reducing an already-populated level below 1 → 400 PANELIST_MIN_REQUIRED,
+        "at least one interview panelist need to be assigned to the interview level."
+        Adding beyond 3 → 422 PANELIST_MAX_EXCEEDED, "Max 3 interview panelists could
+        be added for any interview level." A level may be created with 0 panelists;
+        the minimum only applies once panelists exist and are being reduced.
+        Known limitation: only slot 1 auto-assigns to interview_panelist_assignments at
+        interview-creation time (dual-write to the legacy interview_levels.panelist_id
+        column); slots 2-3 need the manual POST /interviews/{id}/panelists follow-up
+        step until a product decision resolves this against BR-004's 2-slot STG cap
+        (tracked in docs/BACKLOG.md).
 BR-006  JD upload: file type must be PDF or DOCX. Max size 10 MB.
         File type validated by MIME inspection (python-magic), not extension.
 BR-007  JD versioning: when a new JD is uploaded, the previous JD record

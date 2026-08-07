@@ -48,6 +48,195 @@ append-only (corrections are added as new entries that reference the prior one).
 
 ## Changelog
 
+### [2026-08-06] Attach updated_at/version trigger to interview_level_kits — 0056_ivw_level_kits_upd_trg
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (dev/async-pipeline-durability, Phase 2, principal-reviewer
+                    round 1 fix — C1)
+- Trigger         : bug fix, live-proven by principal-reviewer's mutation test — the interview-
+                    kit reconciler's version-guarded claim (`_reconciler_tasks.py`) was silently
+                    inert because `interview_level_kits` (created by migration 0032) never got
+                    the `fn_set_updated_at_and_version` trigger that `candidates`,
+                    `candidate_screenings`, and `screening_decisions` all already have. Without
+                    it, claiming the SAME stale version twice both succeeded (rowcount 1 both
+                    times), and `updated_at` never advanced — meaning a kit still genuinely
+                    in-flight past 60s would be re-driven every sweep and terminal-failed at
+                    ~240s while still running, with no guard against the original task's write
+                    landing afterward and resurrecting/overwriting the terminal state.
+- Module(s)       : interviews
+- Change type     : add trigger
+- Objects         : `trg_ivw_level_kits_upd` on `interview_level_kits`
+- Storage decision: N/A — no new column/table, attaches the platform's existing, already-used
+                    trigger function to a table that should have had it since 0032.
+- Backward compat : Additive, no behavior change to existing rows until their next UPDATE, at
+                    which point the trigger starts firing correctly (as every other version-
+                    guarded table already does). No backfill needed — a trigger has no
+                    historical column value to backfill (CLAUDE.md backfill mandate case (b),
+                    documented in the migration's own docstring).
+- Migration       : 0056_ivw_level_kits_upd_trg; downgrade implemented (drops the trigger).
+- Validation      : `alembic upgrade head` / `downgrade -1` / re-`upgrade head` run cleanly
+                    against the real local dev Postgres. Live mutation re-test confirms the
+                    SECOND stale-version claim on `interview_level_kits` now returns rowcount 0
+                    (see `test_functional_async_pipeline_phase2.py`'s kit race test).
+- Rollback        : `alembic downgrade -1` — safe; removing the trigger only returns the table
+                    to its pre-migration (already-live, already-broken) state.
+- Notes           : `design.md`'s Context section originally asserted all 3 non-`candidates`
+                    tables it schema-checked had this trigger; corrected in the same commit to
+                    reflect the live `information_schema.triggers` finding.
+
+### [2026-08-06] Add matching retry/error state + question_generation_error — 0055_matching_retry_state
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (dev/async-pipeline-durability, Phase 2)
+- Trigger         : code change — async-pipeline-durability (design.md's own flagged Open
+                    Question: "where does match_candidate_to_positions's state actually
+                    live"), resolved during Phase 2 implementation. Also closes D3's
+                    requirement that a permanent AI question-generation failure record an
+                    explicit terminal reason.
+- Module(s)       : candidates, candidate_screenings
+- Change type     : add column (x3), add index (partial)
+- Objects         : `candidates.matching_retry_count`, `candidates.matching_error`,
+                    `candidate_screenings.question_generation_error`;
+                    `ix_candidates_nonterminal_matching`
+- Storage decision: REAL COLUMN for matching_retry_count/matching_error (not JSONB) — same
+                    reasoning as 0054's `retry_count`: read/incremented on every 1-minute
+                    reconciler sweep, the hot-queried/indexed case docs/SCHEMA_EVOLUTION.md
+                    reserves for a real column. Kept SEPARATE from `candidates.retry_count`
+                    (0054) rather than reused — extraction and matching are distinct
+                    pipelines with distinct retry budgets; sharing one counter would let one
+                    pipeline's retries prematurely trip the other's terminal-fail cutoff.
+                    `candidate_screenings.question_generation_error` is a real column with
+                    NO paired retry_count — no reconciler scans this table (question
+                    generation self-heals via Celery's own bounded autoretry_for, not a DB
+                    sweep), so a persisted counter would have no reader; adding one anyway
+                    would be exactly the "unused column" the engineering mandate forbids.
+- Backward compat : Additive. matching_retry_count is NOT NULL with server_default '0'
+                    (same reasoning as 0054 — this counting mechanism did not exist before,
+                    so 0 is every existing row's true historical value). matching_error and
+                    question_generation_error are NULLable with no default; NULL means "no
+                    permanent failure recorded," correct for every existing row since a
+                    completed match/screening's outcome is already fully recorded elsewhere
+                    (candidate_position_matches / candidate_screenings.screening_questions)
+                    — these columns only ever need a value going forward, on the next
+                    permanent failure. No backfill needed for any of the three (CLAUDE.md
+                    backfill mandate case (b), explicitly documented in the migration's own
+                    docstring, not silently assumed).
+- Migration       : 0055_matching_retry_state; downgrade implemented (drops the new index
+                    then all three columns, reverse order).
+- Validation      : `alembic upgrade head` and `alembic downgrade -1` both run cleanly
+                    against the real local dev Postgres (re-upgraded to head afterward, per
+                    the local-dev-sync rule); no data-loss risk on downgrade (all three
+                    columns are write-only bookkeeping for this reconciler, read by nothing
+                    else yet).
+- Rollback        : `alembic downgrade -1` — safe, no dependent reads exist yet outside the
+                    reconciler/tasks this same change introduces.
+- Notes           : The matching reconciler's "non-terminal" definition is
+                    `extraction_status='completed' AND last_matched_at IS NULL AND
+                    matching_error IS NULL`, mirroring `_do_match`'s own consent-gate check
+                    (a candidate without `ai_assisted_evaluation` consent is a valid,
+                    permanent skip, never treated as stuck) — see
+                    `app/modules/candidates/_reconciler_tasks.py`.
+
+### [2026-08-05] Add retry_count to candidates/interview_level_kits — 0054_pipeline_retry_count
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (dev/async-pipeline-durability, Phase 1)
+- Trigger         : code change — async-pipeline-durability (design.md D5), fixing the
+                    2026-08-05 incident where 48 of ~50-55 bulk-uploaded candidates were
+                    permanently stranded at extraction_status='pending' with no retry and
+                    no terminal failure state.
+- Module(s)       : candidates, interviews
+- Change type     : add column, add index (partial)
+- Objects         : `candidates.retry_count`, `interview_level_kits.retry_count`;
+                    `ix_candidates_nonterminal_extraction`, `ix_ivw_level_kits_nonterminal`
+- Storage decision: REAL COLUMN on both (not metadata JSONB/lookup_values/tags) —
+                    per docs/SCHEMA_EVOLUTION.md's decision tree, a counter read and
+                    incremented on every reconciler sweep (Phase 2, 1-minute cadence) is
+                    squarely the hot-queried/indexed case the tree reserves for a real
+                    column. `candidates` has a `metadata` JSONB column already, but
+                    extracting an int from JSONB on every non-terminal row on every sweep
+                    is worse for the exact query this design's SLA depends on, and
+                    `interview_level_kits` has no JSONB column at all (adding one for a
+                    single integer would itself be a deviation from "no EAV").
+                    principal-reviewer round 1 (M1): `screening_decisions` was dropped from
+                    this migration — that table is the HUMAN recruiter screening decision
+                    (enum pending/screen_rejected/shortlisted), not an AI-pipeline table;
+                    nothing enqueues or generates it, and the real `reconcile_screenings`
+                    reconciler never touches it. Indexing it here would have made Phase 2's
+                    reconciler terminal-fail every application merely awaiting a normal
+                    human decision. See design.md's Open Questions for where AI-screening
+                    state actually lives.
+- Backward compat : Additive, NOT NULL with server_default '0' — no existing row's
+                    behavior changes. No backfill script needed (and none written): this
+                    retry-counting mechanism did not exist before this migration, so no
+                    pre-existing row was ever retried by it — DEFAULT 0 for every existing
+                    row is the true historical value, not a stand-in for an unknown one.
+                    This is case (b) of the CLAUDE.md backfill mandate (explicitly
+                    documented as needing no backfill), not silence.
+- Migration       : 0054_pipeline_retry_count; downgrade implemented (drops the 2 partial
+                    indexes then the 2 columns, reverse order).
+- Validation      : reviewed against the additive/expand-only rule; the Phase 2 reconciler
+                    that will actually read/increment this column is out of scope for this
+                    migration and ships in a later phase of the same OpenSpec change.
+- Rollback        : `alembic downgrade -1` from this revision; safe — no data was ever
+                    written to the dropped columns beyond the DEFAULT 0 every row already
+                    has.
+- Notes           : Partial index predicates lead on `updated_at` (the actual selective
+                    predicate a staleness sweep filters/orders on — the status column is
+                    already pinned by the partial predicate, so it adds nothing as an
+                    index column; fixed per principal-reviewer round 1, m5): candidates —
+                    `deleted_at IS NULL AND extraction_status NOT IN ('completed','failed','manual_review')`;
+                    interview_level_kits —
+                    `deleted_at IS NULL AND status NOT IN ('completed','failed')`. Linked:
+                    openspec/changes/async-pipeline-durability/{proposal,design,tasks}.md.
+
+### [2026-07-31] Add interview_level_panelists (multi-panelist-per-level) — 0053_ivw_level_panelists
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (dev/interview-level-multi-panelist branch)
+- Trigger         : spec change — positions/spec.md CR-002 / BR-064 (interview levels
+                    support 1-3 panelists instead of 1) and interviews/spec.md
+                    LEVEL_HAS_NO_PANELISTS gate.
+- Module(s)       : positions, interviews
+- Change type     : add table, add index, add constraint
+- Objects         : `interview_level_panelists` (new table); indexes
+                    `ix_ivw_level_panelists_level`; constraints
+                    `ck_ivw_level_panelist_seq` (sequence_number 1-3),
+                    `uq_ivw_level_panelist_pair` (no duplicate panelist per level),
+                    `uq_ivw_level_panelist_seq` (no duplicate slot per level).
+                    `interview_levels.panelist_id` is UNCHANGED (left in place,
+                    nullable) and dual-written by positions.levels_service.set_levels
+                    as slot 1 going forward — required so create_interview's CR-001
+                    auto-assign branch (the only writer of
+                    interview_panelist_assignments at interview-creation time) keeps
+                    working; dropped only in a later contract-phase migration.
+- Storage decision: REAL TABLE — relational (level ↔ panelist, ordered, up to 3 rows,
+                    FK-joined on every GET /interview-levels and every interview-create
+                    gate check); not a JSONB/tag candidate per SCHEMA_EVOLUTION.md.
+- Backward compat : Additive only. New table, no existing column altered.
+                    `interview_levels.panelist_id` stays NULLable, dual-written with
+                    slot 1 — reads still resolve; nothing that referenced it breaks.
+                    Backfilled (see below) so pre-existing single-panelist levels are
+                    not silently "downgraded" to zero panelists.
+- Migration       : 0053_ivw_level_panelists; downgrade implemented (drops the new
+                    table + index). Slot 1 survives the downgrade via the legacy
+                    `panelist_id` column (dual-written); slots 2-3, which only ever
+                    exist in the new table, do NOT survive — they are dropped with
+                    the table and are not recoverable.
+- Validation      : upgrade/downgrade run against local dev DB with existing
+                    interview_levels rows (including panelist_id IS NOT NULL rows);
+                    confirmed backfilled row count matches
+                    `SELECT COUNT(*) FROM interview_levels WHERE panelist_id IS NOT NULL`.
+- Rollback        : `alembic downgrade 0052_drop_ivw_skip_reason_ck`.
+- Notes           : Backfill mandate (CLAUDE.md) applied — every existing
+                    `interview_levels.panelist_id IS NOT NULL` row is backfilled as
+                    the `sequence_number=1` row in the new table in the SAME
+                    migration's `upgrade()`. This is required, not optional: the new
+                    `LEVEL_HAS_NO_PANELISTS` gate (interviews/spec.md) reads
+                    `interview_level_panelists`, so an un-backfilled pre-existing
+                    level would wrongly appear to have zero panelists and block
+                    interview creation for a level that was already configured.
+
 ### [2026-07-21] Drop ck_interview_skip_reason (stale table-local CHECK) — 0052_drop_ivw_skip_reason_ck
 
 - Baseline        : v2.2 (11-Jun-2026)
