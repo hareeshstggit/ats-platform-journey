@@ -48,6 +48,74 @@ append-only (corrections are added as new entries that reference the prior one).
 
 ## Changelog
 
+### [2026-08-08] Fix docs/schema.sql load-order bug + make 2 early migrations idempotent — no new Alembic revision
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (chore/ci-real-db-e2e-fix — CI Postgres/Redis provisioning
+                    for backend-ci.yml's `test` job + frontend-ci.yml's `e2e` job)
+- Trigger         : code change — provisioning real Postgres/Redis services in CI (docs/BACKLOG.md
+                    items 3/5) required, for the first time ever, actually replaying
+                    "docs/schema.sql + alembic upgrade head" against a truly fresh database.
+                    Nobody had done this before (every real environment was built incrementally),
+                    so this surfaced 3 latent, pre-existing defects in shipped artifacts.
+- Module(s)       : screening (schema.sql), security/users (0002), positions (0004)
+- Change type     : fix enum reference (schema.sql) + make 2 migrations idempotent (no schema change)
+- Objects         :
+                    1. docs/schema.sql line 743: screening_decisions.status referenced
+                       `ai_screening_decision_enum`, a type NEVER `CREATE TYPE`'d anywhere in the
+                       file (docs/schema.sql fails to load standalone). Fixed to reference
+                       `screening_status_enum` (declared at line 71: pending/screen_rejected/
+                       shortlisted) — the correct PRE-migration-0036/0037 type name; migrations
+                       0036/0037 already replay the real historical rename to
+                       ai_screening_decision_enum on top of this, unchanged.
+                    2. backend/alembic/versions/0002_users_mfa_channel_mobile.py: `ADD COLUMN`
+                       for users.mfa_channel/users.mobile switched to raw
+                       `ADD COLUMN IF NOT EXISTS` SQL (plus a duplicate_object-safe DO block for
+                       the ck_users_mfa_channel CHECK) — docs/schema.sql was re-based on
+                       2026-06-12 to fold this migration's columns into its baseline CREATE
+                       TABLE for documentation currency, so replaying 0002 against a
+                       freshly-loaded schema.sql hit DuplicateColumnError.
+                    3. backend/alembic/versions/0004_positions_noshow_budget_currencies.py: every
+                       CREATE TYPE/TABLE/constraint/FK made idempotent (DO-block duplicate_object
+                       guards, IF NOT EXISTS, ON CONFLICT DO NOTHING) for the same reason — the
+                       2026-06-12 schema.sql re-base drafted this migration's entire "positions
+                       subset" delta straight into schema.sql before 0004 formalized it.
+- Storage decision: N/A — no new storage; correctness fixes to existing objects only.
+- Backward compat : Fully backward-compatible. (1) is a doc fix only — the type it now references
+                    already exists and was already the real historical pre-migration name; no live
+                    DB is affected. (2)/(3) are behavior-preserving: on any historical DB where
+                    these migrations already ran (real local dev), IF NOT EXISTS / duplicate_object
+                    guards are no-ops — same end state as before. No backfill applies (schema
+                    drift/idempotency fix, not a new column with a derivable historical value —
+                    CLAUDE.md's backfill mandate does not apply here).
+- Migration       : NONE authored — these are corrections to already-shipped artifacts
+                    (docs/schema.sql content + migrations 0002/0004's own idempotency), not a new
+                    schema change. No new Alembic revision; existing revision ids/order unchanged.
+- Validation      : Verified live end-to-end against a real local Postgres 18 (podman `ats-platform`
+                    container): loaded the corrected docs/schema.sql (5343-line pg_dump
+                    --schema-only from the real local dev DB at alembic head 0056) into a fresh
+                    throwaway DB, created the ats_app/atsplatformuser roles per docs/LOCAL_DEV.md's
+                    grants, ran `alembic stamp head` (clean), then `python -m app.scripts.seed_dev`
+                    (clean — all 17 users created, permission grants applied). Migrations 0010+
+                    (Phase-16 candidates domain) still structurally conflict with schema.sql's
+                    pre-Phase-16 candidates tables — a much larger, separate, pre-existing defect,
+                    NOT fixed here; tracked in docs/BACKLOG.md. CI itself bootstraps via
+                    docs/ci_schema_snapshot.sql (this same pg_dump snapshot) + `alembic stamp head`,
+                    not a migration replay — see that file's own header.
+- Rollback        : Revert the 3 edits (git). No DB rollback needed — nothing was applied to any
+                    live database by this change; docs/schema.sql, the 2 migration files, and
+                    docs/ci_schema_snapshot.sql are the only things touched.
+- Notes           : This is exactly the class of defect CLAUDE.md's "Spec-implementation sync
+                    mandate" and "schema evolution" sections exist to catch — it went undetected
+                    because a fresh-from-scratch bootstrap had never actually been attempted until
+                    this CI-infrastructure change forced it. See docs/BACKLOG.md for the follow-up
+                    (reconcile schema.sql's candidates/positions sections against migrations
+                    0010-0018/0038, then this note + docs/ci_schema_snapshot.sql can be retired).
+                    Also refreshes docs/ci_schema_snapshot.sql itself (a separate pg_dump artifact,
+                    not a migration) from alembic head 0038-era to head 0056 — the prior snapshot
+                    (originally authored on the now-stale chore/ci-test-infrastructure branch) was
+                    32 migrations behind current main.
+
 ### [2026-08-06] Attach updated_at/version trigger to interview_level_kits — 0056_ivw_level_kits_upd_trg
 
 - Baseline        : v2.2 (11-Jun-2026)

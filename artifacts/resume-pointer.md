@@ -47,20 +47,35 @@ refreshed — see git history for full detail, not repeated here).
     known to be a duplicate. File-hash dedup already correctly gates BEFORE any AI call (no work
     needed there); this is the one real remaining gap. Scoped, not yet fixed.
 
+**PR #221 (CI test infrastructure, supersedes stale draft PR #210) — merged 2026-08-08 (`a10042e`).**
+Real root cause of the e2e login-failure gap (BACKLOG #5): MSW mocked login/MFA while a real
+backend now runs in the same job — the first post-login authenticated call hit the real backend
+with a fake MSW token, 401'd, `apiClient`'s auto-refresh-on-401 also failed against the real
+backend (no real session ever existed), and `require-auth.tsx` fired a global "session expired"
+logout on every single test (36/36 systematic failure — not per-spec flakiness). Fixed by
+switching e2e login to authenticate for real against the seeded backend: 3 new dedicated
+`*_e2e@ats.test` personas (`mfa_enabled=True`, added to `seed_dev.py` WITHOUT touching the
+existing shared `hr_admin@ats.test`/etc. rows other tests depend on) + the local-only
+`/dev/mfa-otp/{challenge_id}` endpoint for a real, non-fixed OTP; MSW disabled for the e2e job.
+4 `principal-reviewer` rounds: round 1 CHANGES-REQUESTED (a first fix attempt mutated the SHARED
+seed rows directly, breaking other backend integration tests — caught before push via independent
+CI check, not by the reviewer); round 2 CHANGES-REQUESTED (a `page.goto()` mid-flow dropped the
+session in `pipeline-retry-badge.spec.ts`, + 3 undocumented mobile-viewport failures); round 3
+CHANGES-REQUESTED (BACKLOG.md accuracy gaps only, e2e itself already green — 43 passed, 2
+flaky/retry-masked on webkit, 15 skipped, 0 hard failures); round 4 APPROVE. Backend
+`typecheck`/`test` and frontend `component-test` remain red on this PR but are independently
+confirmed pre-existing on `main` itself, unrelated to this change (now logged in BACKLOG.md).
+BACKLOG #3 and #5 closed as a result.
+
 Nothing in flight. Next up:
 
-1. **PR #210 (CI test infrastructure) is still open and unresolved** — `e2e` job genuinely
-   broken across 2 fix attempts, real root cause never found. Not blocking, but flag its existence.
-   Related, confirmed 2026-08-07: BACKLOG #5 (MSW can't intercept proxied backend calls)
-   manifests specifically as every e2e spec failing at the login/MFA step — a single root cause,
-   not per-spec flakiness. `main`'s own `backend-ci.yml` `typecheck`/`test` are also red on every
-   recent run for known, tracked reasons (BACKLOG #3/#4) — don't re-diagnose per-PR.
-3. `async-pipeline-durability`'s own OpenSpec close-out (separate from the user's closing report,
+1. `async-pipeline-durability`'s own OpenSpec close-out (separate from the user's closing report,
    already delivered): `/opsx:verify` (confirm all 5 delta specs match the shipped implementation),
-   then `/opsx:sync`+`/opsx:archive`.
-4. Once (1) is delivered: `/opsx:verify` (confirm all 5 delta specs match the shipped
-   implementation), then `/opsx:sync`+`/opsx:archive` for `async-pipeline-durability` — the
-   6-phase change's own close-out (tasks.md §7), separate from the user's closing report.
+   then `/opsx:sync`+`/opsx:archive` (tasks.md §7).
+2. BACKLOG #4 (frontend test debt), #6 (terraform-plan.yml CI, needs AWS-creds decision), #8
+   (prompt caching), #9 (cost/token tracking + daily digest, deferred to pre-Bedrock go-live), #10
+   (skip downstream AI calls on flagged duplicates) — all scoped, none started, no urgency signal
+   from the user yet.
 
 ## RESOLVED 2026-08-07 — `async-pipeline-durability` fully merged, all 6 phases (PR #214-#219)
 
