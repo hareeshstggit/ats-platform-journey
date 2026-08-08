@@ -20,6 +20,43 @@ narrative, only current state.
 
 ---
 
+## 0. Go-Live readiness (tracked closely — 1-week dev freeze from 2026-08-08 pending user's date-planning decisions)
+
+User directive 2026-08-08: stop new development for 1 week (starting once PR #222 merges); use the
+week to clarify go-live readiness so a real AWS Bedrock go-live date can be set and worked backward
+from. This section is the tracked list that decision is based on — update it inline the moment any
+item's status or the user's scope decision changes, same living-doc discipline as the rest of this
+file. Source: `docs/GO_LIVE_CHECKLIST.md` (full detail) — this section is the trackable summary.
+
+### 0.1 Hard blockers (not scope choices — must happen regardless of scope decisions below)
+
+| # | Blocker | Status | Notes |
+|---|---|---|---|
+| G1 | Terraform `iam` module is a skeleton (`task_role_arn`/`execution_role_arn` both `null`) | 🔴 | Blocks `terraform apply` outright — nothing else in AWS can start until real. |
+| G2 | No AWS account / OIDC deploy role / Secrets Manager populated | 🔴 | `deploy.yml` fails immediately without `AWS_DEPLOY_ROLE_ARN`. User-owned action item (account provisioning), not a code fix. |
+| G3 | `deploy.yml` has never run successfully end-to-end, even once | 🔴 | Needs a real dry run against a live AWS env before trusting it for go-live. |
+| G4 | RDS not provisioned in cloud | 🔴 | Only local Podman Postgres exists today; migrations never run against a cloud DB. |
+| G5 | Domain, TLS, WAF, CDN not applied | 🔴 | IaC authored, never applied. |
+| G6 | Security pen-test + DPDP DPIA not scheduled | 🔴 | External/compliance-owned; needs lead time to schedule a vendor/reviewer. |
+| G7 | Performance/SLO load testing (NFR Phase 2c) | 🔴 | Tool choice still open (Locust/k6/custom); nothing built. Numbers would be meaningless until this runs (per principal-performance-auditor's own prior note). |
+| G8 | UAT + runbooks + backup/DR + on-call readiness | 🔴 | None started. |
+
+### 0.2 Scope decisions — need the user's call, not more code
+
+| # | Decision | Status | What it moves |
+|---|---|---|---|
+| D1 | Phased vs. full-scope go-live for Onboarding/Consent(DPDP)/Data-Privacy | ❓ Awaiting user | `data_privacy.enforce_data_retention` is a literal no-op today — a live DPDP compliance gap if launch requires it live, not cosmetic. Likely the single biggest date-mover. |
+| D2 | Notifications completeness at launch | ❓ Awaiting user | Only 2 events (interview.scheduled/offer.sent) wired via SES, feature-flagged OFF pending SES provisioning. SMS/task-center/digests/escalation/failed-delivery-retry all unbuilt — spec itself requires failed-delivery handling before production enablement. |
+| D3 | Bedrock-vs-Gemini sequencing at launch | ❓ Awaiting user | All 4 AI features already support Bedrock as a config-only provider switch — code is not the gap, AWS Bedrock IAM/model-access provisioning is. Could launch on Gemini first (defers that provisioning) and cut over as a fast-follow, or require Bedrock from day one. |
+| D4 | Reporting completeness at launch | ❓ Awaiting user | Positions-ageing + Interview-Pipeline-Progress are live; 9 other report endpoints (candidate-uploads, screening, pipeline lifetime matview, etc.) are still stub. |
+| D5 | Integrations (SSO, HRIS, calendar, job boards, vendors, e-signature) at launch | ❓ Awaiting user | None built. Likely all post-launch, but needs an explicit confirm. |
+
+### 0.3 Already-tracked items feeding into this decision (cross-references, not duplicated here)
+- Prompt caching (#8) and cost/token-tracking + daily digest (#9) below — both explicitly scoped to land alongside/just-before the Bedrock cutover (D3).
+- The AWS Terraform apply-blocking prerequisite (G1) and the `terraform-plan.yml` CI gap (#6 below) are the same underlying AWS-credentials/IAM gap surfacing in two places (build-time CI check vs. real apply) — resolving G1/AWS-account-provisioning likely closes both at once.
+
+---
+
 ## 1. Active execution queue (user-ordered, month-end push — one PR each)
 
 | # | Item | Status |
