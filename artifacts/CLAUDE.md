@@ -605,6 +605,29 @@ overrides `model`, verify it resolves once (not once per call) — a bad model i
 after tokens are already spent. Cost-alert dollar thresholds ($10/$25 above) stay fixed across
 model-tier changes — do not recalibrate them when the orchestrator model changes.
 
+**CI-minute discipline (binding, no override — added 2026-08-08):** PR #221's e2e-CI fix alone
+burned an estimated 150-250 of GitHub Actions' ~2000-minute monthly allotment across 6 full CI
+reruns — one of them (round 4) a 5-line docs-only edit that still paid for a full ~15-minute run on
+both workflows. Run `gh api users/<owner>/settings/billing/usage` per the existing GH Actions
+usage-check practice before any CI-triggering batch; the three rules below close the concrete waste
+found this session:
+1. Any commit whose diff is confined to `.md` files, OpenSpec artifacts, or other pure
+   documentation/bookkeeping (no code, config, test, or CI-workflow file touched) MUST include
+   `[skip ci]` in its commit message — GitHub Actions honors this and never triggers the workflow,
+   so a doc-only commit costs zero CI minutes instead of a full run.
+2. The instant a fix is independently confirmed wrong (a reviewer refutes it, re-reading the
+   diff/logs contradicts the claimed root cause, or its CI run is running noticeably longer than
+   the established baseline for no good reason), cancel the in-flight run immediately — don't let a
+   run that's already known pointless finish anyway.
+3. Batch multiple small doc/bookkeeping edits into ONE commit instead of one push per edit — same
+   discipline as the existing PR-batching practice (5-8 bug fixes per PR). Each push is a separate
+   CI trigger; five 1-line doc edits pushed separately cost 5x a single batched commit.
+Explicitly NOT covered here — needs the user's own scoping call, not a unilateral change: trimming
+Playwright's e2e job's 4-browser-project matrix (full matrix only for critical/NFR specs, a
+reduced 1-2-browser matrix for routine functional specs) — tracked as tech debt in
+`docs/BACKLOG.md`; the reduced matrix cannot ship "without any errors" until the currently-known
+flaky webkit tests (same BACKLOG entry) are actually fixed, not just excluded from the count.
+
 **Playbook is living — update it in the same PR that surfaces a new technique:**
 `docs/TOKEN_OPTIMIZATION_PRACTICE.md` is the durable, org-shareable record of all cost-optimization
 practices. When a new technique is identified, an anti-pattern is discovered, or a benchmark is
