@@ -7,33 +7,51 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-08-07, paused — "will resume once I reach home")
+## RESUME HERE FIRST (2026-08-08)
 
-`async-pipeline-durability` is fully closed: all 6 phases merged, the user's closing report
-delivered (what was fixed/why it won't recur/guardrails), and the 4 guardrails codified as a new
-binding, no-override mandate in `.claude/CLAUDE.md` — "Live-verification & environment-parity
-mandate" (added 2026-08-07, same class as Gate 5): (1) verify a fix by executing it against the
-real library/service/infra, not by reading the diff; (2) CI on the real target platform (Linux,
-not just local Windows) is part of the definition of done for every phase; (3) provision
-verification tooling (CLI/SDK/credentials) in the main loop's own environment BEFORE dispatching a
-phase, not after a reviewer flags its absence; (4) a specialist review (e.g.
-`principal-reliability-engineer`) never substitutes for the holistic `principal-reviewer` final
-gate — both always run. Also synced to the loose personal copy at `Documents/CLAUDE.md`. Full
-mirror refresh done and live-verified on `hareeshstggit.github.io/ats-platform-journey` (found and
-fixed 4 files — `CLAUDE.md`, `ARCHITECTURE.md`, `SCHEMA_CHANGE.md`, positions spec — that had
-drifted from `main` across this session's many merges without an individual per-file check).
+`async-pipeline-durability` fully closed 2026-08-07 (all 6 phases, closing report delivered, 4
+guardrails codified as CLAUDE.md's "Live-verification & environment-parity mandate," mirror
+refreshed — see git history for full detail, not repeated here).
 
-Nothing in flight. Next up, in the order the user last set:
+**2026-08-08 session — live AI-feature testing + 1 real bug found and fixed (PR #220, merged):**
+- Restarted the local dev stack clean first — found and killed a stale Startup-shortcut `-Watch`
+  loop that was silently racing manual process kills/restarts (BACKLOG #7).
+- Live-tested the 4 Gemini-driven AI features (`functional-test-engineer`, real HTTP + real DB, no
+  browser tool available so Rule 4 was only partially satisfied — flagged, not silently claimed).
+  JD extraction confirmed against REAL Gemini output on the session's first call; every call after
+  that hit Gemini's free-tier 20-requests/day cap, and the Phase 4 circuit breaker correctly fell
+  back to offline/local logic for screening/matching/kit-generation — no 500s, no stuck rows,
+  fallback provider explicitly labeled in every response. Quota resets ~24h after the window
+  started; re-run for real-Gemini confirmation on those 3, or move to Bedrock/Claude sooner.
+- Found 1 real bug during that test: `POST /candidates/upload`, `.../upload/bulk`, and
+  `GET /candidates` all typed `source` as a bare `str` instead of the project's own
+  `CandidateSource` literal, so an invalid value reached the DB and surfaced as a 500 (single
+  upload/list) or a misleading "partial success" with zero accepted files (bulk upload) instead of
+  a clean 422. Fixed via the full Gate 5 pipeline (2 `principal-reviewer` rounds — round 1 found
+  the same defect still live on 2 of 3 endpoints after an initial narrower fix, plus a spec-sync
+  gap and missing tests; round 2 APPROVE-WITH-NITS after a mutation test confirmed the new
+  regression tests actually catch it) — **merged PR #220**. Branch-before-edit rule was violated
+  mid-fix (edited on main's working tree before creating the branch) — caught and corrected before
+  commit; worth remembering to branch FIRST next bug fix, not after.
+- User asked a follow-up on AI-provider architecture (Gemini→Bedrock/Claude migration, token-cost
+  optimization) — answered, then scoped 3 real backlog items from it (all in `docs/BACKLOG.md`,
+  synced to the mirror):
+  - **#8 Prompt caching** — none of the 4 AI agents use `cache_control`; biggest single lever,
+    scoped for its own phase, ideally timed with the Bedrock migration.
+  - **#9 Live cost/token tracking + daily 22:00 IST admin email digest** — confirmed FEASIBLE,
+    every building block already exists (SES email fan-out, Celery beat, per-call token capture) —
+    deferred to just before AWS Bedrock go-live per the user's own request, not built now.
+  - **#10 Downstream AI waste on flagged duplicates** — confirmed via direct code read:
+    `_extraction_tasks.py`'s `_run_extraction` sets `duplicate_of_candidate_id` but then
+    unconditionally enqueues matching + screening anyway, burning 2 more AI calls on a row already
+    known to be a duplicate. File-hash dedup already correctly gates BEFORE any AI call (no work
+    needed there); this is the one real remaining gap. Scoped, not yet fixed.
 
-1. **Test the 4 Gemini-driven AI features live** — JD extraction, screening-question generation,
-   candidate screening/matching, interview kit generation. Still not user-tested live themselves
-   (carried over from 2026-08-04/05). Confirm `scripts/dev-stack-watchdog.ps1` is running first —
-   note it silently died at least once already this week (M5 finding, `async-pipeline-durability`
-   design.md) from an unhandled Podman-not-ready error at logon; verify actual process state, not
-   just the Startup-shortcut's existence.
-2. **PR #210 (CI test infrastructure) is still open and unresolved** — `e2e` job genuinely
+Nothing in flight. Next up:
+
+1. **PR #210 (CI test infrastructure) is still open and unresolved** — `e2e` job genuinely
    broken across 2 fix attempts, real root cause never found. Not blocking, but flag its existence.
-   Related, newly confirmed this session: BACKLOG #5 (MSW can't intercept proxied backend calls)
+   Related, confirmed 2026-08-07: BACKLOG #5 (MSW can't intercept proxied backend calls)
    manifests specifically as every e2e spec failing at the login/MFA step — a single root cause,
    not per-spec flakiness. `main`'s own `backend-ci.yml` `typecheck`/`test` are also red on every
    recent run for known, tracked reasons (BACKLOG #3/#4) — don't re-diagnose per-PR.
