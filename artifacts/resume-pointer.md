@@ -67,15 +67,31 @@ flaky/retry-masked on webkit, 15 skipped, 0 hard failures); round 4 APPROVE. Bac
 confirmed pre-existing on `main` itself, unrelated to this change (now logged in BACKLOG.md).
 BACKLOG #3 and #5 closed as a result.
 
-Nothing in flight. Next up:
+`async-pipeline-durability`'s OpenSpec close-out done same day: `/opsx:verify` confirmed
+candidates/interviews main specs already matched shipped code (each phase's own same-PR sync
+held up); created `openspec/specs/pipeline-reliability/spec.md` (new capability, no prior file,
+followed `platform-core`'s own native-format precedent); added honest not-yet-scheduled notes to
+data-privacy/reporting rather than claiming done. Archived to
+`openspec/changes/archive/2026-08-08-async-pipeline-durability/`. One task left open by design:
+6.4 (`terraform plan` against real AWS credentials) — same gap as BACKLOG G1/G2.
 
-1. `async-pipeline-durability`'s own OpenSpec close-out (separate from the user's closing report,
-   already delivered): `/opsx:verify` (confirm all 5 delta specs match the shipped implementation),
-   then `/opsx:sync`+`/opsx:archive` (tasks.md §7).
-2. BACKLOG #4 (frontend test debt), #6 (terraform-plan.yml CI, needs AWS-creds decision), #8
-   (prompt caching), #9 (cost/token tracking + daily digest, deferred to pre-Bedrock go-live), #10
-   (skip downstream AI calls on flagged duplicates) — all scoped, none started, no urgency signal
-   from the user yet.
+**PR #222 (webkit e2e flake) — merged same day (`4538e8b`).** Root cause: CI's Playwright
+`webServer` ran `next dev` (lazy per-route compile), occasionally exceeding the 30s test timeout
+on `organizations.spec.ts`/`pipeline-retry-badge.spec.ts`'s shared login helper. Fixed by
+switching CI to a production build+start. 2 review rounds, 4 real CI runs: 3 clean, 1 showed the
+same test flaky once more (1-in-4 vs. the prior every-run-deterministic pattern) — user's explicit
+call was to merge with the honest residual logged (BACKLOG §5) rather than chase it further.
+
+**User directive, same day: 1-week development freeze starting now.** No new feature/module
+builds until the user sets an AWS Bedrock go-live date. The week goes toward clarifying go-live
+readiness — see `docs/BACKLOG.md` §0 (Go-Live readiness), the new tracked section: 8 hard
+blockers (G1-G8, mostly AWS infra/compliance/UAT gates) + 5 scope decisions (D1-D5, e.g.
+phased-vs-full-scope launch, Bedrock-vs-Gemini sequencing) awaiting the user's answers. See
+`memory/project_dev-freeze-go-live-planning-2026-08.md` for the freeze's own scope/rationale.
+
+Nothing in flight. Next up: whatever go-live-readiness questions the user raises this week.
+Do NOT proactively pick up BACKLOG items #4/#6/#8/#9/#10 or start new builds until the freeze is
+explicitly lifted.
 
 ## RESOLVED 2026-08-07 — `async-pipeline-durability` fully merged, all 6 phases (PR #214-#219)
 
