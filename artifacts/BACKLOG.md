@@ -80,7 +80,31 @@ hand.
 **10 of 16 modules fully live end-to-end.** The remaining 6 are exactly what D1/D2/D4/D5 above are
 scoping decisions about.
 
-### 0.4 Already-tracked items feeding into this decision (cross-references, not duplicated here)
+### 0.4 AWS infrastructure request checklist (2026-08-08) — for IT
+
+| Category | What to request | Detail / Why | Status |
+|---|---|---|---|
+| Account & Access | Dedicated AWS account (or sub-account under an Org) | Separate billing/quotas/IAM from any other project | Open — user action |
+| Account & Access | IAM OIDC identity provider (GitHub Actions trust) | Avoids long-lived access keys for CI/CD | Open — blocks `deploy.yml` (G2) |
+| Account & Access | Scoped deploy role | ECS/ECR/RDS/ElastiCache/S3/Secrets-Manager/CloudWatch only, not account-wide admin | Open — blocks `terraform apply` (G1) |
+| Account & Access | Break-glass human admin access | Time-boxed, audited, separate from the deploy role | Open |
+| Region | `ap-south-1` (Mumbai) | Already the project's documented choice — India DPDP data-residency driver | **Reconfirm** given the Bedrock CRIS finding (G9) |
+| Networking | VPC, public+private subnets, 2+ AZs | Required for RDS/ECS Multi-AZ resilience | Open |
+| Networking | NAT Gateway(s) | Private-subnet egress | Open — recurring cost line, not one-time |
+| Networking | Security groups per component | Tighten `elasticache`'s SG (currently whole-VPC-CIDR) before go-live | Partially authored, needs tightening |
+| Compute | ECS Fargate cluster | No EC2 fleet to patch — already the chosen model | Worker/beat authored; **API service not yet built (G10)** |
+| Database | RDS PostgreSQL 16, Multi-AZ + read replica | `db.r6g.large` recommended (NFR-grounded sizing, see G10) | Terraform skeleton only, no instance class chosen |
+| Cache/Broker | ElastiCache Redis, Multi-AZ, transit-encrypted | `cache.t4g.small` already right-sized | Partially authored |
+| Storage | S3: resumes/JD, offer PDFs, Terraform state, logs | KMS-encrypted, versioned, lifecycle-tiered | Open |
+| Secrets | AWS Secrets Manager | DB creds, JWT secret, SES/Anthropic keys | Open |
+| AI | Bedrock model access (Claude) | Opt-in per account/region via console | **Hold — pending G9 legal/DPO answer** |
+| AI | Bedrock throughput quota increase | New-account default quotas often low | Hold, same as above |
+| Email | SES production access | Currently sandboxed; needs domain DKIM/SPF/DMARC + a support case | Open — blocks Notifications going live |
+| DNS/TLS/CDN | Route53 zone, ACM cert, CloudFront + WAF | Terraform skeletons exist, unapplied | Open |
+| Observability | CloudWatch (partially wired) | 3 pipeline metrics + alarms already exist | Confirm if Sentry needs its own paid quota |
+| CI/CD | ECR repository | Ties to the OIDC deploy role above | Open |
+
+### 0.5 Already-tracked items feeding into this decision (cross-references, not duplicated here)
 - Prompt caching (#8) and cost/token-tracking + daily digest (#9) below — both explicitly scoped to land alongside/just-before the Bedrock cutover (D3).
 - The AWS Terraform apply-blocking prerequisite (G1) and the `terraform-plan.yml` CI gap (#6 below) are the same underlying AWS-credentials/IAM gap surfacing in two places (build-time CI check vs. real apply) — resolving G1/AWS-account-provisioning likely closes both at once.
 
