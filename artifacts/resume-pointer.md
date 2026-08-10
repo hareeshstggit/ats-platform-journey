@@ -94,8 +94,13 @@ phased-vs-full-scope launch, Bedrock-vs-Gemini sequencing) awaiting the user's a
 `openspec/changes/candidate-ai-match-screen-consolidation/` (proposal/design/specs delta/tasks,
 4/4 complete). User's explicit instruction: build this FIRST when the freeze lifts, ahead of
 everything else, full Gate 5 pipeline, no shortcuts. Also logged in `docs/BACKLOG.md` §0.0.
-Second CR pending — user said they'll detail a STG Labs Level 1/2 interview-kit CR next, once
-this one's documentation was confirmed done (it now is).
+**Second CR, NEXT-in-priority (2026-08-08, fully documented, nothing built):**
+`interview-kit-candidate-aware-scheduled-generation` — full OpenSpec change at
+`openspec/changes/interview-kit-candidate-aware-scheduled-generation/` (4/4 complete). No
+schema change needed (`InterviewLevelKit` already has `candidate_id`) — the gap was generation
+logic never using it. 5 questions/focus-area become candidate-experience-aware; 10 focus areas
+stay position-driven; kit gen drops its create-time trigger, schedule-time only;
+"Schedule Interview" renamed; `local_kit` fail-safe-only, same pattern as CR#1.
 
 Nothing in flight otherwise. Next up: whatever go-live-readiness questions the user raises this
 week, plus the second CR once detailed. Do NOT proactively pick up BACKLOG items #4/#6/#8/#9/#10

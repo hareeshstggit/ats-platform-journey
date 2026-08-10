@@ -46,6 +46,21 @@ retire `candidates/screening/`'s match-decision+scorecard write path (table stay
 additive-migration rule). Read the OpenSpec change's own design.md for full rationale,
 decisions, and open verification items before starting task 1.1.
 
+**`interview-kit-candidate-aware-scheduled-generation`** (user CR, confirmed + fully documented
+2026-08-08) — full OpenSpec change at
+`openspec/changes/interview-kit-candidate-aware-scheduled-generation/` (4/4 artifacts complete).
+**NEXT in priority, right after the CR above.** No schema change needed — `InterviewLevelKit`
+already stores `candidate_id`; the actual gap is that generation never used it
+(`LevelKitAgentContext`'s own docstring says "no candidate PII," prompt says "never invent facts
+about a specific candidate" — confirmed via code read, not assumed). Summary: the 5 questions
+per focus area become candidate-experience-aware (non-PII signal only), the 10 focus areas stay
+position-driven (user's own ≤10% cross-candidate variation estimate); kit generation drops its
+create-time trigger (`router.py:131`), keeping only the schedule-time trigger
+(`router.py:212`); "Schedule Interview" action renamed to "Schedule Interview & Generate
+Interview Kit"; `local_kit` offline path retained as fail-safe-only, same pattern as the CR
+above. Confirmed unrelated to that CR's retired `candidates/screening/` scorecard — `interviews/`
+has its own independent `scorecard_template` (BR-P20-007), untouched by either change.
+
 ### 0.1 Hard blockers (not scope choices — must happen regardless of scope decisions below)
 
 | # | Blocker | Status | Notes |
