@@ -53,7 +53,34 @@ file. Source: `docs/GO_LIVE_CHECKLIST.md` (full detail) — this section is the 
 | D4 | Reporting completeness at launch | ❓ Awaiting user | Positions-ageing + Interview-Pipeline-Progress are live; 9 other report endpoints (candidate-uploads, screening, pipeline lifetime matview, etc.) are still stub. |
 | D5 | Integrations (SSO, HRIS, calendar, job boards, vendors, e-signature) at launch | ❓ Awaiting user | None built. Likely all post-launch, but needs an explicit confirm. |
 
-### 0.3 Already-tracked items feeding into this decision (cross-references, not duplicated here)
+### 0.3 Module completion matrix (2026-08-08) — binding: update inline the moment ANY PR lands, same
+turn/commit as the merge, per Progress capture. This is the durable per-module UI/Backend/API/DB
+truth table — check here before asking "is X done," don't re-derive from GO_LIVE_CHECKLIST.md by
+hand.
+
+| # | Module | UI | Backend | API | Database | Notes |
+|---|---|---|---|---|---|---|
+| 1 | Security / Platform (auth, MFA, RBAC, RLS) | ✅ | ✅ | ✅ | ✅ | Live foundation everything else depends on. |
+| 2 | Organizations | ✅ | ✅ | ✅ | ✅ | Live — CRUD, dedup, RLS, audit. |
+| 3 | Departments | ✅ | ✅ | ✅ | ✅ | Live — org-nested CRUD. |
+| 4 | Positions / Requisitions | ✅ | ✅ | ✅ | ✅ | Live — full lifecycle, budget, JD, panelists, levels. |
+| 5 | Interview Panelists (global master list) | ✅ | ✅ | ✅ | ✅ | Live — CRUD, dedup, RLS. |
+| 6 | Candidates (profiles, dedup, PII encryption) | ✅ | ✅ | ✅ | ✅ | Live — backend + UI, resume-parsing AI wired. |
+| 7 | Applications (pipeline, stage transitions) | ✅ | ✅ | ✅ | ✅ | Live — full 26-status lifecycle. |
+| 8 | Screening (knockout, AI match/rank) | 🟡 | ✅ | ✅ | ✅ | Backend + decision layer live; **UI not built.** |
+| 9 | Interviews (scheduling, scorecards, feedback) | ✅ | ✅ | ✅ | ✅ | Live — all phases, AI kit generation included. |
+| 10 | Offers / Approvals | ✅ | ✅ | ✅ | ✅ | Live — state machine, compliance engine, PDF+S3. |
+| 11 | Onboarding / Preboarding | ⬜ | ⬜ | ⬜ | ⬜ | Nothing built — only an enum marker on `positions`/`applications`. No dedicated table. |
+| 12 | Consent (DPDP) | ⬜ | ⬜ | ⬜ | 🟡 | Spec written; tables (`candidate_consents`, `consent_purposes`) exist in schema — **unused**, no backend wired. |
+| 13 | Data-Privacy (retention/deletion/export/legal hold) | ⬜ | ⬜ | ⬜ | 🟡 | `data_subject_requests` table exists; retention-enforcement task is a literal no-op — live DPDP gap, feeds D1. |
+| 14 | Reporting / Analytics | 🟡 | 🟡 | 🟡 | ✅ | 2 of 11 report endpoints live (positions-ageing, interview-pipeline-progress); matviews for the rest exist, unused. |
+| 15 | Notifications | ⬜ | 🟡 | 🟡 | ✅ | Only 2 events wired via SES, **feature-flagged off**. No in-app task center/digest UI. |
+| 16 | Integrations (SSO, HRIS, calendar, job boards, vendors, e-sign) | ⬜ | ⬜ | ⬜ | ⬜ | Nothing built at all. |
+
+**10 of 16 modules fully live end-to-end.** The remaining 6 are exactly what D1/D2/D4/D5 above are
+scoping decisions about.
+
+### 0.4 Already-tracked items feeding into this decision (cross-references, not duplicated here)
 - Prompt caching (#8) and cost/token-tracking + daily digest (#9) below — both explicitly scoped to land alongside/just-before the Bedrock cutover (D3).
 - The AWS Terraform apply-blocking prerequisite (G1) and the `terraform-plan.yml` CI gap (#6 below) are the same underlying AWS-credentials/IAM gap surfacing in two places (build-time CI check vs. real apply) — resolving G1/AWS-account-provisioning likely closes both at once.
 
