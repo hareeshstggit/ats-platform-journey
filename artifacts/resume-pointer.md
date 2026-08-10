@@ -89,8 +89,17 @@ blockers (G1-G8, mostly AWS infra/compliance/UAT gates) + 5 scope decisions (D1-
 phased-vs-full-scope launch, Bedrock-vs-Gemini sequencing) awaiting the user's answers. See
 `memory/project_dev-freeze-go-live-planning-2026-08.md` for the freeze's own scope/rationale.
 
-Nothing in flight. Next up: whatever go-live-readiness questions the user raises this week.
-Do NOT proactively pick up BACKLOG items #4/#6/#8/#9/#10 or start new builds until the freeze is
+**HIGHEST PRIORITY for resumption (2026-08-08, fully documented, nothing built yet):**
+`candidate-ai-match-screen-consolidation` — full OpenSpec change at
+`openspec/changes/candidate-ai-match-screen-consolidation/` (proposal/design/specs delta/tasks,
+4/4 complete). User's explicit instruction: build this FIRST when the freeze lifts, ahead of
+everything else, full Gate 5 pipeline, no shortcuts. Also logged in `docs/BACKLOG.md` §0.0.
+Second CR pending — user said they'll detail a STG Labs Level 1/2 interview-kit CR next, once
+this one's documentation was confirmed done (it now is).
+
+Nothing in flight otherwise. Next up: whatever go-live-readiness questions the user raises this
+week, plus the second CR once detailed. Do NOT proactively pick up BACKLOG items #4/#6/#8/#9/#10
+or start new builds until the freeze is
 explicitly lifted.
 
 ## RESOLVED 2026-08-07 — `async-pipeline-durability` fully merged, all 6 phases (PR #214-#219)

@@ -28,6 +28,24 @@ from. This section is the tracked list that decision is based on — update it i
 item's status or the user's scope decision changes, same living-doc discipline as the rest of this
 file. Source: `docs/GO_LIVE_CHECKLIST.md` (full detail) — this section is the trackable summary.
 
+### 0.0 HIGHEST PRIORITY on resumption — Change Request documented, not yet built
+
+**`candidate-ai-match-screen-consolidation`** (user CR, confirmed + fully documented
+2026-08-08) — full OpenSpec change at
+`openspec/changes/candidate-ai-match-screen-consolidation/` (proposal/design/specs
+delta/tasks all complete, `openspec status` confirms 4/4). User's explicit instruction: this is
+the FIRST thing built when the dev freeze lifts, ahead of everything else in this backlog —
+spec documented first (done), then build → test → review → merge, full Gate 5 pipeline, no
+shortcuts. Summary: stop auto-firing matching/screening on upload (extraction-only); collapse
+"Trigger Job Matching"/"Trigger AI Screening" into one LLM-primary "AI Job Match" trigger
+(offline scorer demoted to fail-safe-only fallback); hard-gate results at a configurable ≥75%
+match (default), each result carrying a reworked, pair-specific 5+5 (match points / gaps to
+verify); unify screening-question generation onto one mechanism (`candidate_screenings/`)
+used by both a new per-position "Screen" action and the existing top-right entry point;
+retire `candidates/screening/`'s match-decision+scorecard write path (table stays, per the
+additive-migration rule). Read the OpenSpec change's own design.md for full rationale,
+decisions, and open verification items before starting task 1.1.
+
 ### 0.1 Hard blockers (not scope choices — must happen regardless of scope decisions below)
 
 | # | Blocker | Status | Notes |
