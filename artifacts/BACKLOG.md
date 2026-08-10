@@ -49,11 +49,25 @@ file. Source: `docs/GO_LIVE_CHECKLIST.md` (full detail) — this section is the 
 |---|---|---|---|
 | D1 | Phased vs. full-scope go-live for Onboarding/Consent(DPDP)/Data-Privacy | ❓ Awaiting user | `data_privacy.enforce_data_retention` is a literal no-op today — a live DPDP compliance gap if launch requires it live, not cosmetic. Likely the single biggest date-mover. |
 | D2 | Notifications completeness at launch | ❓ Awaiting user | Only 2 events (interview.scheduled/offer.sent) wired via SES, feature-flagged OFF pending SES provisioning. SMS/task-center/digests/escalation/failed-delivery-retry all unbuilt — spec itself requires failed-delivery handling before production enablement. |
-| D3 | AI-backend Plan A/B/C (2026-08-08) — replaces the earlier "Bedrock-vs-Gemini" framing (Gemini is an explicit local-testing-only stopgap on the user's own key, not a real production candidate) | ❓ Awaiting legal/DPO on A+B | **Plan A — Bedrock CRIS from ap-south-1** (current default direction; blocked on G9 legal/DPO sign-off; pricing parity with direct Anthropic, use Haiku 4.5 for the 3 volume features + Sonnet 5 only for interview-kit gen, never Opus). **Plan B — direct Anthropic API** (same models, bypasses Bedrock/AWS for the AI call only; app/DB/infra stay `ap-south-1`; does NOT dodge the DPDP question, needs its own legal check against Anthropic's DPA — not a free compliance pass; simpler IT ask than A, no AWS cross-region transfer fee). **Plan C — local-only/offline heuristics as PRIMARY, not fallback** (zero external AI vendor, zero DPDP exposure, zero per-call cost; real cost is lower output quality → more recruiter correction time; already fully built, zero switching cost). All 3 use the SAME `llm_gateway` provider-switch mechanism (config-only, near-zero engineering cost to move between them) — recommended sequencing: build toward A now, get G9's legal answer in parallel, keep C tested as the safety net so a negative legal answer doesn't block go-live (launch on C, upgrade later). |
+| D3 | AI-backend Plan A/B/C (2026-08-08) — replaces the earlier "Bedrock-vs-Gemini" framing (Gemini is an explicit local-testing-only stopgap on the user's own key, not a real production candidate) | ❓ Awaiting legal/DPO on A+B | See §0.3 table below. Recommended sequencing: build toward A now, get G9's legal answer in parallel, keep C tested as the safety net. |
 | D4 | Reporting completeness at launch | ❓ Awaiting user | Positions-ageing + Interview-Pipeline-Progress are live; 9 other report endpoints (candidate-uploads, screening, pipeline lifetime matview, etc.) are still stub. |
 | D5 | Integrations (SSO, HRIS, calendar, job boards, vendors, e-signature) at launch | ❓ Awaiting user | None built. Likely all post-launch, but needs an explicit confirm. |
 
-### 0.3 Module completion matrix (2026-08-08) — binding: update inline the moment ANY PR lands, same
+### 0.3 AI-backend Plan A/B/C (2026-08-08) — detail behind D3
+
+| Dimension | Plan A — Bedrock CRIS (ap-south-1) | Plan B — Direct Anthropic API | Plan C — Local-only / offline |
+|---|---|---|---|
+| What it is | App/DB/S3 stay in `ap-south-1`; AI calls route via Bedrock's Global Cross-Region Inference to reach Claude | App/DB/infra stay `ap-south-1`; only the AI call goes directly to Anthropic's own API | Every AI feature runs on its already-built local heuristic path as primary, not fallback |
+| Cost ($/token) | Parity with direct Anthropic pricing — no Bedrock markup | Same $/token as Bedrock (Anthropic's pricing-parity policy) | Zero per-call vendor cost |
+| Real cost driver | Model tier choice: Haiku 4.5 for volume features, Sonnet 5 only for interview-kit gen, never Opus | Same model-tier guidance as A | Lower AI-output quality → more recruiter correction time (a real cost, just not a vendor invoice line) |
+| Billing shape | Rolls into existing AWS invoice | Separate Anthropic invoice/contract | No AI vendor invoice at all |
+| Cross-region data-transfer fee | Possible (CRIS routing through AWS's own plumbing) | None (direct HTTPS to Anthropic, bypasses AWS routing) | N/A |
+| DPDP / data-residency | **Open — G9, needs legal/DPO sign-off.** PII leaves India during inference. | **Does NOT dodge the question — just moves it.** Needs its own check against Anthropic's DPA. Not a free compliance pass. | **Zero exposure.** Nothing leaves your infrastructure. |
+| Infra ask | Bedrock model access + throughput quota, IAM Bedrock role | Secrets-Manager-held Anthropic API key — simpler than A, no Bedrock quota request | None — no external AI vendor to provision |
+| Switching cost | Near-zero — `llm_gateway` provider env-var flip | Near-zero — same mechanism, `anthropic` provider already built | Zero — it's the system's existing default degrade path |
+| When to use | Default direction if G9 clears | If G9 fails on Bedrock specifically but Anthropic's own DPA is acceptable | Safety net regardless — launch here if both A and B are blocked, upgrade later |
+
+### 0.4 Module completion matrix (2026-08-08) — binding: update inline the moment ANY PR lands, same
 turn/commit as the merge, per Progress capture. This is the durable per-module UI/Backend/API/DB
 truth table — check here before asking "is X done," don't re-derive from GO_LIVE_CHECKLIST.md by
 hand.
@@ -80,7 +94,7 @@ hand.
 **10 of 16 modules fully live end-to-end.** The remaining 6 are exactly what D1/D2/D4/D5 above are
 scoping decisions about.
 
-### 0.4 AWS infrastructure request checklist (2026-08-08) — for IT
+### 0.5 AWS infrastructure request checklist (2026-08-08) — for IT
 
 | Category | What to request | Detail / Why | Status |
 |---|---|---|---|
@@ -104,7 +118,7 @@ scoping decisions about.
 | Observability | CloudWatch (partially wired) | 3 pipeline metrics + alarms already exist | Confirm if Sentry needs its own paid quota |
 | CI/CD | ECR repository | Ties to the OIDC deploy role above | Open |
 
-### 0.5 Already-tracked items feeding into this decision (cross-references, not duplicated here)
+### 0.6 Already-tracked items feeding into this decision (cross-references, not duplicated here)
 - Prompt caching (#8) and cost/token-tracking + daily digest (#9) below — both explicitly scoped to land alongside/just-before the Bedrock cutover (D3).
 - The AWS Terraform apply-blocking prerequisite (G1) and the `terraform-plan.yml` CI gap (#6 below) are the same underlying AWS-credentials/IAM gap surfacing in two places (build-time CI check vs. real apply) — resolving G1/AWS-account-provisioning likely closes both at once.
 
