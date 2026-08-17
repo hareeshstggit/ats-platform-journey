@@ -102,8 +102,21 @@ logic never using it. 5 questions/focus-area become candidate-experience-aware; 
 stay position-driven; kit gen drops its create-time trigger, schedule-time only;
 "Schedule Interview" renamed; `local_kit` fail-safe-only, same pattern as CR#1.
 
-Nothing in flight otherwise. Next up: whatever go-live-readiness questions the user raises this
-week, plus the second CR once detailed. Do NOT proactively pick up BACKLOG items #4/#6/#8/#9/#10
+**Merged 2026-08-10 (`ee75217`):** fixed `docs/ARCHITECTURE.md`'s reference to a nonexistent
+`docs/ENTERPRISE_ARCHITECTURE.md` (8 dangling references across 5 files, confirmed via Glob —
+that file never existed) and added a real "Performance & Scalability (SLOs)" section
+consolidating already-existing numbers (99.9% availability, p95 read<150ms/write<300ms from
+`openspec/project.md`; 200+ concurrent users from CLAUDE.md's NFR checklist) — 2
+`principal-reviewer` rounds, APPROVE. Mirrored externally. This was prep work ahead of drafting
+**CR#1.A — a detailed NFR specification** (user's ask, response-time target ≤2s confirmed as a
+reasonable enterprise-SaaS benchmark, sits between Nielsen's 1s and Google's 2.5s LCP) — draft
+already shared with the user in conversation (tiered targets, k6 recommendation, dev/prod
+impact), awaiting their review before formalizing as an OpenSpec change and requeuing
+`docs/BACKLOG.md` §0.0 ahead of `candidate-ai-match-screen-consolidation`.
+
+Nothing else in flight. Next up: CR#1.A review/formalization, then whatever go-live-readiness
+questions the user raises this week, plus the interview-kit CR once its turn comes. Do NOT
+proactively pick up BACKLOG items #4/#6/#8/#9/#10
 or start new builds until the freeze is
 explicitly lifted.
 
