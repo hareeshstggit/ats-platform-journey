@@ -28,10 +28,26 @@ from. This section is the tracked list that decision is based on — update it i
 item's status or the user's scope decision changes, same living-doc discipline as the rest of this
 file. Source: `docs/GO_LIVE_CHECKLIST.md` (full detail) — this section is the trackable summary.
 
-### 0.0 HIGHEST PRIORITY on resumption — Change Request documented, not yet built
+### 0.0 HIGHEST PRIORITY on resumption — Change Requests documented, not yet built (execution order below)
 
-**`candidate-ai-match-screen-consolidation`** (user CR, confirmed + fully documented
-2026-08-08) — full OpenSpec change at
+**`nfr-response-time-slo-validation` (CR#1.A) — EXECUTES FIRST, ahead of everything else.**
+User's explicit instruction (2026-08-10): put this ahead of CR#1 in the queue. Full OpenSpec
+change at `openspec/changes/nfr-response-time-slo-validation/` (4/4 artifacts complete).
+Origin: user asked for the platform to hit an industry-standard enterprise-SaaS response time
+(≤2s) — verified as a reasonable target (sits between Nielsen's 1s "flow of thought" threshold
+and Google Core Web Vitals' 2.5s "good" LCP threshold). Summary: adds the missing frontend
+targets (LCP ≤2.0s, INP ≤200ms) that never existed anywhere; stands up a k6 load-testing
+harness (closing the long-parked BACKLOG §8 Phase 2c gap); runs the FIRST real measured
+baseline against every existing target (backend p95 read<150ms/write<300ms, 200+ concurrent
+users — none ever empirically validated); codifies perf testing must run against a production
+build, never `next dev` (confirmed live 2026-08-10: `/reports` took 39.8s to compile on first
+hit in dev mode — a false signal a load test must never be taken against); explicitly exempts
+async AI-feature latency from these synchronous-request targets. New cross-cutting
+`performance-slo` capability (no single module owns response-time SLOs, same precedent as
+`pipeline-reliability`). Read the OpenSpec change's own design.md before starting task 1.1.
+
+**`candidate-ai-match-screen-consolidation` (CR#1) — executes second, after CR#1.A.** User CR,
+confirmed + fully documented 2026-08-08 — full OpenSpec change at
 `openspec/changes/candidate-ai-match-screen-consolidation/` (proposal/design/specs
 delta/tasks all complete, `openspec status` confirms 4/4). User's explicit instruction: this is
 the FIRST thing built when the dev freeze lifts, ahead of everything else in this backlog —
@@ -46,10 +62,10 @@ retire `candidates/screening/`'s match-decision+scorecard write path (table stay
 additive-migration rule). Read the OpenSpec change's own design.md for full rationale,
 decisions, and open verification items before starting task 1.1.
 
-**`interview-kit-candidate-aware-scheduled-generation`** (user CR, confirmed + fully documented
-2026-08-08) — full OpenSpec change at
+**`interview-kit-candidate-aware-scheduled-generation` (CR#2) — executes third, after CR#1.**
+User CR, confirmed + fully documented 2026-08-08 — full OpenSpec change at
 `openspec/changes/interview-kit-candidate-aware-scheduled-generation/` (4/4 artifacts complete).
-**NEXT in priority, right after the CR above.** No schema change needed — `InterviewLevelKit`
+No schema change needed — `InterviewLevelKit`
 already stores `candidate_id`; the actual gap is that generation never used it
 (`LevelKitAgentContext`'s own docstring says "no candidate PII," prompt says "never invent facts
 about a specific candidate" — confirmed via code read, not assumed). Summary: the 5 questions

@@ -114,9 +114,17 @@ already shared with the user in conversation (tiered targets, k6 recommendation,
 impact), awaiting their review before formalizing as an OpenSpec change and requeuing
 `docs/BACKLOG.md` §0.0 ahead of `candidate-ai-match-screen-consolidation`.
 
-Nothing else in flight. Next up: CR#1.A review/formalization, then whatever go-live-readiness
-questions the user raises this week, plus the interview-kit CR once its turn comes. Do NOT
-proactively pick up BACKLOG items #4/#6/#8/#9/#10
+**CR#1.A formalized 2026-08-10 (`afd44c7`):** `nfr-response-time-slo-validation` — full OpenSpec
+change at `openspec/changes/nfr-response-time-slo-validation/` (4/4 complete), executes AHEAD
+of CR#1 per user's explicit instruction. Adds the missing frontend targets (LCP <=2.0s, INP
+<=200ms), stands up a k6 load-testing harness (closes BACKLOG §8 Phase 2c), runs the first real
+measured baseline against every existing SLO (never empirically validated before). Execution
+order now: **CR#1.A → CR#1 (`candidate-ai-match-screen-consolidation`) → CR#2
+(`interview-kit-candidate-aware-scheduled-generation`)** — all 3 fully documented, none built.
+
+Nothing else in flight. Next up: whatever go-live-readiness questions the user raises, plus
+building CR#1.A/CR#1/CR#2 in that order whenever the user says go. Do NOT proactively pick up
+BACKLOG items #4/#6/#8/#9/#10
 or start new builds until the freeze is
 explicitly lifted.
 
