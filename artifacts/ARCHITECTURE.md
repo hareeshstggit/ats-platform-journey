@@ -78,23 +78,70 @@ mirrored here.
   (source: `openspec/project.md`).
 - 200+ concurrent users with no perceptible screen-response slowdown
   (source: `.claude/CLAUDE.md` NFR compliance checklist).
+- Largest Contentful Paint (LCP) ≤ 2.0s and Interaction to Next Paint (INP) ≤ 200ms for
+  every page, under the 200+ concurrent-user target above. LCP is tightened from Google
+  Core Web Vitals' own 2.5s "good" threshold — deliberate, since this is an internal
+  enterprise tool on a corporate network, not public internet at large; INP matches
+  Google's 200ms "good" threshold exactly (source: `openspec/changes/
+  nfr-response-time-slo-validation/design.md` D5).
 
 These are design-capacity targets, not current expected load: STG Labs' own
 realistic concurrency is ~50 users (`openspec/project.md` § Users and scale);
 200+ is deliberate headroom for portfolio-company tenants.
 
-**Status: documented targets, not yet empirically validated under load.** No
-load test has ever run against this system — see `docs/GO_LIVE_CHECKLIST.md`
-("Performance / SLO validation under load", currently open) before treating
-these numbers as proven at scale.
+JD extraction, candidate-to-position matching, screening-question generation, and
+interview-kit generation are exempt from these synchronous-request targets — they run
+asynchronously via Celery, off the request path, by design.
+
+**Status: first real measured baseline recorded 2026-08-17** (GitHub Actions run
+[32053886296](https://github.com/hareeshstggit/ats-platform-project/actions/runs/32053886296),
+`load-test.yml`, 30 max VUs — the harness's own lowered-from-200 default per this
+run's environment, see caveats below). **This is a local dev-stack / CI-runner
+baseline, NOT a production number** — see `docs/BACKLOG.md` G11 for the deferred
+production re-run.
+
+| Endpoint | p95 measured | Target | Result |
+|---|---|---|---|
+| `GET /positions` (read) | 218.9ms | < 150ms | ❌ missed |
+| `GET /candidates` (read) | 231.3ms | < 150ms | ❌ missed |
+| `GET /reports/positions/ageing` (read) | 226.0ms | < 150ms | ❌ missed |
+| `GET /reports/interviews/pipeline-progress` (read) | 215.1ms | < 150ms | ❌ missed |
+| `POST /auth/login` (write-adjacent: session+audit+outbox insert) | 4874.5ms | < 300ms | ❌ missed, badly |
+| `POST /auth/mfa/verify` (write-adjacent) | 107.3ms | < 300ms | ✅ met |
+
+`http_req_failed` was 0% across all four scripts (22,852 / 2,468 / 20,725 / 22,137
+requests respectively) — every target miss above is a pure latency story, not an
+error-rate problem.
+
+**Two caveats that make this baseline informative, not damning — both were flagged
+by `principal-reviewer` before this run and are confirmed by the data:**
+1. **Generator/SUT co-location on a 2-vCPU GitHub Actions runner, single uvicorn
+   worker.** k6 itself, Postgres, Redis, and a single-worker backend all shared one
+   2-vCPU box while being driven at 30 VUs — the read-endpoint misses (150ms target
+   vs. ~220-230ms measured) are consistent with runner CPU contention on top of real
+   query cost, not necessarily a production-representative number.
+2. **`login`'s p95 (4874ms) is very likely queueing under load, not a flat bcrypt
+   cost.** The median for the same metric is 29.67ms — a strongly bimodal
+   distribution (most logins fast, a heavy tail reaching 4-5 seconds at p90+) is the
+   signature of requests queueing behind a saturated single worker under concurrent
+   load, not a fixed per-call cost. This is real, useful signal that a single-worker
+   uvicorn process is the wrong topology for concurrent login traffic — it is not
+   evidence that bcrypt itself needs to change.
+
+**Do not read this baseline as "the SLOs are unachievable."** It is exactly what
+design.md's own risk section anticipated: real measured data that should inform the
+AWS sizing decision (`docs/BACKLOG.md` §0.5, G10 — multi-task ECS Fargate, not a
+single worker), not a target to quietly loosen. Logged as its own gap below.
 
 **Already implemented toward these targets** — see `docs/BACKLOG.md` §8 for
 detail.
 
-**Still open** — tracked in `docs/BACKLOG.md` §8 (Phase 2c) and
-`docs/GO_LIVE_CHECKLIST.md`: a load-testing harness (tool choice —
-Locust/k6/custom — still undecided) validating 200–250 concurrent users
-against the latency targets above.
+**Still open** — tracked in `docs/BACKLOG.md` §8 (Phase 2c, now 🟡 — harness built
+and run once, see baseline above) and `docs/GO_LIVE_CHECKLIST.md`: a production run
+against real deployed AWS infra (`docs/BACKLOG.md` G11) with a multi-task/multi-
+worker topology instead of this baseline's single-worker co-located setup; LCP/INP
+need a separate browser-based measurement tool (e.g. Lighthouse CI —
+`docs/BACKLOG.md` G12), not built yet.
 
 ## Code map
 
