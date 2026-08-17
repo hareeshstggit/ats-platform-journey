@@ -8,8 +8,9 @@ This document describes the high-level architecture of the STG Labs ATS. If you
 are new to the codebase and want to know where to make a change, you are in the
 right place. It is deliberately short — read it once, and revisit it a couple of
 times a year rather than on every change. It records only the things that are
-unlikely to change; behaviour lives in `openspec/specs/`, patterns in
-`docs/ENTERPRISE_ARCHITECTURE.md`. The high-level map and the invariants here are
+unlikely to change; behaviour lives in `openspec/specs/`, patterns live in this
+file's "Architecture Invariants" and "Performance & Scalability (SLOs)" sections
+below. The high-level map and the invariants here are
 stable and revised only when the system's shape changes; the granular living
 documentation — function docstrings, per-module dependency headers, and the
 auto-generated API reference — updates with **every** code or spec change (see
@@ -45,7 +46,7 @@ not ship.
 The code that *is* written must be:
 
 1. **Optimized.** Efficient by construction against the SLOs in
-   `docs/ENTERPRISE_ARCHITECTURE.md`: async I/O, no N+1 queries (eager-load
+   "Performance & Scalability (SLOs)" below: async I/O, no N+1 queries (eager-load
    relations), indexed access paths, bounded/paginated result sets, no redundant
    computation, heavy work pushed off the request path onto Celery. Optimize the
    real hot path, never a hypothetical one, and never trade correctness or
@@ -63,6 +64,37 @@ The code that *is* written must be:
    cross-module dependencies are written alongside the code and updated in the
    same change, every time. See "Living documentation" below for where each lives
    and how staleness is made a build failure.
+
+## Performance & Scalability (SLOs)
+
+The authoritative source for this system's SLOs — `openspec/project.md` points
+here rather than restating these numbers; `.claude/CLAUDE.md`'s NFR compliance
+checklist states the concurrency target as a binding build-time rule and is
+mirrored here.
+
+**Targets:**
+
+- 99.9% availability; p95 read latency < 150ms; p95 write latency < 300ms
+  (source: `openspec/project.md`).
+- 200+ concurrent users with no perceptible screen-response slowdown
+  (source: `.claude/CLAUDE.md` NFR compliance checklist).
+
+These are design-capacity targets, not current expected load: STG Labs' own
+realistic concurrency is ~50 users (`openspec/project.md` § Users and scale);
+200+ is deliberate headroom for portfolio-company tenants.
+
+**Status: documented targets, not yet empirically validated under load.** No
+load test has ever run against this system — see `docs/GO_LIVE_CHECKLIST.md`
+("Performance / SLO validation under load", currently open) before treating
+these numbers as proven at scale.
+
+**Already implemented toward these targets** — see `docs/BACKLOG.md` §8 for
+detail.
+
+**Still open** — tracked in `docs/BACKLOG.md` §8 (Phase 2c) and
+`docs/GO_LIVE_CHECKLIST.md`: a load-testing harness (tool choice —
+Locust/k6/custom — still undecided) validating 200–250 concurrent users
+against the latency targets above.
 
 ## Code map
 
@@ -295,7 +327,8 @@ Canonical locations for foundational artifacts (source: v2.0 baseline):
 ## What this document is not
 
 This is a navigational map. For the *why* behind the patterns (RLS, envelope
-encryption, outbox, partitioning, SLOs) read `docs/ENTERPRISE_ARCHITECTURE.md`;
-for *behaviour* read `openspec/specs/<module>/spec.md`; for the *data model* read
+encryption, outbox, partitioning) see "Architecture Invariants" above; for
+SLOs see "Performance & Scalability (SLOs)" above; for *behaviour* read
+`openspec/specs/<module>/spec.md`; for the *data model* read
 `docs/schema.sql`; for *compliance* read `docs/COMPLIANCE.md`. Keep this file
 short — if it starts duplicating those, trim it.
