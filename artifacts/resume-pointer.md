@@ -7,42 +7,71 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-08-18, CR#1.A fully built + reviewed, archiving now)
+## RESUME HERE FIRST (2026-08-18, CR#1 MERGED + ARCHIVED — session paused, resume with CR#2)
 
-**CR#1.A (`nfr-response-time-slo-validation`) — all 6 task sections done, on `main`, ready for
-`/opsx:archive`.** Execution order confirmed by user: CR#1.A → CR#1
-(`candidate-ai-match-screen-consolidation`) → CR#2 (`interview-kit-candidate-aware-scheduled-
-generation`), all 3 fully documented in `openspec/changes/`; CR#1.A is the first to fully close.
+**CR#1.A (`nfr-response-time-slo-validation`) — fully archived** at
+`openspec/changes/archive/2026-08-18-nfr-response-time-slo-validation/`. See git history for the
+full close-out (baseline recording, auditor deep-dive correcting the login-latency root cause,
+2 principal-reviewer rounds) — not repeated here.
 
-**Harness build** (merged to `main` at `0202af5`): 4 k6 scripts, `.github/workflows/load-test.yml`,
-`docs/PERFORMANCE_TESTING.md` — survived 2 principal-reviewer rounds (exit-99 cascade, JWT-leak
-in `setup_data`, unrealistic 200-VU count, DB pollution, all fixed; final commit on that branch
-`997b25c`).
+**CR#1 (`candidate-ai-match-screen-consolidation`) — MERGED to `main` (PR #223, 2026-08-18
+18:57 UTC) and archived** at
+`openspec/changes/archive/2026-08-19-candidate-ai-match-screen-consolidation/`. Feature branch
+deleted (local + remote). Local `main` is up to date; `alembic upgrade head` NOT yet confirmed
+this session — local Postgres wasn't running when checked at pause time (connection reset, not
+a real migration issue — CR#1 has zero schema changes, nothing to migrate). **On resume: start
+the local dev stack first, then run `alembic upgrade head && alembic current` to confirm `(head)`
+before touching any code**, per the standing local-dev-sync rule.
 
-**First real baseline run** (`f139837`, GH Actions run 32053886296, 30 VUs): all 4 read endpoints
-missed <150ms p95 (218-231ms); login missed <300ms badly (4874.5ms p95). Initially misattributed
-login's latency to "single-worker uvicorn queueing."
+Execution order confirmed by user: CR#1.A (done) → CR#1 (done) → **CR#2
+(`interview-kit-candidate-aware-scheduled-generation`) — START HERE TOMORROW.** Full spec/design/
+tasks already documented in `openspec/changes/interview-kit-candidate-aware-scheduled-generation/`
+(4/4 artifacts complete per `openspec status`, not yet built) — read `design.md`'s Open Questions
+and `tasks.md` section 1 (pre-build clarification) before dispatching any agent, same as CR#1's
+own opening move.
 
-**`principal-performance-auditor` deep-dive (task 5.2) disproved that hypothesis**: `mfa/verify`
-ran in the same worker/event-loop as `login` and stayed fast (107.3ms p95) — a saturated worker
-would have slowed both. Real cause: a GIL-bound bcrypt-executor thread-pool ceiling — throughput
-capped by vCPU count, confirmed independently by a 1-VU zero-contention run already breaching the
-target (p95=793.75ms, a genuine fixed-floor SLO gap, not an artifact). Read-endpoint misses are
-closed-loop saturation artifact (Little's Law: 30 zero-think VUs ≈ ~2,300 real users), est.
-75-90% artifact not real app latency.
+**Build:** backend (`1e7d7d9`) — LLM-primary "AI Job Match" trigger, 75%-default hard gate at
+both write- and read-time, retired `screening/`'s match-decision+scorecard write path. Frontend
+(`14df0f0`) — collapsed the 2 old trigger buttons into one, relabeled 5+5 points.
 
-**Docs correction went through 2 principal-reviewer rounds** (`e270a50` → CHANGES-REQUESTED: 3
-majors, 2 minors, 1 nit → `6a7ebe3` fixes → APPROVE-WITH-NITS: 3 residual nits → `16f9b17` swept).
-New BACKLOG gap `G13` created for the untracked 1-VU floor breach (needs a `BCRYPT_ROUNDS`/core-
-speed decision — vCPU count alone does NOT lower a single-call floor, only concurrent-load
-throughput). `openspec/specs/performance-slo/spec.md` created via `/opsx:sync` (1:1 sync of the
-delta's 4 requirements, new capability, no requirements invented beyond the delta).
+**Real bug found + fixed (Gate 5, functional-test-engineer → cavecrew-investigator →
+backend-engineer):** BUG-1 (`c9b46d6`) — with the primary LLM provider genuinely down, the real
+Celery-queued path recorded an opaque failure instead of falling back to the offline scorer,
+defeating the whole D1 fail-safe design. Fixed via 2 mechanisms: immediate offline fallback on
+`PermanentProviderError`, and task-level retry-exhaustion fallback on `TransientProviderError`.
 
-**Next steps on resume:** run `/opsx:archive nfr-response-time-slo-validation`, then move to
-CR#1's own build (same Gate 5 pipeline), then CR#2. G11 (production re-run), G12 (LCP/INP
-tooling), G13 (login floor decision) all remain open BACKLOG items, explicitly not blocking
-CR#1.A's own archive — G11/G12 were always scoped past this change's close-out, and G13 needs a
-user architecture decision, not more agent work.
+**3 principal-reviewer rounds** — round 1 CHANGES-REQUESTED (1 critical mypy error + 5 majors:
+spec drift, a hard-gate bypass on `GET /candidates/{id}`, the offline fallback writing invisible
+sub-threshold rows, hardcoded "75%" UI copy, an incomplete provider-config judgment call — all
+fixed in `059f487`); round 2 APPROVE-WITH-NITS (5 nits, fixed in `109c2de`); round 3
+APPROVE-WITH-NITS (2 more doc-only nits from its own re-verification, fixed same commit). Zero
+Critical/Major findings survived any round.
+
+**This branch's first real GH Actions CI run (Live-verification mandate) found 2 more real
+gaps** invisible to local Windows testing: a hardcoded Windows venv path in the new e2e fixture
+script (`527efd3`/`db7ed3e`), and `frontend-ci.yml`'s `e2e` job never starting a Celery worker at
+all (`9807eab`) — the real "AI Job Match" click enqueued to Redis with nothing to consume it.
+Final CI: `e2e` genuinely passes; `component-test`/`test`/`typecheck` fail, confirmed
+byte-for-byte identical to `main`'s own pre-existing failures (zero new regressions,
+`docs/BACKLOG.md` G14 is the only new tech-debt entry from this CR — a file/function line-count
+cap overage, deferred since it's systemic across 19+ other files).
+
+**One accepted, documented residual** (not a defect, a scoped trade-off): a narrow audit-log
+mislabeling edge case where `PermanentProviderError`'s fallback + the gate excluding everything
+records the configured provider instead of "offline" in the audit row — nothing persists to
+`candidate_position_matches` either way; closing it would require a `match_candidate()`
+return-contract change across 5 call sites for one cosmetic audit-field edge case. Full
+rationale in the change's own `tasks.md` task 7.1.
+
+**Next steps on resume (tomorrow morning, from office):**
+1. Start the local dev stack (Postgres/Redis/Celery/uvicorn/frontend), confirm
+   `alembic current` shows `(head)`.
+2. Read `openspec/changes/interview-kit-candidate-aware-scheduled-generation/{proposal.md,
+   design.md,tasks.md}` in full — CR#2's own pre-build clarification (tasks.md section 1) is
+   the first real work, same pattern as CR#1's opening move.
+3. Full Gate 5 pipeline on the build, same discipline as CR#1: independent verification at
+   every step, real CI run before requesting merge (branch has never been pushed until then),
+   `[skip ci]` on doc-only commits, batch pushes to conserve GH Actions minutes.
 
 ## RESUME HERE FIRST (2026-08-08) — superseded by the block above, kept for history
 
