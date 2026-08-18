@@ -113,35 +113,70 @@ production re-run.
 requests respectively) — every target miss above is a pure latency story, not an
 error-rate problem.
 
-**Two caveats that make this baseline informative, not damning — both were flagged
-by `principal-reviewer` before this run and are confirmed by the data:**
-1. **Generator/SUT co-location on a 2-vCPU GitHub Actions runner, single uvicorn
-   worker.** k6 itself, Postgres, Redis, and a single-worker backend all shared one
-   2-vCPU box while being driven at 30 VUs — the read-endpoint misses (150ms target
-   vs. ~220-230ms measured) are consistent with runner CPU contention on top of real
-   query cost, not necessarily a production-representative number.
-2. **`login`'s p95 (4874ms) is very likely queueing under load, not a flat bcrypt
-   cost.** The median for the same metric is 29.67ms — a strongly bimodal
-   distribution (most logins fast, a heavy tail reaching 4-5 seconds at p90+) is the
-   signature of requests queueing behind a saturated single worker under concurrent
-   load, not a fixed per-call cost. This is real, useful signal that a single-worker
-   uvicorn process is the wrong topology for concurrent login traffic — it is not
-   evidence that bcrypt itself needs to change.
+**Three caveats that make this baseline informative, not damning — flagged by
+`principal-reviewer` and `principal-performance-auditor` and confirmed against the
+data (the auditor's deep-dive on 2026-08-18 corrected caveat 2 below — the original
+"single-worker queueing" hypothesis was disproven by the data, see the mechanism
+that replaced it):**
+1. **Generator/SUT co-location on a 2-vCPU GitHub Actions runner.** k6 itself,
+   Postgres, Redis, and the backend all shared one 2-vCPU box while being driven at
+   30 zero-think-time VUs — closed-loop saturation (Little's Law: ~228 rps at N=30,
+   Z=0 gives p95 ≈ 220ms by construction from a true per-request service demand of
+   only ~4.4ms). This single run, at 30 zero-think VUs, already approximates
+   ~2,300 real users with realistic think-time — it overshot the 200-concurrent-user
+   target, it did not undershoot it. Estimated real (low-utilisation) p95 for these
+   endpoints is ~20-40ms; roughly 75-90% of the measured 218-231ms is queueing
+   artifact from this saturation test, not real app-side latency. A `constant-
+   arrival-rate` re-run at ~20 rps (≈200 users × 10s think time) is the correct way
+   to get a production-representative number — tracked in `docs/BACKLOG.md` G11.
+2. **`login`'s p95 (4874.5ms) is a real, reproducible bcrypt-executor-thread-pool
+   ceiling — not uvicorn-worker queueing.** Disproof of the worker-queueing
+   hypothesis: `mfa/verify` runs in the same iteration, same worker, same event
+   loop, interleaved with `login`, and measured a clean 107.3ms p95 — a saturated
+   worker would have slowed both equally, and didn't. The mechanism:
+   `backend/app/modules/security/service.py` offloads bcrypt (12 rounds; the code's
+   own comment estimates ~272ms/call) to Python's default thread-pool executor
+   (`min(32, cpu+4)` threads), but bcrypt holds the GIL while hashing, so real
+   throughput is capped by vCPU count, not thread count. A **1-VU, zero-contention
+   run in the same workflow measured p95=793.75ms** — 2.9x the code comment's
+   ~272ms estimate, meaning the actual per-call cost on this runner is closer to
+   ~0.8s than ~0.27s; the exact 30-VU queueing arithmetic does not cleanly reconcile
+   with either number, so treat "closed-loop ≈ concurrency / throughput" as a
+   qualitative explanation, not an exact-match calculation. What IS solid: the
+   1-VU run already exceeds the 300ms target with zero concurrency — this is a
+   fixed floor problem, not (only) a queueing-under-load problem. More vCPU (an ECS
+   Fargate task sized up, ties into the existing multi-task sizing recommendation in
+   `docs/BACKLOG.md` G10) raises the *throughput ceiling under concurrent load* but
+   does not move the *single-call floor* — a faster core or fewer `BCRYPT_ROUNDS`
+   is what would lower that. Not adding uvicorn workers either way, since the
+   constraint is CPU-bound bcrypt work, not event-loop scheduling. The
+   1-VU floor breach itself is a genuine, non-artifact SLO gap — tracked as its own
+   item, `docs/BACKLOG.md` G13, not folded into the "mostly measurement artifact"
+   read-endpoint story above.
+3. **Dataset scale is `seed_dev`-sized, not production volume.** Query plans for
+   GIN-indexed search and the ageing/pipeline-progress aggregations are untested at
+   realistic production row counts — a small-dataset baseline can look artificially
+   fast or artificially slow relative to what real data volume will produce. Not
+   measured by this baseline; tracked alongside the production re-run in
+   `docs/BACKLOG.md` G11.
 
 **Do not read this baseline as "the SLOs are unachievable."** It is exactly what
 design.md's own risk section anticipated: real measured data that should inform the
-AWS sizing decision (`docs/BACKLOG.md` §0.5, G10 — multi-task ECS Fargate, not a
-single worker), not a target to quietly loosen. Logged as its own gap below.
+AWS sizing decision (`docs/BACKLOG.md` §0.5, G10 — sized for real vCPU throughput,
+not single-worker uvicorn concurrency), not a target to quietly loosen. Logged as
+its own gap below.
 
 **Already implemented toward these targets** — see `docs/BACKLOG.md` §8 for
 detail.
 
 **Still open** — tracked in `docs/BACKLOG.md` §8 (Phase 2c, now 🟡 — harness built
 and run once, see baseline above) and `docs/GO_LIVE_CHECKLIST.md`: a production run
-against real deployed AWS infra (`docs/BACKLOG.md` G11) with a multi-task/multi-
-worker topology instead of this baseline's single-worker co-located setup; LCP/INP
-need a separate browser-based measurement tool (e.g. Lighthouse CI —
-`docs/BACKLOG.md` G12), not built yet.
+against real deployed AWS infra (`docs/BACKLOG.md` G11) with a multi-vCPU/multi-task
+ECS Fargate topology and a production-scale dataset, plus a `constant-arrival-rate`
+load profile, instead of this baseline's 2-vCPU zero-think-time co-located setup;
+a decision on the `login` 1-VU zero-contention floor breach (`docs/BACKLOG.md`
+G13); and LCP/INP, which need a separate browser-based measurement tool (e.g.
+Lighthouse CI — `docs/BACKLOG.md` G12), not built yet.
 
 ## Code map
 

@@ -7,39 +7,42 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-08-10, paused mid-CR#1.A build)
+## RESUME HERE FIRST (2026-08-18, CR#1.A fully built + reviewed, archiving now)
 
-**IN FLIGHT — CR#1.A (`nfr-response-time-slo-validation`) build, branch
-`feat/nfr-perf-slo-validation`, NOT merged.** Execution order confirmed by user: CR#1.A → CR#1
+**CR#1.A (`nfr-response-time-slo-validation`) — all 6 task sections done, on `main`, ready for
+`/opsx:archive`.** Execution order confirmed by user: CR#1.A → CR#1
 (`candidate-ai-match-screen-consolidation`) → CR#2 (`interview-kit-candidate-aware-scheduled-
-generation`), all 3 fully documented in `openspec/changes/`, only CR#1.A has started building.
+generation`), all 3 fully documented in `openspec/changes/`; CR#1.A is the first to fully close.
 
-Branch history so far: `06b5f03` (AI-latency exemption doc sentence) → `bbe17f3` (initial k6
-harness: 4 scripts, `load-test.yml` workflow, `docs/PERFORMANCE_TESTING.md`) → `bc6ae25`
-(round-2 fix: 6 majors + 5 minors from principal-reviewer round 1 — exit-99 cascade fixed,
-LCP/INP added to ARCHITECTURE.md, VU count 200→30, session cleanup added, etc.).
+**Harness build** (merged to `main` at `0202af5`): 4 k6 scripts, `.github/workflows/load-test.yml`,
+`docs/PERFORMANCE_TESTING.md` — survived 2 principal-reviewer rounds (exit-99 cascade, JWT-leak
+in `setup_data`, unrealistic 200-VU count, DB pollution, all fixed; final commit on that branch
+`997b25c`).
 
-**Round-2 review (CHANGES-REQUESTED, one new finding):** the k6 summary JSONs leaked the
-access-token JWT into a 30-day-retained CI artifact (`setup_data.token`, live-confirmed). Low
-risk that day (15-min TTL, test-only persona, ephemeral CI Postgres) but had to close before
-this harness ever points at persistent infra. **Fix landed at pause time**: commit `997b25c`
-(scrub step + the round-2 minor nit, `loginWithMfa`'s `.json()` status-check guard) — found
-already applied uncommitted in the working tree when the pause was called, committed and pushed
-before stopping so it isn't lost. `feat/nfr-perf-slo-validation` HEAD is now `997b25c`.
+**First real baseline run** (`f139837`, GH Actions run 32053886296, 30 VUs): all 4 read endpoints
+missed <150ms p95 (218-231ms); login missed <300ms badly (4874.5ms p95). Initially misattributed
+login's latency to "single-worker uvicorn queueing."
 
-**Next steps on resume:**
-1. Dispatch principal-reviewer for a final confirming pass on `997b25c` — NOT yet reviewed.
-2. On APPROVE: check GH Actions budget, run `load-test.yml` for real via `workflow_dispatch`
-   (this is the first REAL CI execution — local k6 runs so far only, per the binding
-   environment-parity mandate this still needs to happen on real Linux Actions), watch it to
-   completion, record the baseline into `docs/ARCHITECTURE.md` per tasks.md 4.1-4.3.
-3. Then tasks.md 5-6: functional-test-engineer + principal-performance-auditor on the baseline,
-   final principal-reviewer, `/opsx:sync` (creates `openspec/specs/performance-slo/spec.md`,
-   new capability), merge, `/opsx:archive`.
-4. Once CR#1.A is fully merged: move to CR#1's own build (same Gate 5 pipeline), then CR#2.
+**`principal-performance-auditor` deep-dive (task 5.2) disproved that hypothesis**: `mfa/verify`
+ran in the same worker/event-loop as `login` and stayed fast (107.3ms p95) — a saturated worker
+would have slowed both. Real cause: a GIL-bound bcrypt-executor thread-pool ceiling — throughput
+capped by vCPU count, confirmed independently by a 1-VU zero-contention run already breaching the
+target (p95=793.75ms, a genuine fixed-floor SLO gap, not an artifact). Read-endpoint misses are
+closed-loop saturation artifact (Little's Law: 30 zero-think VUs ≈ ~2,300 real users), est.
+75-90% artifact not real app latency.
 
-Do NOT re-run tasks 1-3 (harness build) from scratch — pick up exactly where round 2/3 left off,
-per the branch history above.
+**Docs correction went through 2 principal-reviewer rounds** (`e270a50` → CHANGES-REQUESTED: 3
+majors, 2 minors, 1 nit → `6a7ebe3` fixes → APPROVE-WITH-NITS: 3 residual nits → `16f9b17` swept).
+New BACKLOG gap `G13` created for the untracked 1-VU floor breach (needs a `BCRYPT_ROUNDS`/core-
+speed decision — vCPU count alone does NOT lower a single-call floor, only concurrent-load
+throughput). `openspec/specs/performance-slo/spec.md` created via `/opsx:sync` (1:1 sync of the
+delta's 4 requirements, new capability, no requirements invented beyond the delta).
+
+**Next steps on resume:** run `/opsx:archive nfr-response-time-slo-validation`, then move to
+CR#1's own build (same Gate 5 pipeline), then CR#2. G11 (production re-run), G12 (LCP/INP
+tooling), G13 (login floor decision) all remain open BACKLOG items, explicitly not blocking
+CR#1.A's own archive — G11/G12 were always scoped past this change's close-out, and G13 needs a
+user architecture decision, not more agent work.
 
 ## RESUME HERE FIRST (2026-08-08) — superseded by the block above, kept for history
 
