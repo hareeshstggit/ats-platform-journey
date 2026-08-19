@@ -15,7 +15,7 @@
 - Cloud: AWS ap-south-1 (ECS Fargate + RDS + ElastiCache + S3). Secrets: AWS Secrets Manager.
 - Reference docs (read when relevant):
   docs/ARCHITECTURE.md, docs/COMPLIANCE.md, docs/SCHEMA_EVOLUTION.md,
-  docs/SCHEMA_CHANGE.md
+  docs/SCHEMA_CHANGE.md, docs/PERFORMANCE_TESTING.md
   Specs: openspec/specs/<module>/spec.md (source of truth — read before implementing)
 
 ## Architecture (Router → Service → Repository — strict)
@@ -627,6 +627,47 @@ Playwright's e2e job's 4-browser-project matrix (full matrix only for critical/N
 reduced 1-2-browser matrix for routine functional specs) — tracked as tech debt in
 `docs/BACKLOG.md`; the reduced matrix cannot ship "without any errors" until the currently-known
 flaky webkit tests (same BACKLOG entry) are actually fixed, not just excluded from the count.
+
+**CI-cost-under-real-billing mandate (binding, no override — added 2026-08-19).** CR#1's build
+session (2026-08-18) pushed 9 times to one branch — 2 rounds discovering CI-only-visible defects
+(a Windows-only venv path, a missing Celery worker in `frontend-ci.yml`) that local Windows
+testing structurally could not catch, plus 3 review-driven fix rounds each re-triggering full CI
+— and took the account from ~1,381 to 1,991 of the 2,000-minute August allotment (confirmed live
+on the GitHub billing UI, 2026-08-19 — ~9 minutes of free headroom left, $0 billed so far because
+discounts still fully offset the $12.72 gross usage), with no `$0` spending-limit budget
+configured — meaning every further Actions minute this cycle, past that ~9-minute margin, is now
+real per-minute billing, not just quota risk. This mandate closes the gap: some of those 9 pushes
+were genuinely necessary (CI is the only real Linux runtime this repo has — Rule 2 of the
+Live-verification mandate above still stands, do not fake that check locally), but the
+*iterative discovery* pattern — push, read
+failure, fix, push again — is the expensive part, and much of it was avoidable with more
+verification done before the first push, not after.
+1. **Local-verification-first, before ANY push touching code/config/test/CI-workflow files:**
+   run the full local equivalent of every CI job — `ruff check .`, `mypy .` (matching CI's exact
+   invocation, not a subset that skips the `tests/` exclude and reports false positives), the
+   full `pytest` suite including `RUN_DB_TESTS=1` integration tests, `tsc --noEmit`, `eslint`,
+   `vitest`. For any NEW Playwright/e2e coverage specifically, run it locally against the local
+   dev stack first — a local pass doesn't guarantee a Linux-CI pass (the Windows-venv-path class
+   of defect is exactly what a local Windows run cannot catch), but it eliminates every defect
+   that IS catchable locally before spending a single real CI minute discovering it.
+2. **Review the diff before the push it belongs to, not after a CI failure surfaces what review
+   would have caught.** Dispatch `principal-reviewer` (and any needed specialist) against the
+   local, unpushed diff — reading files and running local commands doesn't need Actions. Fix
+   every finding, THEN push once. A push that immediately draws a real review round of
+   CHANGES-REQUESTED is a push that should have waited for the review it triggers.
+3. **Consolidate to the minimum number of CI-triggering pushes a change genuinely needs.** Batch
+   backend + frontend + tests + docs for one logical change into as few pushes as the actual
+   dependency chain allows — never push speculatively to "see what CI says" when the same check
+   is available locally. When a real CI failure IS found and fixed, batch that fix with any other
+   already-known-needed fix rather than pushing each fix the instant it's ready.
+4. **State the real dollar cost, not just elapsed minutes, in every CI-triggering cost alert once
+   the account is over its included allotment** — at GitHub's private-repo Linux-runner rate
+   (`pricePerUnit` from the billing-usage API, ~$0.006-0.008/min), a ~15-minute `frontend-ci.yml`
+   run now costs real money on every trigger, and the cost alert must say so explicitly, not just
+   log the minute count.
+This mandate does not relax Rule 2 of the Live-verification & environment-parity mandate — CI on
+the real target platform remains part of the definition of done. It closes the gap between "CI
+is necessary" and "CI should be the first place a catchable defect is found."
 
 **Playbook is living — update it in the same PR that surfaces a new technique:**
 `docs/TOKEN_OPTIMIZATION_PRACTICE.md` is the durable, org-shareable record of all cost-optimization
