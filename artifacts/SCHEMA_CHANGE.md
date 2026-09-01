@@ -48,6 +48,220 @@ append-only (corrections are added as new entries that reference the prior one).
 
 ## Changelog
 
+### [2026-09-01] G15 full migration-replay reconciliation — 0010/0011/0012 rewritten + 0047/0048/0061 guarded
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (dev/g15-migration-replay-fix — docs/BACKLOG.md G15/G15b)
+- Trigger         : bug fix / infra correctness — no observable API behavior, enum, permission,
+                    or error-code change (spec-sync mandate N/A). Live execution of the ONLY real
+                    provisioning path this project has ever had (`psql docs/schema.sql` ->
+                    `alembic stamp 0001_baseline` -> `alembic upgrade head`) had never actually
+                    been run end-to-end before this change — every real/CI environment was always
+                    bootstrapped via a snapshot + `alembic stamp head` shortcut. Running the real
+                    replay for the first time surfaced that migrations `0010`-`0012`'s
+                    table/enum/index/trigger-CREATING DDL collides on every object it creates
+                    (wrong enum names, wrong column names, wrong index/trigger names — schema.sql
+                    was independently re-based to a different final design), and 3 unrelated,
+                    genuinely-already-applied migrations (`0047`, `0048`, `0061`) also collide
+                    because schema.sql is kept hand-current with each shipped migration's
+                    column/index additions. **Corrected framing (principal-reviewer round 1 —
+                    the module docstrings' original "never applied to any live DB" claim was
+                    factually wrong for `0011`/`0012` and partially wrong for `0010`):** the
+                    table/enum/index/trigger-CREATING DDL in `0010`-`0012` provably never ran on
+                    any real DB (proven above), but each migration also carries statements that
+                    DID run for real and are preserved unchanged — `0011`'s full RLS block
+                    (byte-identical to what shipped; the pre-fix `docs/ci_schema_snapshot.sql`, a
+                    real `pg_dump`, already contains `rls_candidate_position_matches_isolation`
+                    and RLS-enabled `candidate_source_details`, which nothing else creates),
+                    `0010`'s RLS block (identical except `candidate_docs_read_all`'s predicate,
+                    `deleted_at IS NULL` -> `true`, correct since `candidate_documents` has no
+                    `deleted_at` in schema.sql; `0057_candidates_write_rls.py`'s own docstring
+                    confirms `candidates_read_all` "(0010, SELECT only) is the only policy that
+                    has ever existed on this table"), and `0012`'s 4 column adds (its own prior
+                    docstring conceded the snapshot "already carries all 4 columns" — i.e. those
+                    `ADD COLUMN`s genuinely ran). This fix's scope is therefore precisely: remove
+                    only the provably-never-run table/enum/index/trigger-creating DDL; preserve
+                    everything that provably did run, byte-identically or behavior-identically.
+- Module(s)       : candidates (0010/0011/0012), interviews (0047/0048), positions (0061)
+- Change type     : other (idempotency guards + dead-code removal on existing migrations; no new
+                    table/column/enum/index is introduced by this change — see Objects below)
+- Objects         :
+  - `0010_candidates_tables.py` — rewritten. Table/enum-CREATING DDL for `candidates`,
+    `candidate_documents`, `bulk_upload_jobs`, `consent_purposes`, `candidate_consents` is removed
+    outright (there is no "creation to skip" left — see corrected upgrade() docstring) and replaced
+    with an existence assertion (raises loudly if schema.sql was not loaded first, per
+    0001_baseline's own documented design — there is no supported from-scratch path). Two enum
+    types this migration originally created under names schema.sql never uses
+    (`candidate_extraction_status_enum`, `candidate_consent_status_enum`) are removed outright —
+    they were phantom/unused on the only real path. The `consent_purposes` seed INSERT (which would
+    have added an unwanted 4th 'marketing_communications' row on top of schema.sql's 3 correct seed
+    rows) is removed. RLS enable + the `candidates_read_all` / `candidate_docs_read_all` policies
+    are KEPT unconditional, unchanged in effect — confirmed live (`SELECT relrowsecurity FROM
+    pg_class`) that schema.sql's bootstrap never enables RLS on these 5 tables, and migration
+    `0057` depends on `candidates_read_all` already existing (`ALTER POLICY candidates_read_all
+    ...`), which independently proves this exact RLS block DID run for real (see corrected Trigger
+    section above). Added `DROP POLICY IF EXISTS` before each `CREATE POLICY` (project convention,
+    e.g. `0059`) so re-running against an already-drifted environment self-heals instead of
+    erroring — this is new idempotency, not a behavior change to what the policy does.
+  - `0011_candidate_matches_source_details.py` — rewritten. Table/index/trigger-CREATING DDL for
+    `candidate_position_matches` / `candidate_source_details` is removed outright, same reasoning
+    as 0010 (schema.sql already provides both, with different index/trigger names than this
+    migration's original body — e.g. `uq_cand_pos_match`/`trg_matches_upd` vs. this migration's
+    `uq_candidate_position_match`/`trg_candidate_position_matches_upd`; creating both would have
+    left 2 UPDATE triggers firing `fn_set_updated_at_and_version()` per row). RLS enable + the
+    `rls_candidate_position_matches_isolation` / `rls_candidate_source_details_isolation`
+    policies are KEPT unconditional, unchanged in effect (same reasoning as 0010 — genuinely
+    missing from schema.sql, and independently proven to have run for real by the pre-fix
+    `ci_schema_snapshot.sql`'s own `pg_dump` content — see corrected Trigger section above). Same
+    `DROP POLICY IF EXISTS` idempotency addition as 0010.
+  - `0012_candidates_schema_bridge.py` — rewritten. Removed 3 `ALTER TYPE ... ADD VALUE`
+    statements targeting the now-deleted phantom enum names (would fail outright once those types
+    stop being created) — moot anyway, since schema.sql's `extraction_status_enum`/
+    `consent_status_enum` already carry `manual_review`/`expired` in their base `CREATE TYPE`.
+    Removed the duplicate `candidate_source_details` create-table + trigger + policy + grant
+    block (0011 already owns this table after the above fix). Kept the 4 genuinely-already-real
+    column adds (`candidates.extraction_provider`, `candidate_position_matches.screening_provider`
+    /`ai_analysis_tokens`, `bulk_upload_jobs.updated_at` — confirmed real, not phantom, per the
+    corrected Trigger section above), now guarded by an `information_schema.columns` existence
+    check instead of being unconditional, and also folded directly into `docs/schema.sql` (matching
+    how `0047`/`0048`/`0061`'s equivalents are represented there) — makes `0012` a permanent
+    guarded no-op on the real path, consistent with this project's schema.sql-currency convention.
+  - `docs/schema.sql` — 2 changes: (1) `users.mfa_channel`'s inline `CHECK` is now named
+    (`CONSTRAINT ck_users_mfa_channel CHECK (...)`) — see the dedicated bullet below for why; (2)
+    the 4 columns 0012 adds (above) are now declared directly on `candidates` /
+    `candidate_position_matches` / `bulk_upload_jobs`.
+  - **`users.mfa_channel` CHECK constraint — real drift found and closed (principal-reviewer Major
+    1, not part of the original fix's scope until this round):** schema.sql's inline `CHECK
+    (mfa_channel IS NULL OR mfa_channel IN ('sms','email'))` was UNNAMED, so Postgres
+    auto-generated the name `users_mfa_channel_check`. Migration `0002_users_mfa_channel_mobile.py`
+    (a genuinely-applied migration, left untouched) guards its own identical CHECK with a
+    `duplicate_object` exception handler keyed on a DIFFERENT name, `ck_users_mfa_channel` — which
+    could never collide with the auto-generated name, so `0002`'s guard was structurally
+    non-functional on the schema.sql-load -> replay path. Result: the regenerated
+    `ci_schema_snapshot.sql` ended up with BOTH `users_mfa_channel_check` AND
+    `ck_users_mfa_channel` — a duplicate, functionally-identical CHECK constraint, i.e. exactly the
+    drift class this whole change exists to catch, present in this change's own first-pass output.
+    Fixed by naming the constraint in schema.sql to match `0002`'s expected name
+    (`ck_users_mfa_channel`), which makes `0002`'s existing guard fire correctly (skip, name now
+    matches) and eliminates the duplicate. `0002` itself was NOT edited — it is genuinely applied
+    everywhere; the fix belongs entirely in schema.sql. Re-verified via a second full replay +
+    regeneration (see Validation) and an object-name-set diff (`comm` over generated CHECK-name
+    lists from the old vs. new snapshot) confirming `users_mfa_channel_check` no longer appears and
+    only `ck_users_mfa_channel` remains. See `docs/BACKLOG.md` **G15d** for the general class this
+    incident exposes (an existence-check guard matching on name only, not full definition, can miss
+    a definition mismatch even when names happen to differ) — not closed generally by this fix,
+    only this one instance.
+  - `0047_feedback_outcome_col.py` / `0048_feedback_outcome_reason.py` — 1-line guard each:
+    `ALTER TABLE ... ADD COLUMN` -> `ADD COLUMN IF NOT EXISTS` (`interview_feedback.outcome` /
+    `outcome_change_reason`, both already in schema.sql's `interview_feedback` definition). `0047`'s
+    docstring now states explicitly that skipping the column also skips its trailing CHECK, and
+    that this is safe only because schema.sql's own `outcome` column already carries an identical
+    CHECK.
+  - `0061_pos_hist_id_time_idx.py` — 1-line guard: `CREATE INDEX` -> `CREATE INDEX IF NOT EXISTS`
+    (`idx_pos_hist_pos_time`, already in schema.sql).
+  - `.github/workflows/frontend-ci.yml` / `load-test.yml` / `backend-ci.yml` — comment-only fixes:
+    the first 2 no longer claim "docs/schema.sql + alembic upgrade head fails at migration 0010 on
+    a fresh DB" (that claim is exactly what this fix disproves) — reworded to reference
+    `docs/BACKLOG.md` **G15c** instead. `backend-ci.yml`'s "the snapshot carries reference data
+    only" comment (on the seed-users step, which now follows a real replay, not a snapshot load)
+    reworded to say schema.sql + the replay seed reference data only.
+  - `docs/ci_schema_snapshot.sql` — regenerated from the successfully-replayed DB
+    (`pg_dump --schema-only --no-owner --no-privileges` + the hand-curated seed tail re-appended
+    from the prior file, per the existing regeneration practice — verified non-zero row counts on
+    all 9 reference tables post-regeneration: organizations=1, roles=8, permissions=21,
+    role_permissions=63, lookup_values=11, currencies=15, consent_purposes=3, feature_flags=2,
+    tenant_settings=2). Supersedes the prior file's stale `candidate_source_enum` value list (had
+    obsolete pre-Phase-16 values `linkedin`/`referral`/`job_board`/`agency`/`campus`/`internal`/
+    `bulk_upload`/`api` that current schema.sql/ORM never use), missing `candidate_source_details`
+    CHECK constraints + index, missing `offer_details` table, and a stale trigger name
+    (`trg_candidate_source_details_upd` vs. schema.sql's `trg_csd_updated` — the live diff showed
+    schema.sql's name is what actually loads; this file now reflects that, not the other way
+    around). Live schema-diff (an object-name-set diff via `comm` over generated name lists from
+    the old vs. new snapshot) DID surface one unexplained item on the first pass — a duplicate
+    CHECK constraint on `users.mfa_channel` (`users_mfa_channel_check` alongside
+    `ck_users_mfa_channel`), root-caused to schema.sql's CHECK being unnamed while `0002`'s
+    `duplicate_object` guard checked a different name (see the dedicated `users.mfa_channel`
+    bullet above for the full root-cause and fix). That finding was root-caused and closed in this
+    same change (schema.sql's CHECK is now named to match `0002`'s guard), and the snapshot was
+    regenerated a second time from a fresh replay to confirm the duplicate is gone. After that fix,
+    the remaining differences vs. the prior (pre-this-change) file are exactly the ones explained
+    above plus pg_dump-version cosmetics (CHECK-constraint `ARRAY[...]` cast syntax, column
+    physical ordering) — every difference traced to a named cause, none left unexplained.
+  - `.github/workflows/backend-ci.yml` (`test` job) — the "Load CI schema snapshot" +
+    "Alembic stamp head" steps are replaced with "Load docs/schema.sql" + "Alembic stamp
+    0001_baseline" + a new "Alembic upgrade head (REAL replay)" step (G15b). This is the
+    permanent-fix enforcement: every PR touching `backend/**` now genuinely replays migrations
+    0002 through head against a schema.sql-bootstrapped DB, so a future migration reintroducing
+    this exact class of silent conflict fails CI immediately instead of surfacing at a real
+    go-live provisioning attempt. `frontend-ci.yml`/`load-test.yml` are unchanged (still use the
+    now-corrected snapshot) — tracked as a smaller residual gap in docs/BACKLOG.md, not folded
+    into this change to keep blast radius contained to the workflow explicitly named in scope.
+- Storage decision: N/A — no new column/table/enum is introduced; every change here is an
+                    idempotency guard or removal of dead/never-real DDL on existing migrations.
+- Backward compat : Backfill mandate (CLAUDE.md case (b)) — explicitly does NOT apply to this
+                    change: no migration here adds a column to a table that can already hold
+                    rows on any real path. Every "add" (the 4 columns in 0012, the 2 columns in
+                    0047/0048, the 1 index in 0061) is guarded to skip when the target object
+                    already exists — which is the ONLY state any real environment is ever in
+                    (schema.sql/the snapshot always provides these objects already). There is no
+                    scenario in this change where a NOT NULL column starts persisting a value for
+                    rows that implicitly already had it via another source — confirmed live by
+                    running the exact replay path end-to-end (see Validation) rather than assumed.
+- Migration       : 0010_candidates, 0011_candidate_matches_source, 0012_candidates_schema_bridge,
+                    0047_feedback_outcome_col, 0048_feedback_outcome_reason,
+                    0061_pos_hist_id_time_idx. Downgrades reworked for 0010/0011 to reverse only
+                    what upgrade() now unconditionally does (RLS enable + policies) — they no
+                    longer drop the 5+2 tables, since upgrade() no longer creates them on the real
+                    path and downgrade must not destroy schema.sql-owned objects later migrations
+                    depend on. 0012/0047/0048/0061 downgrades unchanged in effect (guarded with
+                    IF EXISTS where new guards were added).
+- Validation      : Full live replay, run to completion, evidence captured: `DROP/CREATE DATABASE
+                    g15_replay` -> `psql -f docs/schema.sql` (zero errors) -> `alembic stamp
+                    0001_baseline` -> `alembic upgrade head` -> `alembic current` reports
+                    `0061_pos_hist_id_time_idx (head)` with zero errors end-to-end. Schema-diff
+                    verified via `pg_dump --schema-only` on the replayed DB vs. a DB loaded from
+                    the (pre-regeneration) `ci_schema_snapshot.sql` — every difference traced and
+                    explained (see Objects). `ruff check`/`mypy` clean on all 6 touched migration
+                    files; full local `pytest` suite green (1660 passed, 0 failed).
+                    **Round 2 re-verification (principal-reviewer CHANGES-REQUESTED fix-round,
+                    same day):** after naming `users.mfa_channel`'s CHECK constraint in schema.sql
+                    (the Major 1 fix above), re-ran the FULL replay from scratch against a new
+                    disposable DB (`g15_review_replay`): `DROP/CREATE DATABASE g15_review_replay`
+                    -> `psql -f docs/schema.sql` (zero errors) -> `alembic stamp 0001_baseline` ->
+                    `alembic upgrade head` (zero errors, all 60 migrations 0002->0061 applied) ->
+                    `alembic current` reports `0061_pos_hist_id_time_idx (head)`. Confirmed via
+                    `SELECT conname FROM pg_constraint WHERE conrelid='users'::regclass AND
+                    contype='c'` that `users` now carries exactly ONE CHECK constraint
+                    (`ck_users_mfa_channel`) — the duplicate is gone. Regenerated
+                    `docs/ci_schema_snapshot.sql` a second time from this replay (schema-only
+                    `pg_dump` + the same hand-curated seed tail re-appended); reloaded the
+                    regenerated file into a fresh DB (`g15_snapshot_verify`) — zero load errors,
+                    all 9 reference tables re-verified non-zero at the exact same counts as round 1
+                    (organizations=1, roles=8, permissions=21, role_permissions=63,
+                    lookup_values=11, currencies=15, consent_purposes=3, feature_flags=2,
+                    tenant_settings=2). Object-name-set diff (`comm` over
+                    `CONSTRAINT|POLICY|INDEX|TRIGGER|TABLE|TYPE` names extracted from the
+                    committed pre-this-change `main` snapshot vs. this round's regenerated file)
+                    shows only the already-documented `candidate_source_details`/`offer_details`
+                    differences (see the snapshot-regeneration bullet in Objects) — zero new or
+                    unexplained differences, and `ck_users_mfa_channel` appears in both lists with
+                    no `users_mfa_channel_check` counterpart in either. `pytest`/`ruff`/`mypy`
+                    re-run clean after all fix-round edits (see task report for exact counts).
+- Rollback        : `git revert` this commit — all migration files and the workflow files revert
+                    to their pre-fix content; `docs/schema.sql` and `docs/ci_schema_snapshot.sql`
+                    revert to the (stale/buggy) prior versions. No live DB was touched — all
+                    validation ran against disposable scratch databases (`g15_replay`,
+                    `g15_target`, `g15_verify`, `g15_review_replay`, `g15_snapshot_verify`).
+- Notes           : This entry documents a reconciliation, not a normal "new feature adds a
+                    column" change — the unusual shape (one entry covering 6 migration files
+                    across 3 modules plus a CI workflow) reflects that it closes a single root
+                    cause (docs/BACKLOG.md G15/G15b: CI/every real environment has always
+                    bootstrapped via snapshot-load + stamp, never a real replay, so migrations
+                    could silently drift from schema.sql for years without detection). G15b's
+                    fix (the CI workflow change) is what makes this permanent — any future
+                    migration that reintroduces this class of drift now fails the very next PR's
+                    CI run, not a future go-live attempt.
+
 ### [2026-09-01] position_history pagination index — 0061_pos_hist_id_time_idx
 
 - Baseline        : v2.2 (11-Jun-2026)
