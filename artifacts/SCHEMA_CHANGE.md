@@ -48,6 +48,68 @@ append-only (corrections are added as new entries that reference the prior one).
 
 ## Changelog
 
+### [2026-09-01] position_history pagination index — 0061_pos_hist_id_time_idx
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (dev/nfr-pos-hist-index — docs/BACKLOG.md §8 P8/P9)
+- Trigger         : performance finding, no new spec/behavior change. `principal-reviewer`
+                    (2026-08-29, reviewing the `positions/{id}/history` pagination fix) found
+                    live via `EXPLAIN` that `list_history()`'s `WHERE position_id = :id ORDER BY
+                    changed_at DESC LIMIT :n OFFSET :o` cannot use the only existing index,
+                    `idx_pos_hist_pos_type_time (position_id, change_type, changed_at DESC)`,
+                    for its ORDER BY — that index only orders rows by `(change_type, changed_at)`
+                    within a `position_id`, not by `changed_at` alone. Postgres fetched every
+                    history row for the position (`Bitmap Heap Scan`) and sorted the full set
+                    before applying LIMIT.
+- Module(s)       : positions
+- Change type     : add index
+- Objects         : idx_pos_hist_pos_time on position_history(position_id, changed_at DESC)
+- Storage decision: REAL INDEX — a hot-queried, indexed-access pagination column
+                    (`position_history.changed_at`, filtered by `position_id`); no JSONB/
+                    lookup/custom-field/tags alternative applies to an index per
+                    SCHEMA_EVOLUTION.md's decision tree (that tree governs where to put NEW
+                    data, not index selection on an existing column).
+- Backward compat : purely additive — no column/data change, no NULLable/backfill question
+                    applies (CLAUDE.md backfill mandate case (b): this is a pure index
+                    addition on already-existing data, nothing to backfill). The pre-existing
+                    `idx_pos_hist_pos_type_time` is NOT dropped or altered; it remains correct
+                    for any future `change_type`-filtered query. Two indexes with an overlapping
+                    leading column is not a redundant duplicate here (unlike `0058`'s identical-
+                    single-column case) — the column sets and orderings differ.
+- Migration       : 0061_pos_hist_id_time_idx; downgrade implemented — drops only the new
+                    index, leaves idx_pos_hist_pos_type_time untouched.
+- Validation      : upgrade → downgrade → re-upgrade round-tripped against local Postgres
+                    (`\d position_history` confirmed the index present/absent/present at each
+                    step). Live `EXPLAIN (ANALYZE, BUFFERS)` for the exact `list_history` query
+                    shape, before and after, using 30,009 synthetic rows seeded for one
+                    position (deleted after verification, identified by a distinct `remarks`
+                    marker so only the seeded rows were removed — the position's real 9 rows
+                    were untouched): before — `Limit -> Sort (top-N heapsort) -> Bitmap Heap
+                    Scan`, 732 buffer hits, 4.641ms execution; after — `Limit -> Index Scan
+                    using idx_pos_hist_pos_time`, no Sort node, 4 buffer hits, 0.098ms
+                    execution (~47x faster, ~180x fewer buffer reads).
+- Rollback        : `alembic downgrade -1` drops `idx_pos_hist_pos_time`; verified live.
+- Notes           : `docs/ci_schema_snapshot.sql` was regenerated via `pg_dump` against the
+                    local DB now at `0061`, which also pulled in previously-undumped drift from
+                    `0058`/`0059` (see docs/BACKLOG.md §8's `ci_schema_snapshot.sql` RLS-gap
+                    entry) — not yet CI-verified against a real run. Materialized-view half of
+                    BACKLOG P8/P9 remains separately deferred to pre-go-live; out of scope here.
+                    **CRITICAL, found by `principal-reviewer`:** a plain `pg_dump --schema-only`
+                    is schema-DDL ONLY and silently drops the file's hand-curated seed tail
+                    (`SET search_path`, the bootstrap `organizations` row, and the 8 reference-
+                    data `COPY` blocks — `roles`/`permissions`/`role_permissions`/`lookup_values`/
+                    `currencies`/`consent_purposes`/`feature_flags`/`tenant_settings`). CI's own
+                    `backend-ci.yml` comment states this file "carries reference data only, not
+                    user accounts" — losing that tail leaves every CI-seeded user with ZERO
+                    permissions (empty `roles`/`permissions` → `seed_dev.py`'s `role_permissions`
+                    grant matches nothing, no error raised) and silently defeats CI's ability to
+                    catch an authz regression. **Any future regeneration of this file via
+                    `pg_dump` MUST re-append the seed tail afterward** (`git show
+                    <pre-regen-commit>:docs/ci_schema_snapshot.sql` to locate the block after the
+                    `\unrestrict` trailer) and verify with non-zero row counts on the 9 reference
+                    tables — "loads with zero errors" is NOT sufficient verification, it passes
+                    on the broken file too.
+
 ### [2026-09-01] Extend audit_log partitions through 2027-12 — 0060_audit_log_partitions
 
 - Baseline        : v2.2 (11-Jun-2026)

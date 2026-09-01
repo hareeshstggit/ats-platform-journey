@@ -7,7 +7,42 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-09-01, G16 audit_log partition gap CLOSED + merged to main, local only — pending push)
+## RESUME HERE FIRST (2026-09-01 ~15:40 IST, G14 + P8/P9 code-optimization items CLOSED,
+## merged to main LOCAL ONLY — not yet pushed. Session paused here for user's 18:30 IST meeting.)
+
+**G14 (job_matcher.py function+file cap) merged** (branch `dev/hygiene-g14-job-matcher-functions`,
+deleted, commit `88c986e`): `match_candidate()`/`_build_offline_points()` split into 6 smaller
+helpers. `principal-reviewer` round 1 CHANGES-REQUESTED — the function-cap fix re-broke the
+file cap (299→373 lines) — fixed by moving offline-points machinery to a new sibling
+`_offline_points.py` (112 lines), mirroring `_match_prompt.py`'s own split. `job_matcher.py` now
+276 lines. Zero behavior change, 390 tests passed, ruff/mypy clean.
+
+**P8/P9 (`position_history` pagination index) merged** (branch `dev/nfr-pos-hist-index`, deleted,
+commit `c3c9d10`): new additive index `idx_pos_hist_pos_time(position_id, changed_at DESC)`
+(migration `0061_pos_hist_id_time_idx`) fixes `list_history()`'s pagination query — was sorting
+every history row for a position before LIMIT. Live EXPLAIN: `Sort`+`Bitmap Heap Scan` →
+ordered `Index Scan`, no Sort node. **`principal-reviewer` round 1 caught a real Critical**: the
+`docs/ci_schema_snapshot.sql` regeneration (plain `pg_dump --schema-only`, needed to pick up the
+new migration) silently dropped the file's hand-curated seed tail (reference-data `COPY` blocks
+— roles/permissions/role_permissions/lookup_values/currencies/consent_purposes/feature_flags/
+tenant_settings) — would have left every CI-seeded user with zero permissions, no error raised,
+silently defeating CI's authz-regression coverage. Fixed by re-appending the seed tail from the
+pre-regeneration commit + verifying non-zero row counts on all 9 reference tables. Permanent
+warning added to `docs/SCHEMA_CHANGE.md`/`docs/BACKLOG.md`: **any future `pg_dump` regeneration
+of `ci_schema_snapshot.sql` MUST re-append this seed tail** — "loads without error" alone passes
+on the broken file too. Materialized-view half of P8/P9 stays deferred to pre-go-live.
+
+**Next up when resumed:** push `main` to `origin/main` (check GH Actions quota first per standing
+practice — last checked 2026-09-01, Sept fresh), watch CI (the freshly-regenerated
+`ci_schema_snapshot.sql` has never run through a real CI pass yet — watch for it specifically,
+per the "not yet CI-verified" note left in both docs above), then re-sync the external GitHub
+Pages mirror (`docs/BACKLOG.md`/`memory/resume-pointer.md` changed again). Remaining
+infra-independent code-optimization backlog: the `_pipeline_progress_all_levels_sql.py` watch-item
+(regex status filter, CASE-expression join, full-matched-set-before-pagination shape — `docs/
+BACKLOG.md` §8, still ❓, not yet started).
+
+## RESUME HERE (2026-09-01, G16 audit_log partition gap CLOSED, pushed to origin/main, PR #226
+## opened for the record and merged, external mirror re-synced — this batch fully closed)
 
 **G16 fix merged to `main`** (branch `fix/g16-partition-maintenance`, deleted): incident was
 `audit_log`'s monthly partitions running out on 2026-09-01, same failure class 0030 hit for
