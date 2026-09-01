@@ -7,7 +7,31 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-08-31, Tier 5 frontend-B CLOSED — ENTIRE 9-FILE TIER 5 CATCH-UP COMPLETE, local only, not pushed — GitHub Actions billing-blocked until 2026-09-01)
+## RESUME HERE FIRST (2026-09-01, G16 audit_log partition gap CLOSED + merged to main, local only — pending push)
+
+**G16 fix merged to `main`** (branch `fix/g16-partition-maintenance`, deleted): incident was
+`audit_log`'s monthly partitions running out on 2026-09-01, same failure class 0030 hit for
+`interview_status_history` earlier. Migration `0060_audit_log_partitions` backfills the missing
+16 monthly partitions; new daily Celery beat task `app.shared.partition_maintenance.ensure_partitions`
+keeps BOTH tables topped up 6 months ahead going forward, closing the recurrence class. **3
+principal-reviewer rounds**, each catching a genuinely distinct real defect (not rubber-stamped):
+round 1 — existence-check had zero schema scoping (a same-named decoy relation anywhere silently
+suppressed a required partition, proven live); round 2 — the round-1 fix still false-positived
+against a second PARTITIONED table of the same name in another schema, fixed via `to_regclass`
+(the exact resolution the DDL itself uses); round 3 (APPROVE-WITH-NITS, no round 4 needed) —
+`IF NOT EXISTS` on the DDL let a squatting relation silently no-op instead of failing loudly,
+removed, plus 3 cosmetic fixes. Verified: full backend suite 1551 passed/655 skipped, live
+`RUN_DB_TESTS=1` regression tests 2 passed (mutation-tested independently twice), ruff/mypy clean.
+Deployment prerequisite tracked separately as **BACKLOG G17** (Terraform: worker needs
+`DATABASE_ADMIN_URL`, fresh RDS needs `ALTER DEFAULT PRIVILEGES` for `ats_app`) — NOT yet
+provisioned, correctly deferred (infra-dependent, can't be done pre-go-live-hosting).
+
+**Next**: push `main` to `origin/main` (GitHub Actions Sept quota confirmed fresh before this
+push), watch CI to confirm the fix on the real Linux runner, then re-sync the external
+GitHub Pages mirror (`hareeshstggit/ats-platform-journey`) — `docs/BACKLOG.md` and this file both
+changed again since the last mirror sync.
+
+## RESUME HERE (2026-08-31, Tier 5 frontend-B CLOSED — ENTIRE 9-FILE TIER 5 CATCH-UP COMPLETE, local only, not pushed — GitHub Actions billing-blocked until 2026-09-01)
 
 **Frontend-B done** (`dev/hygiene-tier5-frontend-b`): 3 files with NO existing plan-doc analysis
 (organic growth since the 2026-07-29 sweep source list was frozen — fresh discovery required).

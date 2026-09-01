@@ -48,6 +48,55 @@ append-only (corrections are added as new entries that reference the prior one).
 
 ## Changelog
 
+### [2026-09-01] Extend audit_log partitions through 2027-12 — 0060_audit_log_partitions
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (fix/g16-partition-maintenance — docs/BACKLOG.md G16)
+- Trigger         : bug fix — production/CI incident. `audit_log` is monthly-range-partitioned
+                    and `docs/schema.sql` only ever defined partitions through `2026_08`. The
+                    instant the wall clock crossed into September 2026, every
+                    `INSERT INTO audit_log` failed live in `backend-ci.yml`'s `test` job (run
+                    33477331363, "Seed local test users" step) with
+                    `asyncpg.exceptions.CheckViolationError: no partition of relation
+                    "audit_log" found for row`. Second occurrence of this exact bug class —
+                    `0030_ivw_hist_partitions` fixed the identical gap for
+                    `interview_status_history` in an earlier month.
+- Module(s)       : shared (audit_log is cross-module infra, not owned by one business module)
+- Change type     : add partition (16 new monthly range partitions)
+- Objects         : audit_log_2026_09 .. audit_log_2027_12 (16 new partitions of `audit_log`)
+- Storage decision: N/A — new partitions of an existing partitioned table, not a new-data-
+                    storage choice; SCHEMA_EVOLUTION.md's JSONB/lookup/custom-field/tags
+                    decision tree does not apply to partition maintenance.
+- Backward compat : Purely additive — existing rows/partitions untouched, new partitions only
+                    accept future rows in their own date range. Backfill mandate case (b): no
+                    backfill possible or needed — a partition is empty until real audit writes
+                    land in that month; there is no authoritative source of "audit rows that
+                    should already exist" to derive from.
+- Migration       : 0060_audit_log_partitions; downgrade implemented (drops the 16 partitions
+                    in reverse order) — validated live against local Postgres: `alembic upgrade
+                    head` created all 16 partitions (confirmed via `\d+ audit_log`), a real
+                    INSERT with `created_at='2026-09-15'` succeeded (previously would have
+                    raised CheckViolationError), `alembic downgrade -1` removed them (confirmed
+                    `audit_log_2027_12` no longer exists), then `alembic upgrade head` recreated
+                    them cleanly.
+- Rollback        : `alembic downgrade -1` from 0060; safe at any time since the dropped
+                    partitions can only contain rows dated 2026-09-01 or later (none exist yet
+                    for future months; any real rows already written to 2026-09/2026-10/etc.
+                    partitions would be lost — treat as a data-loss operation once September
+                    writes have actually landed, not a no-op rollback).
+- Notes           : Companion fix, same commit: a new daily Celery beat task
+                    (`app.shared.partition_maintenance.ensure_partitions`, `backend/app/shared/
+                    partition_maintenance.py`, registered in `celery_app.py`'s `beat_schedule`)
+                    now keeps BOTH `audit_log` and `interview_status_history` topped up to a
+                    rolling 6-month-ahead buffer, so this bug class does not recur a third
+                    time. Verified live that the app's normal `ats_app` role lacks CREATE
+                    privilege on `public` (`permission denied for schema public`) — the beat
+                    task opens its own scoped engine on `DATABASE_ADMIN_URL` instead. Also
+                    corrected a pre-existing doc-drift: `docs/schema.sql` never reflected
+                    `interview_status_history`'s 2026-09..2027-12 partitions added by 0030
+                    (only `docs/ci_schema_snapshot.sql` had them) — fixed in the same commit so
+                    `docs/schema.sql` now matches the real DB shape for both tables.
+
 ### [2026-08-26] Add UNIQUE constraint on interview_level_kits.interview_id — 0058_uq_ivw_level_kits_iid
 
 - Baseline        : v2.2 (11-Jun-2026)

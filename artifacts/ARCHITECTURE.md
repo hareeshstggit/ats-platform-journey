@@ -223,6 +223,10 @@ storage.py              S3 upload + pre-signed URLs
 outbox.py               publish_event() + the Celery relay that drains the outbox
                         (relay_outbox_events runs on a Celery-beat schedule, added 2026-07-24)
 audit.py                write_audit_log() with hash-chaining
+partition_maintenance.py  ensure_partitions() -- daily Celery-beat task keeping audit_log +
+                        interview_status_history's monthly partitions topped up (BACKLOG G16,
+                        added 2026-09-01; uses the DB owner role, not ats_app -- see its
+                        module docstring for the privilege/deployment prerequisites)
 email.py                Dev-only OTP/MFA delivery stub (login flow) -- logs intent, never a
                         real send. Real email fan-out for business events lives in
                         modules/notifications/, not here (see Code map above).
@@ -261,7 +265,9 @@ positions/agents/jd_extractor.py         Reads a JD → primary/secondary/good-t
 ```
 worker.py                       Celery app
 modules/<x>/tasks.py            Async work: extraction, matching, notifications,
-                                report refresh, retention sweep, partition creation
+                                report refresh, retention sweep
+shared/partition_maintenance.py Daily beat task: audit_log/interview_status_history
+                                partition upkeep (see app/shared/ map above)
 ```
 Queues are isolated (`extraction`, `matching`, `notifications`, `reports`,
 `maintenance`) so a report backlog never delays candidate extraction.
