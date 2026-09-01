@@ -7,8 +7,48 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-09-01 ~15:40 IST, G14 + P8/P9 code-optimization items CLOSED,
-## merged to main LOCAL ONLY — not yet pushed. Session paused here for user's 18:30 IST meeting.)
+## RESUME HERE FIRST (2026-09-01 ~18:24 IST, backend-ci Celery-worker saga CLOSED end-to-end,
+## merged AND PUSHED to origin/main, real-CI-confirmed clean — no follow-up needed)
+
+**The queued Celery-worker CI fix (analysis given to user ~16:20 IST) is done, plus a
+self-discovered regression it exposed, also fixed — both confirmed clean on real CI, not just
+locally.** Full chain, in order:
+1. **Fix 1** (`chore/backend-ci-celery-worker`, merged, commit `7b21bd3`): added a `Start Celery
+   worker` step + a readiness-wait step to `backend-ci.yml`'s `test` job, mirroring
+   `frontend-ci.yml`'s e2e job. Closed `docs/BACKLOG.md` §5's "48→50 failed" gap
+   (`test_interview_kit_candidate_aware_flow.py`'s 2 tests timing out for lack of a worker).
+   1 `principal-reviewer` round: CHANGES-REQUESTED (BACKLOG entry not updated same-commit) —
+   fixed. **Real CI (run `33509579759`) confirmed the target fix worked** (both tests now `.s` —
+   1 passed, 1 skipped, zero failures) **but exposed a NEW regression**: 2 previously-passing
+   tests in `test_candidates_flow.py` started failing, net count unchanged at 50/50.
+2. **Root cause** (confirmed via `cavecrew-investigator`): `/candidates/upload` always enqueues
+   a REAL Celery extraction task; `test_candidates_flow.py`'s own local `_run_extraction` helper
+   ALSO runs extraction inline for determinism (its docstring said "no Celery worker needed" —
+   true before fix 1, false after). With a real worker now consuming the queue, the inline call
+   can lose the OCC claim (`_extraction_tasks.py`'s version-matched UPDATE) and return
+   `'processing'` silently — exactly the race `test_candidate_ai_match_screen_flow.py` already
+   handles correctly via polling (already in `main`, untouched).
+3. **Fix 2** (`dev/ci-candidates-extraction-race`, merged, commit `8f22f3c`): rewrote
+   `_run_extraction` to poll to settlement on the same pattern, zero application code touched,
+   all 21 call sites unaffected (they discard the return value). 1 `principal-reviewer` round:
+   APPROVE-WITH-NITS (7 small fixes: a docstring overclaim, a `'missing'`-status edge case, an
+   import placement, a missing assert at the shared call site, 2 BACKLOG accuracy corrections,
+   1 branch-before-commit reminder) — all applied same commit.
+4. **Final real-CI confirmation** (run `33512829002`, commit `8f22f3c`): `48 failed, 1771
+   passed, 658 skipped` — verified via full failed-test-name diff against the pre-fix baseline
+   that this is EXACTLY the original tracked 48, zero new regressions, both target files
+   (`test_interview_kit_candidate_aware_flow.py`, `test_candidates_flow.py`) fully clean.
+
+**Nothing queued from this saga.** 2 items flagged for future investigation (NOT fixed, explicitly
+out of scope, documented in `docs/BACKLOG.md` §5's new entry): (a) `test_screening_flow.py` has
+the same latent inline-extraction exposure, not yet observed failing; (b) `_extraction_tasks.py`'s
+OCC guard only catches same-version micro-races, not general Celery redelivery — a real but
+already-documented/accepted latent production concern, needs its own dedicated pass someday.
+External mirror NOT yet re-synced this round (`docs/BACKLOG.md` changed again) — do that next if
+nothing else is queued.
+
+## RESUME HERE (2026-09-01, G14 + P8/P9 code-optimization items CLOSED, merged AND PUSHED to
+## origin/main, CI-confirmed clean — no regression from either fix, external mirror re-synced)
 
 **G14 (job_matcher.py function+file cap) merged** (branch `dev/hygiene-g14-job-matcher-functions`,
 deleted, commit `88c986e`): `match_candidate()`/`_build_offline_points()` split into 6 smaller
@@ -32,11 +72,18 @@ warning added to `docs/SCHEMA_CHANGE.md`/`docs/BACKLOG.md`: **any future `pg_dum
 of `ci_schema_snapshot.sql` MUST re-append this seed tail** — "loads without error" alone passes
 on the broken file too. Materialized-view half of P8/P9 stays deferred to pre-go-live.
 
-**Next up when resumed:** push `main` to `origin/main` (check GH Actions quota first per standing
-practice — last checked 2026-09-01, Sept fresh), watch CI (the freshly-regenerated
-`ci_schema_snapshot.sql` has never run through a real CI pass yet — watch for it specifically,
-per the "not yet CI-verified" note left in both docs above), then re-sync the external GitHub
-Pages mirror (`docs/BACKLOG.md`/`memory/resume-pointer.md` changed again). Remaining
+**DONE (this section is now historical, not a to-do):** pushed to `origin/main` (commit
+`546ac3b`, after catching + fixing the SAME `[skip ci]` push-batching mistake as G16's earlier
+today — see `.github/workflows/backend-ci.yml`'s own retrigger-note comment), CI run
+33497268569 confirmed `typecheck` still exactly 133/3-files baseline (no new errors) and `test`'s
+50 failures are the tracked 48 baseline + 2 already-documented `test_interview_kit_candidate_
+aware_flow.py` Celery-worker-missing-in-CI failures (see the queued fix at the TOP of this file).
+External mirror re-synced (`ARCHITECTURE.md`/`BACKLOG.md`/`SCHEMA_CHANGE.md`/`resume-pointer.md`).
+
+**Next up after the queued CI-worker fix at the top of this file:** the
+`_pipeline_progress_all_levels_sql.py` watch-item (regex status filter, CASE-expression join,
+full-matched-set-before-pagination shape — `docs/BACKLOG.md` §8, still ❓, not yet started).
+Remaining
 infra-independent code-optimization backlog: the `_pipeline_progress_all_levels_sql.py` watch-item
 (regex status filter, CASE-expression join, full-matched-set-before-pagination shape — `docs/
 BACKLOG.md` §8, still ❓, not yet started).

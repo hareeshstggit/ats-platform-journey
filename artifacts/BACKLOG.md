@@ -560,6 +560,63 @@ celery_app worker` background step to `backend-ci.yml`'s `test` job, matching PR
 `frontend-ci.yml` precedent) — out of scope for CR#2 itself (a CI-infra change, not part of that
 CR's diff); tracked here so the next PR that touches a Celery-backed integration test doesn't
 re-discover this from scratch.
+**Fixed 2026-09-01 (branch `chore/backend-ci-celery-worker`)** — `backend-ci.yml`'s `test` job now
+starts a background Celery worker before `pytest` (plus a readiness-wait step and an `if:
+failure()` step dumping `celery.log`), using the identical command and queue list as
+`frontend-ci.yml`'s `e2e` job. Queue coverage verified complete against `celery_app.py`: the 6
+`task_queues` plus `task_default_queue = "maintenance"`, which is itself in the `-Q` list, so
+unrouted tasks are covered too. No `celery beat`/`-B` anywhere in CI, so G16's
+`partition-maintenance` → `ensure_partitions` still never fires in CI despite the worker now
+listening on `maintenance`. Expected to clear the 2 `test_interview_kit_candidate_aware_flow.py`
+timeouts; **actual post-fix failure count recorded here once the real CI run reports** (not
+assumed) — the third test named above,
+`test_positions_defects_flow.py::test_jd_extraction_completes_inline_and_persists_skills`, tests
+the inline extraction path, not the enqueue path, so it may not be covered by this fix.
+**Real CI outcome (2026-09-01, first run after the worker landed on `main`, commit `7b21bd3`):**
+confirmed the fix worked for its intended target — `test_interview_kit_candidate_aware_flow.py`'s
+2 tests now show `.s` (1 passed, 1 skipped), zero failures from that file. But the same real
+worker introduced a genuinely NEW regression via a race this test file's own local helpers never
+accounted for: `test_candidates_flow.py`'s `_run_extraction`/`_do_extract` calls now run
+concurrently with the router's real Celery enqueue to the SAME task, and the inline call can lose
+the OCC claim (`_extraction_tasks.py` D7 guard) and return `'processing'` silently — surfaced as
+`test_extraction_completes_and_fields_persisted` (`assert 'processing' == 'completed'`) and
+`test_identity_dedup_sets_duplicate_flag_post_extraction` (dedup flag never set because the
+duplicate-detection branch never ran) both going red. Net CI failure count unchanged at 50/50
+(2 fixed, 2 new, same run). **Fixed same day** (`_run_extraction` rewritten to poll the DB to
+settlement when it loses the race, mirroring `test_candidate_ai_match_screen_flow.py`'s
+already-established pattern) — both target tests re-verified passing locally against real
+Postgres; full-file local re-run (`22 passed, 3 skipped, 1 failed`) confirms zero other
+regressions, the 1 remaining failure (`test_resume_download_returns_302_with_location_header`)
+independently reproduced identical on unmodified `main` via `git stash` — pre-existing, already
+tracked earlier in this same §5 entry ((d) above), unrelated to this fix. Note: locally there is
+no competing worker, so both tests pass on unmodified `main` too — the local run proves
+no-regression, not that the race fix works. The probative evidence is real CI run `33509579759`,
+where the identical 20×0.5s poll pattern in `test_candidate_ai_match_screen_flow.py` passed all
+5 tests with the worker running. **Final real-CI confirmation (commit `8f22f3c`, run
+`33512829002`, 2026-09-01):** `48 failed, 1771 passed, 658 skipped` — back to the exact original
+tracked baseline (verified via full failed-test-name diff against the pre-worker-fix run
+`546ac3b`: every remaining failure name is identical modulo per-run UUIDs/timestamps; the only
+delta from `546ac3b` is the 2 `test_interview_kit_candidate_aware_flow.py` names now absent).
+**This whole saga (Celery-worker CI fix → new race exposed → race fixed) is closed, net -2
+failures, zero new regressions, confirmed end-to-end on real CI, not just locally.**
+
+- 🟡 **Latent inline-vs-real-Celery-worker race, 2 items flagged for future investigation
+  (2026-09-01, found while fixing the `test_candidates_flow.py` regression above — explicitly
+  NOT fixed here, out of scope for that fix):**
+  (a) `backend/tests/integration/test_screening_flow.py` (lines 255-265) has the SAME latent
+  exposure via its own local `_run_extraction` helper — an inline `_do_extract`/`_run_extraction`
+  call that can lose the OCC claim to the real CI Celery worker exactly like
+  `test_candidates_flow.py` did, just not yet observed failing in any real CI run. Worth
+  rewriting to the same poll-to-settlement pattern proactively, not urgent since it hasn't
+  actually failed yet.
+  (b) `_extraction_tasks.py`'s OCC claim guard (`_do_extract`'s version-matched `UPDATE
+  ... WHERE version = candidate.version`) only catches two deliveries racing on the SAME
+  pre-commit version — it does NOT block a delivery arriving after the claim has already
+  committed and bumped the version. Already documented in `_extraction_tasks.py`'s module
+  docstring (D7/C1) and consciously accepted, with `celery_app.py`'s `visibility_timeout` vs
+  `task_time_limit` reasoning as the mitigation — re-flagged here for a dedicated pass, not newly
+  discovered. Needs its own future investigation (out of scope here — this fix only patched the
+  test helper, per the brief, and was explicitly told not to touch the guard itself).
 
 ## 6. Tech debt — code hygiene (oversized files, 300-line/40-line caps)
 
