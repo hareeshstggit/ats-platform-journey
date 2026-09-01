@@ -48,6 +48,235 @@ append-only (corrections are added as new entries that reference the prior one).
 
 ## Changelog
 
+### [2026-08-26] Add UNIQUE constraint on interview_level_kits.interview_id — 0058_uq_ivw_level_kits_iid
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (dev/tech-debt-batch4-interview-level-kits —
+                    docs/BACKLOG.md §4, "interview_level_kits has no unique constraint on
+                    interview_id, allowing a real race to create 2 rows for one interview")
+- Trigger         : bug fix — §4 tech debt. Two concurrent Celery deliveries of
+                    `generate_level_interview_kit` for the same interview could both read
+                    `get_level_kit_by_interview_id() -> None` (read-then-create race) and both
+                    insert a kit row. Every subsequent read via `get_level_kit_by_interview_id`
+                    (`.scalar_one_or_none()`) then raised `MultipleResultsFound`, turning the
+                    interview's kit into a permanent 500.
+- Module(s)       : interviews (repository.py, _kit_context.py, tasks.py)
+- Change type     : add constraint (drop pre-existing plain index, replace with UNIQUE)
+- Objects         : uq_interview_level_kits_interview_id (new UNIQUE constraint);
+                    ix_interview_level_kits_interview_id (dropped — redundant once the UNIQUE
+                    constraint's own index covers the same lookups)
+- Storage decision: N/A — constraint addition on an existing column, not a new-data-storage
+                    choice; SCHEMA_EVOLUTION.md's JSONB/lookup/custom-field/tags decision tree
+                    does not apply here.
+- Backward compat : Additive/reversible. Backfill mandate case (b) — no backfill needed or
+                    possible: this is a constraint on an existing column, not a new column with
+                    an authoritative-source value to derive. Confirmed via a live
+                    `SELECT interview_id, COUNT(*) ... GROUP BY interview_id HAVING COUNT(*) > 1`
+                    against the local dev DB (180 total rows) BEFORE writing the migration:
+                    zero duplicate groups, so the constraint applies cleanly with no
+                    reconciliation step.
+- Migration       : 0058_uq_ivw_level_kits_iid; downgrade implemented (drops the constraint,
+                    restores the original plain index) — validated live: upgrade -> downgrade
+                    -> upgrade all applied cleanly against the local dev DB.
+- Validation      : `alembic upgrade head` / `downgrade -1` / `upgrade head` round-tripped
+                    cleanly. Gate 1 unit tests (`app/modules/interviews/`, not-functional) —
+                    254 passed, 5 skipped, 0 failed. Live race repro (ad-hoc script, not in
+                    the test suite): two genuinely concurrent `asyncio.gather` inserts for the
+                    same fresh interview_id via `create_level_kit_with_savepoint` — one won,
+                    one hit `IntegrityError` cleanly (session usable after rollback, no crash),
+                    re-fetched the winner via `get_level_kit_by_interview_id` with no
+                    `MultipleResultsFound`; exactly 1 row persisted. Repro row hard-deleted
+                    after (only the row this repro itself created).
+- Rollback        : `alembic downgrade -1` — drops the UNIQUE constraint, restores the plain
+                    `ix_interview_level_kits_interview_id` index.
+- Notes           : Code-side race handling ships in the same change:
+                    `InterviewRepository.create_level_kit_with_savepoint` (repository.py) wraps
+                    the insert in `begin_nested()` (same pattern as
+                    `create_feedback_with_savepoint`); `_create_kit_stub` (_kit_context.py) now
+                    calls it instead of the plain `create_level_kit`; `_run_generate_level_kit`
+                    (tasks.py) catches `IntegrityError` on the race-loser path and returns
+                    immediately — the winner's own delivery already owns claim + generation.
+
+### [2026-08-27] Add RLS write policies to candidate_documents, bulk_upload_jobs, candidate_consents — 0059_docs_bulkjobs_consents_rls
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (dev/tech-debt-rls-candidate-docs-consents — found live by
+                    functional-test-engineer during Tier-3 code-hygiene work, branch
+                    dev/hygiene-tier3-backend-batch1)
+- Trigger         : bug fix — same bug class as 0057_candidates_write_rls (2026-08-25). Migration
+                    0010 (candidates_tables) enabled RLS on `candidate_documents`,
+                    `bulk_upload_jobs`, `candidate_consents` but defined a policy for none of
+                    the 3 beyond `candidate_documents`'s own SELECT-only
+                    `candidate_docs_read_all`. `bulk_upload_jobs`/`candidate_consents` never had
+                    any policy for any command, ever, in any migration. `ats_app` (NOSUPERUSER,
+                    NOBYPASSRLS) holds table-level GRANTs on all 3, but a GRANT does not bypass
+                    RLS — with RLS enabled and zero matching policies Postgres default-denies the
+                    command regardless. Live-confirmed via `pg_policies` (zero rows for all 3,
+                    including the read policy — this environment's copy of these 3 tables was
+                    bootstrapped from docs/schema.sql's shape, not 0010's own create_table, so
+                    even the originally-intended SELECT policy was never applied here) and via a
+                    real `POST /candidates/upload` repro: 500
+                    `InsufficientPrivilegeError: new row violates row-level security policy for
+                    table "candidate_documents"`. This silently blocked candidate document
+                    uploads, all bulk-upload job tracking, and all consent recording since
+                    Phase 16 shipped.
+- Module(s)       : candidates (repository — create_document/update_primary_document,
+                    create_bulk_job/update_bulk_job, create_consent/list_consents)
+- Change type     : add RLS policy (x8 — SELECT+INSERT+UPDATE on candidate_documents and
+                    bulk_upload_jobs; SELECT+INSERT only on candidate_consents — no UPDATE
+                    policy added there, see Notes)
+- Objects         : candidate_docs_read_all/insert_all/update_all,
+                    bulk_upload_jobs_read_all/insert_all/update_all,
+                    candidate_consents_read_all/insert_all — all `USING (true)`
+                    and/or `WITH CHECK (true)`
+- Storage decision: N/A — RLS policy change, not a data-storage mechanism choice
+                    (docs/SCHEMA_EVOLUTION.md's decision tree governs new data storage; it has
+                    no RLS-specific guidance, matching the 0057 precedent's own reasoning).
+- Backward compat : Additive/expand-only. All 3 tables go from "zero policies" (deny-all beyond
+                    the bare GRANT) to `USING (true)`/`WITH CHECK (true)` for each command listed
+                    under Objects above — strictly widening, so no row already visible/writable
+                    becomes invisible and no existing row's data changes. None of the 3 tables
+                    has an organization_id column (same as candidates itself), so no
+                    tenant-scoping is possible or lost. Deliberately used `USING (true)` (not
+                    `USING (deleted_at IS NULL)`) for bulk_upload_jobs's SELECT/UPDATE — the one
+                    table of the 3 that does have a deleted_at column — specifically to avoid
+                    recreating the exact 0057 trap (a SELECT policy gated on deleted_at IS NULL
+                    blocks the soft-delete UPDATE transition itself, since Postgres re-checks
+                    SELECT against the post-UPDATE row) for a table with no current soft-delete
+                    code path. No DELETE policy added for any of the 3 tables — no production
+                    code path hard-deletes any of them. The hard DELETEs that DO exist are test/
+                    script cleanup only: 3 sites run as the DB owner (bypasses RLS either way),
+                    but 2 (test_functional_async_pipeline_phase1.py, phase3.py, via
+                    async_session_factory = ats_app) silently delete 0 rows under RLS with no
+                    exception — a test-cleanup defect tracked in docs/BACKLOG.md §4, not a reason
+                    to add a DELETE policy.
+- Backfill        : N/A (CLAUDE.md backfill mandate, case (b)) — this changes only which
+                    future reads/writes RLS permits; it adds no column and changes no
+                    existing row's data. All 3 tables go from "zero policies" (deny-all for
+                    every command beyond the bare GRANT) to `USING (true)`/`WITH CHECK (true)`
+                    — strictly widening visibility/writability, so no row already visible
+                    becomes invisible and no row's data changes. Independently confirmed live:
+                    row counts unchanged across the downgrade/upgrade round-trip (648/57/1296).
+- Migration       : 0059_docs_bulkjobs_consents_rls; downgrade implemented (drops all 8 policies,
+                    restoring RLS-enabled-with-zero-policies) — yes.
+- Validation      : Applied via `alembic upgrade head`; confirmed all 8 policies present via
+                    `pg_policies` readback. Round-tripped `alembic downgrade -1` (policies
+                    dropped, `pg_policies` empty for all 3 tables, row counts unchanged at
+                    648/57/1296) then `alembic upgrade head` (all 8 policies restored). At the
+                    pre-fix revision, SELECT/UPDATE with no matching policy return/affect zero
+                    rows silently (no exception) while INSERT raises `InsufficientPrivilege`
+                    loudly — confirmed live, this asymmetry is why the gap went unnoticed since
+                    Phase 16. Live-verified as the actual `ats_app` role (via `SET ROLE ats_app`
+                    inside a single rolled-back admin transaction, so FK references to a
+                    throwaway candidate row stayed visible across statements): INSERT + UPDATE +
+                    SELECT succeeded for candidate_documents (create doc, flip is_primary) and
+                    bulk_upload_jobs (create job, update progress/status); INSERT + SELECT
+                    succeeded for candidate_consents (grant) — zero rows persisted (rolled
+                    back). `app/modules/candidates/tests/` unit suite: 266 passed, 109 skipped.
+                    Functional tests against the live stack (RUN_FUNCTIONAL_TESTS=1):
+                    test_functional_bulk_upload.py and test_functional_duplicate_file_error.py
+                    (7/7 passed in isolation — 2 apparent failures in a combined run were
+                    `/auth/login` rate-limiting from consecutive test runs, confirmed unrelated
+                    to this fix by re-running that file alone). mypy: no issues on the new
+                    migration file. **CI cannot regress-test this**: `backend-ci.yml`'s schema
+                    bootstrap runs `alembic stamp head`, not `upgrade`, against a pre-baked
+                    snapshot that doesn't enable RLS on any of these tables at all — this fix is
+                    local-dev-verified only; tracked as its own gap in docs/BACKLOG.md §4/§5, not
+                    silently accepted.
+- Rollback        : `alembic downgrade -1` drops all 8 policies added here.
+- Notes           : linked docs/BACKLOG.md (Tier-3 hygiene finding) and this session's
+                    functional-test-engineer report on dev/hygiene-tier3-backend-batch1. Same bug
+                    class as 0057_candidates_write_rls — an RLS-authoring gap where `ENABLE ROW
+                    LEVEL SECURITY` was run without a corresponding policy for every command the
+                    app actually needs. No UPDATE policy on candidate_consents — no withdraw/
+                    UPDATE endpoint exists yet, and adding a write policy with no code path
+                    behind it on this DPDP proof-of-consent table would widen its RLS surface for
+                    zero functional benefit; add that policy in the same change that ships
+                    consent withdrawal. 0057's app-layer `deleted_at`-guard sweep (6 read paths
+                    needed an explicit deleted_at IS NULL guard once candidates_read_all widened
+                    to USING (true)) is N/A here: candidate_documents/candidate_consents have no
+                    deleted_at column at all, and bulk_upload_jobs's deleted_at is modeled but
+                    never written by any code path today (get_bulk_job doesn't filter it either)
+                    — no existing read was ever relying on RLS for that filtering.
+
+### [2026-08-25] Add candidates INSERT/UPDATE RLS policies + widen SELECT to (true) — 0057_candidates_write_rls
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (dev/tech-debt-batch2-data-query — docs/BACKLOG.md §4,
+                    "candidates table has no UPDATE/ALL RLS policy for the ats_app role")
+- Trigger         : bug fix — §4 tech debt. `candidates` had only `candidates_read_all`
+                    (SELECT) since migration 0010; the table-level GRANT the app role holds
+                    does not bypass RLS, so with zero INSERT/UPDATE policies Postgres
+                    default-denied both. This blocked ALL candidate creation, and separately
+                    blocked the soft-delete UPDATE (deleted_at NULL -> now()) even after an
+                    UPDATE policy was added, because Postgres RLS re-checks the SELECT policy
+                    against the POST-update row — a SELECT policy filtered on
+                    `deleted_at IS NULL` structurally excludes any row transitioning INTO
+                    deleted, regardless of the UPDATE policy's own WITH CHECK.
+- Module(s)       : candidates (repository, _extraction_tasks, _matching_tasks,
+                    candidate_screenings/repository); interviews (_kit_context — LEFT JOIN
+                    candidates); applications (repository — 1 JOIN); offers (repository, tasks
+                    — LEFT/INNER JOIN candidates)
+- Change type     : add RLS policy (x2) + alter RLS policy (x1)
+- Objects         : candidates_insert_all (new, FOR INSERT WITH CHECK true),
+                    candidates_update_all (new, FOR UPDATE USING deleted_at IS NULL WITH CHECK
+                    true), candidates_read_all (altered: USING (deleted_at IS NULL) ->
+                    USING (true))
+- Storage decision: N/A — RLS policy change, not a data-storage mechanism choice.
+- Backward compat : Additive/expand-only. INSERT/UPDATE policies are purely new grants (nothing
+                    previously allowed becomes disallowed). Widening candidates_read_all to
+                    USING (true) only EXPANDS what a plain SELECT can see (soft-deleted rows,
+                    previously RLS-hidden) — it never narrows visibility. This makes
+                    `candidates` match every other RLS-protected table in this schema
+                    (positions, applications, ...), where RLS never filters deleted_at and the
+                    app layer's own `WHERE deleted_at IS NULL` convention is what hides
+                    soft-deleted rows. Verified every production read path against `candidates`
+                    (repository.py, candidate_screenings/repository.py, _extraction_tasks.py,
+                    _matching_tasks.py, interviews/_kit_context.py, applications/repository.py,
+                    offers/repository.py, offers/tasks.py) either already filtered
+                    `deleted_at IS NULL` explicitly or was missing it — the missing ones were
+                    fixed in this same change (interviews/_kit_context.py's candidate LEFT JOIN
+                    ON-clause, applications/repository.py's `_ORG_REJECTION_SQL` JOIN,
+                    offers/repository.py's 2 LEFT JOINs, offers/tasks.py's PDF-data JOIN, and
+                    _extraction_tasks.py/_matching_tasks.py's `session.get(Candidate, ...)`
+                    calls, which now also check `candidate.deleted_at is not None`). Live proof:
+                    the pre-existing stale orphan `FT-SoftDelKit-96f844ca` (docs/BACKLOG.md §4)
+                    was soft-deleted for real using the new UPDATE policy and confirmed excluded
+                    from `CandidateRepository.list()` (the method `GET /candidates` calls).
+- Security posture: Stated plainly, not folded into "Backward compat" above: `candidates` has NO
+                    `organization_id` column — unlike `positions`/`applications`, which keep
+                    `fn_is_internal() OR organization_id = fn_current_org()` as their real
+                    tenant-isolation predicate, `candidates_read_all`'s `deleted_at IS NULL`
+                    filter was the ONLY thing RLS ever enforced for this table. Widening it to
+                    `USING (true)` therefore means `candidates` now has ZERO RLS-level read
+                    restriction of any kind, not merely a narrower one — any role that can reach
+                    this table sees every row, deleted or not, with no RLS backstop at all. The
+                    app-layer `WHERE deleted_at IS NULL` convention (audited across every read
+                    path in this same change) is now the SOLE remaining mechanism protecting
+                    against soft-deleted-row leakage. This is an accepted trade-off, not a
+                    reassurance: any future new read path against `candidates` MUST add that
+                    filter explicitly, or it will leak soft-deleted rows with no backstop
+                    catching the omission.
+- Backfill        : N/A (CLAUDE.md backfill mandate, case (b)) — this changes only which future
+                    writes RLS permits and which rows RLS itself makes visible; no column added,
+                    no existing row's data or derivable state changed.
+- Migration       : 0057_candidates_write_rls; downgrade implemented (drops both new policies,
+                    restores candidates_read_all to USING (deleted_at IS NULL)) — yes.
+- Validation      : Applied via `alembic downgrade -1` then `alembic upgrade head` against local
+                    Postgres; confirmed via `pg_policy` readback (candidates_insert_all: check
+                    'true'; candidates_update_all: using '(deleted_at IS NULL)', check 'true';
+                    candidates_read_all: using 'true'). Live 3-op probe as `ats_app`
+                    (rolled-back transaction): INSERT a candidate, UPDATE its display_name,
+                    UPDATE its deleted_at to now() — all 3 succeeded. Module unit tests
+                    (candidates, interviews, applications, offers, candidate_screenings) green
+                    (955 passed, 5 skipped — confirmed twice independently).
+- Rollback        : `alembic downgrade -1` drops candidates_update_all/candidates_insert_all
+                    and restores candidates_read_all's original narrow SELECT policy.
+- Notes           : linked docs/BACKLOG.md §4 first bullet ("candidates table has no
+                    UPDATE/ALL RLS policy"). The stale orphan `FT-SoftDelKit-96f844ca` this
+                    bug produced has now been soft-deleted for real as part of verifying this
+                    fix.
+
 ### [2026-08-08] Fix docs/schema.sql load-order bug + make 2 early migrations idempotent — no new Alembic revision
 
 - Baseline        : v2.2 (11-Jun-2026)

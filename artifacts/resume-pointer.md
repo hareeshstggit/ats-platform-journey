@@ -7,7 +7,479 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-08-18, CR#1 MERGED + ARCHIVED — session paused, resume with CR#2)
+## RESUME HERE FIRST (2026-08-31, Tier 5 frontend-B CLOSED — ENTIRE 9-FILE TIER 5 CATCH-UP COMPLETE, local only, not pushed — GitHub Actions billing-blocked until 2026-09-01)
+
+**Frontend-B done** (`dev/hygiene-tier5-frontend-b`): 3 files with NO existing plan-doc analysis
+(organic growth since the 2026-07-29 sweep source list was frozen — fresh discovery required).
+`lib/types/positions.ts` (315 lines) evaluated and **exempted, not split** — real reason: 6
+`extends` chains cross what would be separate domain files, so a split would create cross-file
+type coupling, not just import churn (first write-up claimed ~46 importers + comment-grouped
+domains — both false, `principal-reviewer` independently re-verified the real numbers — 35
+non-test importers, interleaved not grouped — corrected same session). `interview-kit-drawer.tsx`
+315→193 (helpers + `QuestionRow`/`FocusAreaSection` sibling files; `getKitRetryState` re-exported
+so the existing retry-state test's import path needed zero changes). `screening-start-dialog.tsx`
+315→263 (helpers + `screening-position-list.tsx`; zero prior test coverage — added 2 render-smoke
+tests, self-mutation-tested before reporting done per this batch's explicit brief, closing the
+vacuous-test class caught on the prior Tier 5 batch). 1 principal-reviewer round: CHANGES-REQUESTED
+— 1 Major (the exemption rationale above, fixed) + 1 Minor (a stale doc pointer in
+`screening-status-chip.ts` naming a deleted component and missing a real 4th importer, fixed).
+11/11 tests pass, tsc/eslint clean. **This closes the entire 9-file Tier 5 catch-up** (backend:
+`job_matcher.py`/`positions/router.py`/`candidates/schemas.py`; frontend-A: `jd-panel.tsx`/
+`match-card.tsx`/`screening-detail.tsx`; frontend-B: these 3) — independently confirmed by the
+reviewer's own fresh tree scan: every other over-cap frontend file is a documented accepted
+residual or exemption, none are new/missed.
+
+**Nothing queued next for this line of work.** Next session should pick from `docs/BACKLOG.md`
+§0/§0.0/§0.1 (go-live readiness, CR follow-ups) or the remaining infra-independent optimization
+items flagged earlier (pipeline-progress-all-levels EXPLAIN fixes, P8/P9 index/matview scoping —
+still needs its own scoping pass before a fix can be dispatched), or wait for new user direction.
+Standing reminder: push everything once GitHub Actions resets 2026-09-01 — `main` will be 100+
+commits ahead of `origin/main` by then.
+
+**This closes the entire 9-file Tier 5 catch-up** (3 backend + 3 frontend-A + 3 frontend-B).
+
+## RESUME HERE (2026-08-31, Tier 5 code-hygiene backend catch-up CLOSED, merged to main, local only)
+
+**Fresh re-audit after the 48-file sweep found it wasn't fully closed after all**: `positions/
+router.py` (360 lines) was deferred from Tier 1 back on 2026-07-29 ("safe to resume in Tier 2")
+and never picked up in ANY later tier — a genuine process miss. Same for `jd-panel.tsx` (473
+lines, frontend, still pending) and `match-card.tsx` (331 lines, frontend, still pending) —
+both were in the ORIGINAL 48-file plan and never executed. `screening-detail.tsx` was split in
+Tier 1 but has grown back to 304 (barely over). Plus new organic growth since the sweep was
+frozen: `job_matcher.py` (BACKLOG G14), `candidates/schemas.py`, `lib/types/positions.ts`,
+`interview-kit-drawer.tsx`, `screening-start-dialog.tsx`. User chose "do all 9 now."
+
+**Backend batch done** (`dev/hygiene-tier5-backend-catchup`, merged): `job_matcher.py` 347→299
+(file-cap closed; function-cap on `match_candidate()` — 82→55 — and `_build_offline_points`
+(57) both STILL OPEN, tracked in G14); `positions/router.py` 360→191 (the genuine Tier-1 miss,
+mirrors `recruiter_router.py`'s sibling-router pattern); `candidates/schemas.py` evaluated,
+exempted (same inheritance-chain shape as 2 already-exempted sibling schema files, smaller than
+both). **3 principal-reviewer rounds** — round 1 CHANGES-REQUESTED (doc-accuracy only: G14 row
+never flipped, a stale deferral note left in the very commit fixing it, a metric-convention
+mismatch, a false "registration order identical" claim); round 2 CHANGES-REQUESTED because
+**my own round-1 fix introduced a real regression** — a "helpful" `tags=["positions"]` nit broke
+the byte-identical-OpenAPI invariant this whole batch depends on (FastAPI concatenates sub-router
+tags with parent tags, duplicating "positions" on 7 operations) — reverted, independently
+re-verified via an isolated temp worktree at `main` producing an identical OpenAPI md5. **Lesson,
+worth remembering**: a reviewer's own suggested nit can be wrong — verify it empirically before
+applying, the same discipline applied to every other claim this whole sweep. Also caught my own
+date error (I "corrected" a genuinely right date to a wrong one that collided with a different
+tier's entry) — always re-derive dates from `git log` timestamps, don't assume "today" from
+stale context.
+
+**Frontend batches NOT started yet** — deliberately sequenced AFTER the backend batch fully
+merged, to avoid the concurrent-worktree corruption risk from earlier this session (2 agents
+editing the shared working directory at once). Two batches queued:
+- Frontend-A (already analyzed in the plan doc, low-risk): `jd-panel.tsx`, `match-card.tsx`,
+  `screening-detail.tsx`.
+- Frontend-B (new growth, needs fresh discovery): `lib/types/positions.ts`,
+  `interview-kit-drawer.tsx`, `screening-start-dialog.tsx`.
+
+**Also still queued from before this Tier 5 detour**: pipeline-progress-all-levels report's 2
+EXPLAIN-confirmed query-plan issues (regex filter vs. indexable enum equality; `Join Filter` on
+a computed `CASE` vs. an equijoin); P8/P9 index gaps + unrefreshed materialized views (still
+vague — needs its own scoping pass, e.g. a fresh `principal-performance-auditor` dive, before
+dispatching a fix).
+
+## RESUME HERE (2026-08-29, code-optimization batch 1 CLOSED, merged to main, local only)
+
+**New line of work started after the hygiene sweep closed**: user asked for a full inventory of
+"code optimization" backlog items, then explicitly asked to filter to only the ones with NO
+dependency on live AWS/production infra or Bedrock (those can't start until go-live) — see
+`memory/` for the full filtered list if needed, or re-derive from `docs/BACKLOG.md` §0/§8.
+
+**G13 (login bcrypt latency) and BACKLOG #10 (AI-waste-on-duplicates) closed directly on `main`,
+no branch** — both doc-only: G13 by user decision (accept as exemption, see
+`docs/ARCHITECTURE.md`'s SLO section); #10 because re-reading the actual code showed CR#1 already
+retired the automatic post-extraction match/screen fan-out this item was about — moot, nothing to
+fix. **Lesson: always re-read the current code before dispatching a fix for an old BACKLOG item —
+the architecture may have already moved past it.**
+
+**Batch 1 done** (`dev/optimization-positions-history-pagination`, merged): (1) `GET
+/positions/{id}/history` paginated (P5 follow-up) — SQL LIMIT/OFFSET, live-EXPLAIN-verified, spec
+updated, frontend caller preserved via explicit `limit=200` (>200-row UI gap disclosed as tech
+debt, not hidden); (2) `applications/_interview_sync.py`'s deferred imports hoisted after
+`cavecrew-investigator` proved no real circular dependency existed (the "breaks a cycle" comment
+was vestigial); (3) N5 (extra `set_config` round trip) investigated, left in place — but the
+REAL reason took 2 investigation passes to find. First pass wrongly concluded it was load-bearing
+for internal-staff writes; `principal-reviewer`'s independent re-trace found it isn't (every
+org-scoped RLS policy's `fn_is_internal()` disjunct makes the org GUC irrelevant for internal
+users). The reviewer's OWN verification of that fix then surfaced the real, previously-undetected
+issue: on the one branch where the GUC IS live (non-internal users), `positions/_service_writes.py`
+passes a caller-supplied `organization_id` into it, which *moves* the RLS check to whatever org
+the request claims rather than validating the actor's own — a latent authz gap (currently
+unreachable, single-tenant deployment, every user internal today), now tracked as its own §4 item,
+not fixed in this batch (needs a real authz change, not a perf cleanup). **Lesson: an investigation
+that gets the mechanism right can still miss the real risk — a reviewer independently re-deriving
+the SAME finding is what caught it, don't skip that step even when an investigator's report looks
+complete.** 2 principal-reviewer rounds (CHANGES-REQUESTED — factually-inverted rationale + missing
+trailers; then APPROVE-WITH-NITS — 2 wording nits + the authz finding), both fixed same session.
+
+**Remaining infra-independent optimization items, not yet started**: pipeline-progress-all-levels
+report's 2 EXPLAIN-confirmed query-plan issues (regex filter vs. indexable enum equality; `Join
+Filter` on a computed `CASE` vs. an equijoin); P8/P9 index gaps + unrefreshed materialized views
+(vague — no specific index list yet, would need the original auditor's report or a fresh
+principal-performance-auditor pass to scope); G14 (`job_matcher.py` over file/function cap, plus a
+fresh repo-wide re-audit for any file that's crossed 300 lines since the original hygiene sweep's
+source list was frozen 2026-07-29 — the just-closed 48-file sweep does NOT guarantee zero over-cap
+files exist today). **New tracked item from this batch**: the `positions/_service_writes.py` latent
+authz gap above — not infra-dependent, could be picked up next if the user wants to continue this
+line of work, though it's a security/authz fix rather than a pure "optimization."
+
+## RESUME HERE (2026-08-29, BACKLOG §6 code-hygiene — ENTIRE 48-FILE SWEEP CLOSED, merged to main, local only)
+
+**Tier 4's final batch done, closing all 4 tiers**: `position-form-drawer.tsx` 965→519 (biggest
+file in the sweep — pure-helpers file + 4 presentational fieldsets + banner-stack; `handleSubmit`'s
+3-step chain kept intact in the orchestrator per the plan doc's constraint; 519 lines is an
+accepted, documented residual) + `application-status-drawer.tsx` 369→290 (this file's own header
+names 4 business rules — D6/D10/D3/D4 — as densest in the sweep; all 4 traced in code and confirmed
+unchanged; `validate()`/`handleSubmit()` stayed co-located per the plan doc's explicit constraint).
+1 principal-reviewer round: CHANGES-REQUESTED — 3 Major (all doc-accounting: the plan doc's
+top-of-file status block and 2 BACKLOG.md clauses still said Tier 4 was unstarted, contradicted by
+completion entries added lower in the same files — the **5th recurrence** of this exact defect
+class this sweep) + 1 Minor (pre-existing `aria-describedby` pointing at a nonexistent id, carried
+into a brand-new file — fixed) + 3 Nits — reviewer explicitly said fixing the Major items alone
+would make this an APPROVE; all fixed and re-verified, merged without a fresh round.
+
+**Process note worth remembering**: the first dispatched `ux-ui-engineer` agent stalled mid-turn
+(harness "no progress for 600s") right after finishing the `position-form-drawer.tsx` split but
+before its own doc-update/commit step. `ListAgents` confirmed no live process; the uncommitted
+split itself was independently re-verified (tsc/eslint clean, a `git stash` + rerun isolation of
+the test suite showing 4/7 pre-existing failures identical to `main`) and committed directly rather
+than re-running the whole dispatch. **Lesson: a stalled/failed agent's uncommitted working-tree
+changes are not automatically garbage — check `git status`/`git diff` and independently verify
+before discarding and redispatching; the work may already be correct.**
+
+**The entire `docs/CODE_HYGIENE_DECOMPOSITION_PLAN.md` 48-file sweep (started 2026-07-29) is now
+complete** — every file is either split, confirmed already-compliant, deleted as dead code, or
+logged as an explicitly accepted residual in `docs/BACKLOG.md` §6. **Nothing queued next for this
+line of work** — next session should pick from `docs/BACKLOG.md` §0/§0.0/§0.1 (go-live readiness
+items, CR#1.A/CR#1/CR#2 follow-ups) or wait for new user direction. Standing reminder: once GitHub
+Actions resets (2026-09-01), push everything — `main` is 82+ commits ahead of `origin/main`.
+
+## RESUME HERE (2026-08-28, BACKLOG §6 Tier 4 batch 3 — repository.py splits — CLOSED, merged to main, local only)
+
+**Tier 4 batch 3 done**: `applications/repository.py` 561→444 (8 SQL constants moved to new
+`_queries.py`, byte-identical content, class's 15 methods left intact per plan doc's own
+guidance); `interviews/repository.py` 1039→382 core + 5 new mixin files by query family
+(`_repo_panelists.py`/`_repo_feedback.py`/`_repo_sequencing.py`/`_repo_redo.py`/
+`_repo_my_interviews.py`, MRO conflict-free, verified). Corrected a stale plan-doc claim along the
+way: `_CATEGORY_RANK_SUBQUERY` was already promoted to `app/shared/sql_fragments.py` in an
+earlier batch this session, not private to this file as the plan doc said. 1 principal-reviewer
+round: APPROVE-WITH-NITS (no Critical/Major — 2 stale post-move doc pointers, a missing
+`_queries.py` header mention, an ephemeral review-round label in a docstring, overstated
+"verbatim" language — all fixed same session). Gate 1: 417 passed, 294 skipped. **This closes
+3 of Tier 4's 5 named items** (both `*/service.py` splits + both `repository.py` splits — treated
+as one batch since the plan doc lists them together). **Remaining: 2 frontend files** —
+`position-form-drawer.tsx` (biggest file in the sweep, 3-step submit chain) and
+`application-status-drawer.tsx` (densest business-rule documentation, D6/D10/D3/D4) — both need
+`ux-ui-engineer` + a fresh `.claude/rules/ats-ux-ui-guardrails.md` read before starting, not
+`backend-engineer`. **Minor housekeeping flagged by the reviewer, not urgent**: stale full-repo
+copies under `.claude/worktrees/agent-*` from prior agent runs carry pre-promotion code and slow
+down repo-wide `grep`/`rg` sweeps (caused a 120s timeout on one review pass) — worth pruning
+before the next hygiene batch.
+
+## RESUME HERE (2026-08-28, BACKLOG §6 Tier 4 batch 2 — interviews/service.py — CLOSED, merged to main, local only)
+
+**Tier 4 batch 2 done**: `interviews/service.py` 1494→492 + `_service_helpers.py` (373, deleted,
+redistributed into `_response_builders.py`/`_create_validators.py`/`_feedback_helpers.py`) +
+`service.py` write paths split into 7 files (`_service_creation.py`/`_service_reads.py`/
+`_service_scheduling.py`/`_service_feedback.py`/`_service_kits.py`/`_service_redo.py`/
+`_service_outcome_override.py` — 7 not 6, "redo/repeat" + "feedback-outcome override" didn't fit
+combined under the cap). The named hazard — 3 interleaved exception-handling conventions
+(BR-SYNC-005 swallowed / BR-SEQ-001 not-swallowed / redo-revert not-swallowed) — AST-diffed
+function-by-function against `main` by both the implementing agent and reviewer independently:
+all 3 confirmed byte-identical, zero propagation change. 2 principal-reviewer rounds: round 1
+CHANGES-REQUESTED (2 Major — 2 "read-only, audit not called" tests patched the wrong module and
+could never fail, proven by injection-and-revert at 2 layers; a new file's header falsely claimed
+its swallow was logged when it was silent `except: pass` — plus 5 Minor, stale `_service_helpers.py`
+pointers across the module, frontend, and an active OpenSpec change); round 2 confirm-only
+APPROVE-WITH-NITS (all 7 re-verified closed via live re-injection, 1 new same-class stale pointer
+in `positions/repository.py`'s own header, fixed before merge). Gate 1: 417 passed, 294 skipped.
+Accepted residuals: `service.py` (492), `_service_scheduling.py` (315), `_service_feedback.py`
+(359) stay over the 300-cap — each a single cohesive BR group. **This closes both of Tier 4's
+`*/service.py + _service_helpers.py` items** (the two the user explicitly scoped in). **Remaining
+Tier 4 files** (`applications/repository.py`, `interviews/repository.py`, `position-form-drawer.tsx`,
+`application-status-drawer.tsx`) are **NOT yet confirmed in scope — check with user before
+starting.**
+
+## RESUME HERE (2026-08-28, BACKLOG §6 Tier 4 batch 1 — applications/service.py — CLOSED, merged to main, local only)
+
+**Tier 4 batch 1 done**: `applications/service.py` 667→346 + `_service_helpers.py` (621, deleted,
+redistributed into `_status_rules.py`/`_response_builders.py`/`_interview_sync.py`) +
+`service.py` write paths split into `_service_creation.py`/`_service_transitions.py`/
+`_service_recruiter.py`. Design deviation (endorsed by reviewer): kept 3 gate helpers
+(`_offer_pipeline_eligible` etc.) as thin wrapper methods ON `ApplicationService` — plan doc said
+move them off, but 3 test files patch/call them directly on the class; moving them would've broken
+those tests. Per user's confirmed decision, retargeted all 9 test files' `mock.patch` sites to the
+new locations rather than adding a compat shim. 1 principal-reviewer round: APPROVE-WITH-NITS
+(missing `Reviewed-by` trailer — added in merge commit; 3 test-file comments still naming the
+deleted `_service_helpers.py` — fixed, repointed to `_status_rules.py`). Gate 1: 417 passed
+(non-DB); under `RUN_DB_TESTS=1`, 1 failure independently confirmed pre-existing on unmodified
+`main` too (`test_category_rank_regression.py`, already-tracked tech debt), not a regression.
+Accepted residuals: `service.py` (346) and `_service_transitions.py` (341) stay over the 300-cap.
+**This is the first concrete step of Tier 4** (user: "I want to complete with... Tier 4"; Tier 3
+is fully done). **Next: Tier 4 batch 2 — `interviews/service.py` (1413 lines) +
+`_service_helpers.py` (367 lines)**, per user's confirmed scope ("one full batch, careful dispatch
+with explicit exception-handling brief") — the plan doc flags the real risk here as the
+interleaved exception-handling conventions (BR-SYNC-005 swallowed vs. BR-SEQ-001 not-swallowed),
+brief the implementing agent on that explicitly. After batch 2, Tier 4's remaining files
+(`applications/repository.py`, `interviews/repository.py`, `position-form-drawer.tsx`,
+`application-status-drawer.tsx`) are NOT yet confirmed in scope — check with user before starting.
+
+## RESUME HERE (2026-08-28, BACKLOG §6 Tier 3 frontend batch 3 — LAST FRONTEND BATCH — CLOSED, merged to main, local only)
+
+**Tier 3 frontend batch 3 done**: `panelist-form-drawer.tsx` 716→438 (helpers file +
+`usePanelistFormSubmit` hook + `panelist-lifecycle-actions.tsx`; BUG-002/BUG-003 re-seed guard
+deliberately kept in the component, not moved into the hook); `candidate-upload-drawer.tsx`
+617→216 (helpers + `useCandidateUploadSubmit` hook + 2 mode-form components); `create-interview-drawer.tsx`
+483→410 (BR-SEQ-001 gate logic extracted to `lib/interviews/level-sequence.ts`, 15 new direct
+tests; existing 569-line suite + `application-interview-panel.test.tsx` both re-run green, zero
+drift). 1 principal-reviewer round: CHANGES-REQUESTED — the 64 pure-logic tests this batch
+added covered none of the actual JSX re-parented on the 2 previously-untested drawers (Quality
+Gate Rule 4), plus 2 dead write-only `useRef`s shipped into brand-new files and a 411-vs-410
+line-count slip in 3 doc locations. Fixed same session: added `candidate-upload-drawer.test.tsx`
+(3 render-smoke tests) + `panelist-form-drawer.test.tsx` (2 render-smoke tests, mutation-tested —
+confirmed each fails on an injected bug and passes on real code), removed the dead refs,
+corrected the line count everywhere. This closes out **ALL Tier 3 frontend items** in
+`docs/CODE_HYGIENE_DECOMPOSITION_PLAN.md`. **Next: Tier 4** (`interviews/service.py` 1413 lines
++ `_service_helpers.py`, `applications/service.py` + `_service_helpers.py` — highest risk,
+needs a human design call on the mock-patch-target tension per the plan doc, do NOT start
+without confirming scope with the user first).
+
+## RESUME HERE (2026-08-28 early morning, BACKLOG §6 Tier 3 frontend batch 2 CLOSED, merged to main, local only)
+
+**Tier 3 frontend batch 2 done**: `dept-form-drawer.tsx` 346→291, `use-positions.ts` 305→17
+(pure barrel over 4 concern files, 16 importers unaffected), `positions-list.tsx` 501→290,
+`application-list.tsx` 402→214 (ARIA menu extracted byte-identical, new keyboard/focus test
+coverage the parent never had). 2 review rounds — round 1 caught the 3rd consecutive missing-
+docs defect this Tier; round 2 caught a NEW inaccuracy the round-1 doc fix itself introduced
+(falsely claimed a file had zero tests when it has a 569-line suite) — fixed same session.
+
+**Real process incident this batch, worth remembering:** an early dispatch's Agent-tool call
+spawned a genuine background grandchild agent that kept editing files in the shared working
+directory after its parent turn ended, and it collided with a separate top-level retry dispatch
+on the same branch — corrupted files, a phantom commit I never made, silently-overwritten
+work. Caught via `git log`/`git status` showing unexpected state, `ListAgents` confirming a
+3rd live subagent I hadn't tracked, `TaskStop` to kill it, then `git stash`/`git checkout --`
+to force the tree back to a known-clean state before redoing the work with a single
+non-concurrent dispatch (explicitly told not to call the Agent tool itself). **Binding lesson:
+before dispatching any agent onto a git branch, confirm via `ListAgents` that no other agent
+is still active on this same branch/working directory — and explicitly instruct every dispatch
+not to spawn further agents of its own**, since some agent types (this session: `ux-ui-engineer`)
+have unrestricted tool access and CAN actually call Agent themselves, not just claim to.
+
+**Remaining Tier 3 frontend: 3 files** (`panelist-form-drawer.tsx`, `candidate-upload-drawer.tsx`,
+`create-interview-drawer.tsx` — first 2 genuinely have zero test coverage, add tests alongside;
+3rd already has a 569-line suite, what's missing there is direct BR-SEQ-001 sequence-gate unit
+coverage once extracted). Tier 4 (highest-risk, `interviews/service.py` 1413 lines,
+`applications/service.py`) still deferred per user's original scope choice.
+
+## RESUME HERE (2026-08-27 late night, BACKLOG §6 Tier 3 frontend batch 1 CLOSED, merged to main, local only)
+
+**Tier 3 frontend batch 1 done**: `feedback-list-drawer.tsx` 435→236, `offer-detail-card.tsx`
+348→241, `mocks/org-handlers.ts` 309→122 (3-way split incl. new `org-store.ts`). Confirmed
+`interview-pipeline-progress-report.tsx` already resolved by 2 unrelated prior PRs (299
+lines) — corrected the stale plan-doc note instead of splitting a compliant file. 2 review
+rounds: round 1 caught a real gap — the new live-binding regression test for `org-handlers.ts`'s
+named hazard wrote-before-reset, so it could never fail on the bug it claimed to catch; fixed
+by reordering to reset-then-write-then-read, and BOTH the reviewer and I independently injected
+the same stale-cache bug to empirically prove the new test catches it and the old one didn't.
+**Lesson: when a test's job is to catch a specific ordering/staleness bug, always verify by
+injecting that exact bug and watching the test fail — a test that merely "looks right" can pass
+for the wrong reason.** `main`'s frontend suite has 15 pre-existing failures across 6 files
+(confirmed identical before this branch) — logged in BACKLOG.md, not caused by this batch.
+**Next: Tier 3 frontend batch 2** — remaining ~8 files (`positions-list.tsx`,
+`panelist-form-drawer.tsx`, `candidate-upload-drawer.tsx`, `create-interview-drawer.tsx`,
+`application-list.tsx`, `dept-form-drawer.tsx`, `use-positions.ts`) — see plan doc's Tier 3
+frontend subsection. Tier 4 (highest-risk) still deferred per user's original scope choice.
+
+## RESUME HERE (2026-08-27 night, BACKLOG §6 Tier 3 backend fully CLOSED, merged to main, local only)
+
+**Tier 3 batch 2 done**: `positions/repository.py` split (457→361, position-code +
+ageing-summary extracted, JD/interview-level reads folded into `child_repository.py`).
+`PositionRepository`'s 24 public methods AST-confirmed identical; 3 external modules / 4
+call sites unaffected. 2 review rounds (round 1 caught the same "stale post-move reference"
+defect class as Tier 3 batch 1 — a WHY-comment and a BACKLOG note both still pointed at the
+pre-move location). Merged. **Backend Tier 3 is now fully done** — all 5 backend files from
+the plan doc's Tier 3 list are split. Full backend suite: 1650 passed, 815 skipped.
+**Next: Tier 3 frontend** — ~12 files (`positions-list.tsx`, `panelist-form-drawer.tsx`,
+`candidate-upload-drawer.tsx`, `create-interview-drawer.tsx`, `feedback-list-drawer.tsx`,
+`application-list.tsx`, `offer-detail-card.tsx`, `dept-form-drawer.tsx`,
+`interview-pipeline-progress-report.tsx`, `mocks/org-handlers.ts`, `use-positions.ts`) — see
+plan doc's Tier 3 frontend subsection. Tier 4 (highest-risk, `interviews/service.py` 1413
+lines, `applications/service.py`) still deferred per user's original scope choice.
+
+## RESUME HERE (2026-08-27 evening, BACKLOG §6 Tier 2 + Tier 3 batch 1 CLOSED, merged to main, local only)
+
+**Tier 3 batch 1 done** (4 backend files split, commit range `feaa1b5..75e1d2d` merged to
+`main`): `positions/service.py` 375→299, `candidates/repository.py` 713→247 (6-way split),
+`candidates/service.py` 591→298 (4-way split), `security/service.py` 389→320 (accepted
+residual — MFA-challenge helpers only, login/session/refresh/logout deliberately untouched).
+Zero public-interface drift (AST + runtime `dir()`/`inspect.signature` verified, 68 callables).
+2 review rounds on the split+docs, then a 3rd once the live functional gate could finally run —
+it was blocked TWICE by unrelated infra bugs found mid-session (below), both fixed. That final
+round caught my own wrong "rate-limit artifact" framing for 31 full-suite functional failures —
+2 test files are genuinely stale (`test_functional_p6_4_closed_lockdown_e2e.py` since 2026-07-31,
+`test_functional_p24/p23b_position_status.py` since 2026-07-04), now logged in `docs/BACKLOG.md`
+§5, not dismissed. **Lesson for future sessions: an isolation-pass does NOT prove a full-suite
+failure is throughput noise — root-cause each distinct failure class separately.**
+
+**2 real infra/data bugs found and fixed mid-session, unrelated to the hygiene work itself:**
+1. `scripts/dev-stack-watchdog.ps1`'s `-Watch` mode (auto-launched at every logon since
+   2026-08-04) spawned a duplicate backend/Celery process on any failed health check without
+   confirming the old one was dead — 310 leaked processes, twice exhausted Postgres
+   `max_connections` this session. Fixed: all 3 `Start-*` guards now match the real OS process;
+   Startup shortcut disabled (renamed `.lnk.disabled`, reversible) — one-shot mode is now the
+   intended manual, on-demand invocation, `-Watch` no longer auto-starts. 2 review rounds (the
+   first-pass guards checked a port-listener socket and a pidfile respectively — both provably
+   go stale independent of whether the process is alive).
+2. Migration `0010`'s RLS enable-without-policy gap, missed on 3 more tables beyond the
+   `candidates` fix (`0057`): `candidate_documents`/`bulk_upload_jobs`/`candidate_consents` had
+   RLS enabled with zero (or SELECT-only) policies since "Phase 16" shipped — silently blocking
+   all document uploads, bulk-job tracking, and consent recording. Fixed via migration `0059`
+   (8 new policies; deliberately no UPDATE on `candidate_consents` — no code path exists yet,
+   don't widen RLS on DPDP proof-of-consent evidence speculatively). **Also surfaced, logged as
+   go-live blocker G15, not fixed**: the migration chain can't provision a fresh DB from source
+   of truth at all (missing NOT NULL columns the ORM requires) — the deeper reason both this and
+   `0057` escaped CI, which stamps rather than replays migrations.
+
+**Process lesson, cost this session real rework**: switching git branches in the single shared
+worktree while ANY background agent/pytest run might still be using it corrupts that work
+silently (files revert mid-run). Hit this 3 times this session before catching it. **Going
+forward: never `git checkout` while a background Bash command or dispatched agent is still
+running against the repo** — wait for its completion notification first, or use a separate
+worktree (`EnterWorktree`) for genuinely concurrent branch work.
+
+## RESUME HERE (2026-08-27, BACKLOG §6 code-hygiene Tier 2 CLOSED, merged to main, local only)
+
+**§6 Tier 2 done** (3 open questions from `docs/CODE_HYGIENE_DECOMPOSITION_PLAN.md` resolved,
+merged to `main` locally, commit range `ecfdfe1..d85ab87`, no push). Deleted confirmed-dead
+`create-application-panel.tsx`+`create-application-confirm.tsx` and 4 dead `use-interviews.ts`
+hooks+their api-client fns/types; small helpers extraction on `status-change-dialog.tsx`.
+4 `principal-reviewer` rounds (3× CHANGES-REQUESTED, then APPROVE-WITH-NITS) — round 2 surfaced
+a real product gap along the way: the SCREENING_REQUIRED inline-alert UX (AC-061/AC-062) had
+zero live implementation anywhere, only in dead code. User chose to wire it onto the real live
+apply path (`ApplicationsInCandidateCard`) rather than drop the spec requirement — round 3 then
+caught a perf regression in that fix (dialog mounted unconditionally, firing 2 unnecessary
+`positions` queries per candidate-detail page load for every role). Live functional-test-engineer
+check on the final commit: CLEAR FOR INTEGRATION. Also fixed, mid-session, a real infra issue
+found by that check: 97 leaked idle Postgres connections from orphaned multi-session dev-server
+processes had maxed `max_connections`, blocking all login — cleared via `pg_terminate_backend`
+(user-approved). **Next: Tier 3** (`docs/CODE_HYGIENE_DECOMPOSITION_PLAN.md` — medium-risk
+backend `positions/`+`security/service.py`+`candidates/` and ~12 frontend files), per user's
+chosen batch scope ("Tier 2 + Tier 3 batch", Tier 4 deferred). `main` is now ahead of
+`origin/main` — push everything once GH Actions resets 2026-09-01.
+
+## RESUME HERE (2026-08-26, BACKLOG §4 tech-debt FULLY CLOSED, merged to main, local only)
+
+**§4 is now completely closed — batches 2, 3, AND 4 merged to `main` locally** (3 merge
+commits, `dev/tech-debt-batch2-data-query` / `-batch3-data-query` / `-batch4-interview-level-kits`,
+all `--no-ff` → `main`, no push — GH Actions billing-blocked until 2026-09-01, user-authorized).
+`main` is now 14 commits ahead of `origin/main`. **Push everything once GH Actions resets
+2026-09-01** — this is now the single most important thing to remember for next session.
+
+**Batch 4 (last §4 item, `8cf4c92`/`b644002`/`c2d55ad`, now on `main`)**: `interview_level_kits`
+had no unique constraint on `interview_id` — two concurrent Celery deliveries for the same
+interview could both insert a kit stub. Added a `UNIQUE` constraint (migration `0058`) +
+`create_level_kit_with_savepoint` (mirrors the existing `create_feedback_with_savepoint`
+pattern) so the race loser's `IntegrityError` keeps its session usable. **Round 1 review caught
+a real, severe defect the DB constraint alone didn't fix**: the race loser was falling through
+into a FULL SECOND generation after recovering from the constraint violation instead of
+returning — live-proven 5/5 runs, would have caused duplicate LLM spend and, worse, let a
+failing loser overwrite a completed kit with `failed` (no version guard on the final write).
+Fixed to `return` immediately — the constraint violation itself proves a winner already
+committed, so the loser has nothing left to do; the reconciler already covers a winner dying
+mid-flight. 2 full `principal-reviewer` rounds (CHANGES-REQUESTED, then APPROVE-WITH-NITS).
+
+Batches 2/3 recap (3 full review rounds each, `principal-reviewer`: CHANGES-REQUESTED ×2, then
+APPROVE-WITH-NITS), each round live-verified rather than read-through — one round required a
+real `RUN_DB_TESTS=1` integration-suite run to confirm a fix, per the Live-verification mandate.
+Gate 1 green on merged `main`: 935 passed, 7 skipped (backend); `tsc --noEmit` clean (frontend).
+**Next: continue executing §4 in listed order** — resume from "Still queued" below (only 1 real
+item left, plus decision-gated ones). Push everything (13 commits total across both batches +
+any further §4 batches) once GH Actions resets 2026-09-01.
+
+**Batch 3 (4 items, `c6327de`/`7d2d606`/`0165ee9`/`1f3fbba`/`b1282f5`, now on `main`):**
+- **category_rank SQL dedup**: promoted a duplicated subquery literal to a new
+  `app/shared/sql_fragments.py`. My own initial scoping was wrong twice, both caught by the
+  implementing/reviewing agents: reporting's copy looked dead but was still live (backed the
+  status-groups report), and `interviews/repository.py` had 3 more in-file re-inlines beyond
+  the ones originally flagged.
+- **CR-002's 3 items**: restored a dropped null-guard on `panelist_name` (had to relax the
+  schema field too — the guard alone would've just traded one exception for a validation
+  error); split `positions/models.py` (310→249 lines) into `_interview_level_models.py`;
+  `InterviewLevel.panelists` `lazy="selectin"`→`"raise"` after confirming every real read path
+  already eager-loads.
+- **BUG-4**: `InterviewLevelRequest`/`InterviewLevelResponse` were missing a spec-required
+  `level_category` field entirely — added it with a validator enforcing `level_category ==
+  level_type`, updated every backend/frontend caller (this took 2 full review rounds to close
+  completely — the first pass missed one frontend test file and, more importantly, missed that
+  the fix's own `extra="forbid"` guard broke an existing integration test elsewhere in the repo
+  that still used the pre-CR-002 request shape).
+- **`test_functional_level_kit.py`'s BUG-2/BUG-3**: both had a different real root cause than
+  originally logged (an ORM-layer `LookupError` from a migrated-away enum value, not raw DB
+  drift; a workaround that actually lived in a sibling test file). Investigating this surfaced
+  the review cycle's biggest find: both seed scripts had been silently sending `panelist_id`
+  instead of `panelist_ids` (dropped by Pydantic's default `extra="ignore"`) — **60% of active
+  interview levels in the local dev DB had zero panelists** as a result. Fixed both scripts,
+  added `extra="forbid"` so this class of drift fails loudly next time instead of rotting
+  undetected — which it promptly did, correctly, against one more caller the first sweep missed.
+
+**Batch 2a+2b (`97e3f11`, `31204e6`, plus 2 fix-up commits, now on `main`):**
+- Batch 2a (`97e3f11`): `test_functional_21b_question_generator.py` poll timeout 30s→90s (real
+  AI-fallback latency); dead `sys.path.insert` removed from 4 backfill/seed scripts;
+  `_extraction_tasks.py`'s 3 silent-UPDATE calls now check rowcount (defensive, prevents a future
+  RLS/access-control regression from silently discarding extracted candidate data).
+- Batch 2b (`31204e6`): §4 item 1 ("`candidates` has no UPDATE RLS policy") turned out much bigger
+  than logged — empirically verified via direct Postgres probe as the `ats_app` role that
+  **candidate creation (INSERT) was ALSO completely blocked**, not just the soft-delete UPDATE
+  the original finding named. Checked all 17 migrations touching `candidates`: only one policy
+  had ever existed (`candidates_read_all`, SELECT-only, migration 0010) — an original design gap,
+  not local drift. Of the 3 options scoped (A: widen `candidates_read_all` to `USING (true)`; B:
+  a session-scoped permissive SELECT policy gated by a GUC; C: a `SECURITY DEFINER` soft-delete
+  function), **user chose option A** — matches every other RLS-protected table's actual pattern
+  in this schema (candidates was the only table that ever put `deleted_at` filtering into RLS
+  itself; every other table relies purely on the app layer's own `WHERE deleted_at IS NULL`
+  convention). Shipped as migration `backend/alembic/versions/0057_candidates_write_rls.py`
+  (new `candidates_insert_all`/`candidates_update_all` policies + widened `candidates_read_all`),
+  live-verified via a real 3-op probe (INSERT/UPDATE/soft-delete all succeeded). Widening the
+  SELECT policy meant 6 read paths that had been silently relying on RLS for `deleted_at`
+  filtering needed an explicit app-layer guard added in the same change:
+  `interviews/_kit_context.py`, `applications/repository.py`, `offers/repository.py`,
+  `offers/tasks.py`, `candidate_screenings/repository.py`, `candidates/_matching_tasks.py`.
+  `docs/SCHEMA_CHANGE.md` entry written in the same commit — includes an explicit "Security
+  posture" note that `candidates` (unlike `positions`/`applications`) has no `organization_id`
+  column, so this widening leaves the table with zero RLS-level read restriction; the app-layer
+  `WHERE deleted_at IS NULL` convention is now the SOLE backstop for this table.
+Gate 1 green (955 passed, 5 skipped). Merged to `main` locally, per above.
+
+**§4 has no remaining un-decision-gated items — all real tech-debt entries are ✅.** The only
+things left in that section are the 3 decision-gated items below (need your call before any
+code) and items already correctly marked skip/parked (Celery/uvicorn watchdog, GH-Actions
+status note, the dark-mode chart-ink entry). **Decision-gated, ask when reached:** panelist
+auto-assign slots 2-3
+scope, org/dept list-ordering convention, migration 0011 fix-vs-retire. **Explicitly skipped per
+user's confirmed scope:** Celery/uvicorn watchdog entry
+(user's own tooling, not a bug), GH-Actions-blocked entry (status note, resolves 2026-09-01).
+
+**PR #225 (`fix(candidates): screening question dedup, candidate-aware AI prompts, retry UX`) —
+MERGED to `main` (`18065cb`, 2026-08-24), branch `dev/fix-screening-questions-quality` not yet
+deleted.** Found via live browser testing of CR#1/CR#2: (1) duplicate screening questions from
+`_local_scaffold`'s sparse-skill backfill — fixed by cycling 6 templates + skill-list dedup;
+review caught a live-reproducible critical where the naive fix could itself permanently break
+generation on overlapping primary/secondary skills, fixed at the source; (2) screening questions
+made candidate-experience-aware on the AI path, same pattern as CR#2's interview kits; (3)
+frontend "Check again" retry added for the 30s-poll-timeout give-up state. `_experience_band`
+helper promoted from a duplicated pair to `app/shared/experience_band.py`. Full Gate 5: 1
+functional-test-engineer pass (real stack) + 2 `principal-reviewer` rounds, final
+APPROVE-WITH-NITS. **Merged WITHOUT a real GitHub Actions CI run** — August's ~2,000-minute
+allotment is exhausted (2,116 used), no spending limit raised, every job returned
+`runner_id: 0`/"payments failed or spending limit" — user explicitly chose to merge on local
+verification alone rather than wait for the 2026-09-01 reset or raise the limit. **First action
+next session (or once Actions is unblocked): verify this merge commit retroactively passes CI on
+`main`** — logged in `docs/BACKLOG.md` §5 as a real gap against the Live-verification mandate's
+Rule 2, not silently skipped.
 
 **CR#1.A (`nfr-response-time-slo-validation`) — fully archived** at
 `openspec/changes/archive/2026-08-18-nfr-response-time-slo-validation/`. See git history for the
@@ -23,12 +495,22 @@ a real migration issue — CR#1 has zero schema changes, nothing to migrate). **
 the local dev stack first, then run `alembic upgrade head && alembic current` to confirm `(head)`
 before touching any code**, per the standing local-dev-sync rule.
 
-Execution order confirmed by user: CR#1.A (done) → CR#1 (done) → **CR#2
-(`interview-kit-candidate-aware-scheduled-generation`) — START HERE TOMORROW.** Full spec/design/
-tasks already documented in `openspec/changes/interview-kit-candidate-aware-scheduled-generation/`
-(4/4 artifacts complete per `openspec status`, not yet built) — read `design.md`'s Open Questions
-and `tasks.md` section 1 (pre-build clarification) before dispatching any agent, same as CR#1's
-own opening move.
+Execution order confirmed by user: CR#1.A (done) → CR#1 (done) → **CR#2 (done, this entry) →
+next item TBD, pick from `docs/BACKLOG.md` §0.0/§0.1 on resume.**
+
+**CR#2 (`interview-kit-candidate-aware-scheduled-generation`) — MERGED to `main` (PR #224,
+2026-08-19 10:11 UTC) and archived** at
+`openspec/changes/archive/2026-08-19-interview-kit-candidate-aware-scheduled-generation/`.
+Feature branch `dev/cr2-interview-kit-candidate-aware-scheduled-generation` still exists
+remotely (not deleted this session — delete on next session's cleanup pass if unneeded). D1
+candidate-experience-aware kit questions, D3 schedule-only kit-generation trigger (create-time
+trigger retired), M1 `LEFT JOIN candidates` RLS-escape fix confirmed live against real RLS
+enforcement (also fixed local dev DB's RLS-disabled drift on 5 candidate-related tables this
+session, user-approved). principal-reviewer: 3 full rounds + 1 confirm pass, final
+APPROVE-WITH-NITS. First real CI run found zero new regressions (3 red checks, all pre-existing
+on `main` — see `docs/BACKLOG.md` §5 for the full triage, including a newly root-caused gap:
+`backend-ci.yml`'s `test` job has no Celery worker at all). Local `main` pulled + `alembic
+current` confirmed `(head)` post-merge — CR#2 had no schema change, nothing to migrate.
 
 **Build:** backend (`1e7d7d9`) — LLM-primary "AI Job Match" trigger, 75%-default hard gate at
 both write- and read-time, retired `screening/`'s match-decision+scorecard write path. Frontend

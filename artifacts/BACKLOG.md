@@ -73,23 +73,35 @@ mandate). One accepted, documented residual: a narrow audit-log mislabeling edge
 configured provider instead of "offline"; nothing persists to `candidate_position_matches`
 either way) — see the change's own `tasks.md` task 7.1 for the full rationale. New tech debt
 logged: G14 (`job_matcher.py` over the 300/40-line caps, deferred — systemic across 19+ files).
+**G14 DONE (Tier 5 code-hygiene, 2026-08-31 — see §6 below).**
 Next up per the user's confirmed execution order: CR#2
 (`interview-kit-candidate-aware-scheduled-generation`).
 
-**`interview-kit-candidate-aware-scheduled-generation` (CR#2) — executes third, after CR#1.**
-User CR, confirmed + fully documented 2026-08-08 — full OpenSpec change at
-`openspec/changes/interview-kit-candidate-aware-scheduled-generation/` (4/4 artifacts complete).
-No schema change needed — `InterviewLevelKit`
-already stores `candidate_id`; the actual gap is that generation never used it
-(`LevelKitAgentContext`'s own docstring says "no candidate PII," prompt says "never invent facts
-about a specific candidate" — confirmed via code read, not assumed). Summary: the 5 questions
-per focus area become candidate-experience-aware (non-PII signal only), the 10 focus areas stay
-position-driven (user's own ≤10% cross-candidate variation estimate); kit generation drops its
-create-time trigger (`router.py:131`), keeping only the schedule-time trigger
-(`router.py:212`); "Schedule Interview" action renamed to "Schedule Interview & Generate
-Interview Kit"; `local_kit` offline path retained as fail-safe-only, same pattern as the CR
-above. Confirmed unrelated to that CR's retired `candidates/screening/` scorecard — `interviews/`
-has its own independent `scorecard_template` (BR-P20-007), untouched by either change.
+**`interview-kit-candidate-aware-scheduled-generation` (CR#2) — MERGED (PR #224, 2026-08-19) and
+ARCHIVED.** All 6 task sections (1-6) done. Full Gate 5 pipeline: `backend-engineer` →
+`ux-ui-engineer` (rename) → Gate 1 → `functional-test-engineer` (found a real, previously-latent
+bug, M1 — see below) → `integration-test-engineer` (full STG L1/L2 lifecycle, found 1
+pre-existing concurrency defect, not fixed, logged) → `principal-reviewer` × 3 full rounds + 1
+scoped confirm pass (round 1/2 fixed the M1 bug + a design misconception; round 3
+CHANGES-REQUESTED — 1 critical, 5 major, all fixed and independently re-confirmed:
+**APPROVE-WITH-NITS**). Real bug found and fixed: `tasks.py`'s (later `_kit_context.py`'s)
+candidate-context JOIN was an INNER JOIN against `candidates`, whose RLS policy has no
+`fn_is_internal()` escape — a soft-deleted candidate silently dropped the whole kit-generation
+context row. Fixed to `LEFT JOIN`; proven against genuine RLS enforcement after this session
+also found and fixed the local dev DB's RLS being disabled on 5 candidate-related tables
+(re-applied migrations 0010/0011's exact DDL, user-approved, local-only). First real CI run: 3
+red checks, all pre-existing on `main`, zero new regressions (see §5 below for the detailed
+triage, including a newly-identified root cause — `backend-ci.yml`'s `test` job has no Celery
+worker at all). Summary: the 5 questions per focus area become candidate-experience-aware
+(non-PII signal only, `experience_years`/`experience_months` coarse-banded), the 10 focus areas
+stay position-driven; kit generation drops its create-time trigger, keeping only the
+schedule-time trigger; "Schedule Interview" action renamed to "Schedule Interview & Generate
+Interview Kit"; `local_kit` offline path retained as fail-safe-only. `openspec/specs/
+interviews/spec.md` updated in the same PR (BR-P20-006 revised, BR-P20-012/AC-014/AC-020 added).
+3 new tech-debt items logged (§4/§5): an `interview_level_kits` concurrency defect (no unique
+constraint on `interview_id`), a `candidate_documents` RLS/schema divergence, and the
+`backend-ci.yml` no-Celery-worker gap — none blocking, none part of this CR's diff.
+Next up per the user's confirmed execution order: whatever the user selects next from §0.0/§0.1.
 
 ### 0.1 Hard blockers (not scope choices — must happen regardless of scope decisions below)
 
@@ -107,8 +119,9 @@ has its own independent `scorecard_template` (BR-P20-007), untouched by either c
 | G10 | API Fargate service (the actual user-facing HTTP compute) doesn't exist in Terraform yet | 🔴 | Only worker/beat/cwagent services are authored (`ecs` module). No ALB, no API service, no sizing decided. Recommended starting point: 2-3 tasks, 1 vCPU/2GB each, autoscale to 4-5 under peak (see conversation history 2026-08-08 for full NFR-grounded sizing rationale — RDS `db.r6g.large` Multi-AZ+replica, ElastiCache `cache.t4g.small` already right-sized, Celery worker's `desired_count=1` cap needs its own metrics fix before scaling). **G7's first real baseline (2026-08-17, corrected by the 2026-08-18 auditor deep-dive) directly supports this multi-task recommendation** — login's 4874.5ms p95 is a genuine bcrypt-thread-pool ceiling bound by vCPU count, not uvicorn-worker queueing — so more vCPUs per task (not more uvicorn workers) is the actual lever; treat sizing as a starting request informed by real data, still not a locked number until G11's production run. |
 | G11 | **Post-go-live production load-test validation** (added 2026-08-10, follows CR#1.A `nfr-response-time-slo-validation`) — re-run the same k6 harness against real deployed AWS infra once it exists, using a `constant-arrival-rate` load profile (~20 rps ≈ 200 users × 10s think time, not the baseline's zero-think closed-loop 30 VUs) and a production-scale (not `seed_dev`-sized) dataset; validate ECS autoscaling triggers fire before the SLO breaches (~350-400ms, not at 500ms); validate CloudFront's real effect on LCP once the CDN skeleton is applied (G5); reconcile local-dev-stack baseline numbers vs. real production numbers in `docs/ARCHITECTURE.md`. | 🔴 Blocked on go-live | **Explicitly deferred until after deployment to real AWS infra** — not Bedrock-specific (AI-feature latency is exempt from these targets by design, D4), this is about needing Multi-AZ RDS/ElastiCache/ECS autoscaling and a realistic dataset/traffic-shape to actually exist before measuring against them. The k6 harness itself, and the FIRST (local) baseline, are built and run now as part of CR#1.A — this gate is only the second, production run. |
 | G12 | **Frontend LCP/INP measurement + generator/SUT co-location caveat** (added 2026-08-17, principal-reviewer Majors 4+5 on `nfr-response-time-slo-validation`) — k6 cannot measure browser paint/interaction metrics (it is not a browser); LCP ≤2.0s/INP ≤200ms (`docs/ARCHITECTURE.md` SLO section) need a separate browser-based tool (e.g. Lighthouse CI) as a follow-up, not built as part of this harness. Separately: `load-test.yml`'s k6 generator, the FastAPI backend, Postgres, and Redis all run co-located on ONE 2-vCPU/7GB GH Actions runner (single-worker uvicorn) — any VU count run there measures runner CPU contention as much as application latency; `docs/PERFORMANCE_TESTING.md` caps the workflow's default VU count accordingly for THIS topology. Reaching the spec's real 200-250-concurrent-user target needs either a larger runner or separate generator/SUT infra. | 🔴 | Cross-ref G11 (post-go-live production re-run) — this row is the PRE-go-live local/CI-topology caveat; G11 remains the separate, later, real-infra validation. |
-| G13 | **`POST /auth/login` breaches its <300ms p95 target at 1 VU, zero concurrency** (added 2026-08-18, `principal-performance-auditor` deep-dive + `principal-reviewer` Major 3 on `nfr-response-time-slo-validation`) — the CR#1.A baseline's 1-VU run measured p95=793.75ms with no concurrent load at all, meaning this is a genuine fixed-cost SLO gap, not a queueing/measurement artifact like the 4 read-endpoint misses. Root cause: bcrypt (12 rounds) hashing on the request path, GIL-bound in the thread-pool executor (`backend/app/modules/security/service.py`). No decision has been made yet on the fix: reduce `BCRYPT_ROUNDS` (or move to a faster core) to lower the single-call floor itself, accept the miss as an AI-feature-latency-style exemption for this one auth step, or size the API Fargate task's vCPU for concurrent-load throughput (G10) while accepting the floor stays — vCPU count alone does not lower the floor. | 🔴 | Needs a user/architecture decision, not more measurement — distinct from G7 (which is baseline-recording) and G11 (which is the production re-run); this gate is about deciding what to DO about a floor that already misses target today, independent of any environment change. |
-| G14 | **`backend/app/modules/candidates/agents/job_matcher.py` is over CLAUDE.md's 300-line file cap (251→345 lines) and `match_candidate()` is over the 40-line function cap (57→81 lines)** (added 2026-08-18, `principal-reviewer` O1 on `candidate-ai-match-screen-consolidation`) — the module docstring restates the M3 offline-gate decision three times, and `_MATCH_PROMPT_TEMPLATE` (38 lines) plus its parse/normalize block could move to a sibling `_match_prompt.py` per the repo's own `_`-prefixed-helper convention. Not blocking this CR's merge — the cap is systemically unenforced repo-wide (19 backend files already over 300 lines, including a 1494-line `interviews/service.py`), and fixing one file in isolation would be inconsistent enforcement. | 🔴 | Needs its own scoped pass across all 19+ over-cap files (or an explicit decision to relax/enforce the cap going forward), not a one-off extraction here. |
+| G13 | **`POST /auth/login` breaches its <300ms p95 target at 1 VU, zero concurrency** (added 2026-08-18, `principal-performance-auditor` deep-dive + `principal-reviewer` Major 3 on `nfr-response-time-slo-validation`) — the CR#1.A baseline's 1-VU run measured p95=793.75ms with no concurrent load at all, meaning this is a genuine fixed-cost SLO gap, not a queueing/measurement artifact like the 4 read-endpoint misses. Root cause: bcrypt (12 rounds) hashing on the request path, GIL-bound in the thread-pool executor (`backend/app/modules/security/service.py`). **Decided 2026-08-29: accept as a documented latency exemption** — user explicitly declined reducing `BCRYPT_ROUNDS` (keeps current security posture) and confirmed vCPU sizing (G10) doesn't lower the floor anyway. No code change; `docs/ARCHITECTURE.md`'s SLO section updated in the same commit with the exemption rationale, matching the existing JD-extraction/matching/screening/kit-generation exemption pattern. | ✅ Closed (exemption) | Closed as a decision, not a fix — see `docs/ARCHITECTURE.md` "Performance & Scalability (SLOs)" for the exemption note. |
+| G14 | **`backend/app/modules/candidates/agents/job_matcher.py` was over CLAUDE.md's 300-line file cap (251→345→347 lines) and `match_candidate()` was over the 40-line function cap (57→81→82 lines)** (added 2026-08-18, `principal-reviewer` O1 on `candidate-ai-match-screen-consolidation`) — **file-cap half CLOSED 2026-08-31** (Tier 5 backend catch-up, `docs/BACKLOG.md` §6): 347→299 lines, `_MATCH_PROMPT_TEMPLATE` + parse/normalize moved to `_match_prompt.py`. **Function-cap half STILL OPEN**: `match_candidate()` went 82→55 total lines (not 82→28 as first reported — that used a code-after-docstring count while the original "82" used a total-lines count; corrected same session, `principal-reviewer` catch) — 55 is still 15 over the 40-line cap. `_build_llm_results()` was extracted as a genuine seam, but the remaining provider-selection/fallback orchestration in `match_candidate()` itself needs a second look. `_build_offline_points()` (57 lines) is ALSO over the 40-line cap — pre-existing on `main`, untouched by this batch, found during review; scope the follow-up pass to both functions, not just `match_candidate()`. | 🟡 | File-cap done; function-cap needs its own follow-up extraction pass on `match_candidate()`'s remaining 55 lines AND `_build_offline_points()`'s 57 lines. |
+| G15 | **The migration chain cannot provision a working database from source of truth — no migration anywhere adds `s3_version_id` to `candidate_documents`, nor `consent_text_shown`/`consent_version`/`source_channel`/`expires_at` to `candidate_consents`, even though the live ORM models (`CandidateDocument`/`CandidateConsent`) require them and 2 of them are `NOT NULL` with no default** (found 2026-08-27, `principal-reviewer` review of `0059_docs_bulkjobs_consents_rls`, while root-causing why `candidate_documents`'s own RLS policy was silently missing). A fresh `alembic upgrade head` against an empty DB yields tables the ORM cannot read from or insert into — confirmed by `backend-ci.yml`/`frontend-ci.yml`/`load-test.yml` all already working around this via a `pg_dump` snapshot + `alembic stamp head` instead of a real replay (each has its own comment saying so). This is the root cause that made both the `candidates`-table RLS gap (`0057`) and this session's `0059` RLS gap possible and hard to find — CI never actually replays these migrations, so a policy defined against a column that doesn't exist on the live shape (like `0010`'s `candidate_documents` policy referencing `deleted_at`) silently never gets caught. | 🔴 | **Go-live blocker for the AWS provisioning path** — there is currently no reproducible way to build the schema from source of truth on a fresh (e.g. new RDS) instance. Needs either: (a) new migrations adding the missing columns + reconciling every other place `0010`'s committed DDL diverges from the live/schema.sql shape, or (b) regenerating `docs/schema.sql` from the current authoritative shape and re-basing the migration chain's start point — a real decision, not a mechanical fix. Cross-ref the already-tracked `docs/BACKLOG.md` §4 `candidate_documents` divergence entry and the `0011_candidate_matches_source_details.py` unreplayable-migration entry — same class of drift, now confirmed systemic rather than isolated. |
 
 ### 0.2 Scope decisions — need the user's call, not more code
 
@@ -201,10 +214,10 @@ scoping decisions about.
 | 4 | Frontend test debt — nav-items.test.ts, position-schema.test.ts, others (6+ pre-existing failures) | 🔴 Queued (4th) |
 | 5 | e2e CI job-design gap — MSW can't intercept proxied backend calls | ✅ Closed (PR #221, 2026-08-08) — real backend + Postgres/Redis boot before Playwright's `webServer`; `BACKEND_ORIGIN` feeds `next.config.mjs`'s proxy rewrite, closing the server-side ECONNREFUSED gap. `auth.spec.ts`'s stale "welcome back" assertion updated in the same PR. |
 | 6 | `terraform-plan.yml` CI check has no path to ever pass — no AWS-credentials step exists anywhere in the workflow (confirmed via `git log`: file untouched since the original project-scaffold commit `537b06d`), so `terraform init -backend-config=environments/<env>/backend.hcl` cannot authenticate to the real S3 backend. **Discovered 2026-08-07 (PR #219, async-pipeline-durability Phase 6)** — this is the FIRST PR in the project's history to touch `infrastructure/terraform/**`, so the workflow's `on.pull_request.paths` filter never triggered it before now. Not caused by Phase 6; not fixable within any single PR's scope — needs a real AWS account, GitHub Actions secrets (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` or an OIDC role), and an `aws-actions/configure-aws-credentials` step added to the workflow, which is an infra/credentials decision requiring explicit user approval, not a code fix. Every future PR touching Terraform will show this same 3-way (`dev`/`staging`/`prod`) failure until it's addressed. | 🔴 Queued (6th) |
-| 7 | Local dev-stack watchdog (`scripts/dev-stack-watchdog.ps1`) — 2 minor environment quirks found 2026-08-08, neither blocking: (a) a Startup-shortcut `-Watch` loop was found still running from a prior session, silently racing any manual process kill/restart by immediately re-healing whatever was stopped — worth a note in `docs/LOCAL_DEV.md` that `-Watch` mode processes must be stopped explicitly (`Stop-Process` on the `powershell.exe -File ...-Watch` PID) before manually restarting the stack, not just the child services; (b) `uvicorn --reload`'s own internal reloader subprocess sometimes re-execs on system Python (`AppData\Local\Programs\Python\Python312\python.exe`) instead of the venv interpreter the watchdog script explicitly launched it from (`$VenvPython`), even though the script's `Start-Process -FilePath $VenvPython` call is correct — likely a Windows-specific `sys.executable`/PATH resolution quirk inside uvicorn's `WatchFiles` reloader, not a script bug. Functionally harmless observed so far (health checks and Celery task processing both succeeded on the resulting process), but worth a root-cause pass if it ever causes a real dependency mismatch (system Python312 may not have every backend dependency installed). Not investigated further this session — out of scope for the task in progress. | 🟡 Queued, low priority |
+| 7 | Local dev-stack watchdog (`scripts/dev-stack-watchdog.ps1`) — item (a)'s original 2026-08-08 finding turned out to be a symptom of a much more severe root cause, found and fixed 2026-08-27: the Startup-folder shortcut auto-launching `-Watch` at every Windows logon has existed since 2026-08-04 (confirmed via the shortcut's own file timestamps); the specific leaked-process trail found this session traces back to the most recent reboot/logon on 2026-08-24 (Windows' own process table only reaches back to the last boot). Running 24/7 whether or not the platform was in active use, its `Start-Backend`/`Start-Celery`/`Start-CeleryBeat` functions spawned a brand-new process on ANY failed health check without first confirming the existing one was actually dead — under sustained load (health-check timeouts: 3s backend, 5s Celery ping, both too tight), this produced duplicate Celery worker/beat PID pairs roughly every 90s (directly observed this session) and left 20+ uvicorn processes bound to or attempting to bind port 8000 (most of these are processes that failed to bind — `EADDRINUSE` — plus `--reload` child processes on a socket inherited from an already-dead parent, not 20+ processes all successfully sharing the bind), eventually exhausting Postgres's connection pool twice in one session (97/100 held by `ats_app`, blocking all login/functional tests both times). Item (b) (the venv→system-Python re-exec quirk) is not uvicorn-specific as originally logged — the same pattern was observed on the Celery worker and beat launchers too. **Fixed**: (1) `Test-Backend`/`Test-Celery` timeouts widened to 8s/10s; (2) `Start-Backend`/`Start-Celery`/`Start-CeleryBeat` now check for an existing live process via `Win32_Process` command-line match (not a port-listener or pidfile check — both proved unreliable: a dead process can still own a LISTEN socket, and reusing the pidfile-based `Test-CeleryBeat` as its own beat guard was a no-op, since that's the exact check that had just failed) before spawning, and skip the spawn if one is found, reporting the service unhealthy instead of silently masking it; (3) the Startup-folder auto-launch shortcut disabled (renamed `.lnk.disabled`, not deleted — reversible) — the always-on background loop is replaced by the pre-existing one-shot mode, run manually whenever extraction/JD analysis isn't working, per user's explicit request to stop unnecessary always-on background consumption. Both guard designs and the disabled-shortcut claim were live-verified (principal-reviewer round 1 caught the port/pidfile-check flaws; round 2 re-verified the corrected process-match guards against live repro of each failure mode). Item (b) remains unfixed, still believed harmless, not investigated further. | ✅ (a) fixed 2026-08-27; (b) still 🟡 low priority |
 | 8 | **Prompt caching for the 4 AI-calling agents** (JD extraction, screening-question generation, candidate matching, interview-kit generation) — none of the 4 currently use `cache_control` (confirmed via repo-wide grep, zero matches), so the large, mostly-static system-instruction block each agent sends gets paid for in full on every single call, even though the same instructions repeat across hundreds/thousands of calls with only the job-description/resume/candidate content actually varying. **Scope (2026-08-08):** (a) split each agent's prompt into a static "instructions" segment (rubric, output-schema instructions, few-shot examples if any) + a dynamic "content" segment (the actual JD/resume/candidate text) — this restructuring is the real work, not the caching call itself; (b) mark the static segment with `cache_control: {type: "ephemeral"}` in `llm_gateway_providers.py`'s Anthropic/Bedrock call sites (Gemini's `google-genai` SDK has an analogous context-caching API, different shape — check `google.genai.types` for the equivalent before wiring it, don't assume the Anthropic shape carries over); (c) verify empirically (per the binding live-verification mandate) that a cache hit actually reduces billed input tokens for at least one real call, not just that the API accepts the parameter — a silently-ignored cache_control that still bills full price would be worse than not building this, since it would look optimized without being optimized; (d) Bedrock-specific note: prompt caching support and minimum cacheable-prompt-length vary by model within Bedrock (check the specific Claude model version's documented cache support before assuming parity with direct Anthropic API). **Where this lands:** JD extraction and interview-kit generation are the best first targets (longest, most static system prompts per the go-live checklist's own feature descriptions — 1-5 rubric + 10 screening Qs + 10 focus areas × 5 Q&A for kits); screening-question generation and matching likely have shorter/more-variable prompts, lower priority. Not blocking — do this as its own scoped phase, ideally timed alongside or just after the AWS Bedrock go-live migration (Bedrock's actual model+pricing will be known by then, informing exact savings estimate). | 🟡 Queued, scoped, high value |
 | 9 | **Live AI cost/token-usage tracking + daily admin email digest.** User's ask: consolidate token/cost usage across all AI-calling features into a live view, and email ALL admin-role users a daily digest at 22:00 IST, timed for just before the AWS Bedrock go-live migration. **Feasibility: YES**, and every piece the mechanism needs already exists in this codebase, confirmed 2026-08-08: (a) per-call token counts are already captured in code (`llm_gateway_providers.py`, `level_kit_agent.py`) — currently discarded after the call, not persisted anywhere; (b) real email fan-out via AWS SES already exists and is live (BACKLOG #2, PR #196) — this is a new notification TYPE on an already-built delivery mechanism, not a new integration; (c) Celery beat + timezone-aware crontab scheduling already exists (Phase 2 of `async-pipeline-durability`, PR #215) — a `22:00 Asia/Kolkata` (IST has no DST, fixed UTC+5:30 year-round, so a plain UTC crontab offset is safe with no seasonal-drift risk) beat entry is the same pattern already in `celery_app.py`'s `beat_schedule`; (d) admin-user enumeration is a straightforward query against the existing RBAC roles in `app/modules/security/` (`super_admin`/`hr_admin` or whichever role set counts as "Admin" — confirm the exact role list with the user when this is actually scheduled for build, don't guess it now). **Design decision to make when building (not now):** self-tracked token-count-based cost ESTIMATE (persist per-call token counts + known per-model $/token pricing, compute an estimate — simpler, no AWS API dependency, but an estimate can drift from the real bill if pricing changes or a call type is missed) vs. a live pull from the AWS Cost Explorer API (`ce:GetCostAndUsage`, authoritative real billed $ broken down by service/model if cost-allocation tags are set up on the Bedrock resources — but Cost Explorer data has a documented ~24h refresh lag, which is actually FINE for a "yesterday's spend" daily digest at 22:00, just not usable for true real-time). Recommend Cost Explorer as the authoritative source for the EMAIL digest (real $ the user actually cares about) plus the self-tracked token counters as a supplementary real-time signal for the "live usage" view mentioned in the ask (a dashboard/metric, not the email) — this two-source design avoids the self-tracked estimate silently drifting from the real bill while still giving a live (not 24h-stale) number somewhere. **Not blocking now** — explicitly scoped by the user to be picked up just before AWS Bedrock go-live, once the real model/pricing/IAM setup is known. | 🟡 Queued, scoped, deferred to pre-Bedrock-go-live |
-| 10 | **Downstream AI calls (matching, screening) fire unconditionally even when extraction just flagged the row a duplicate.** Verified 2026-08-08 (user's own concern, confirmed via direct code read, not speculation): `backend/app/modules/candidates/_extraction_tasks.py`'s `_run_extraction` sets `duplicate_of_candidate_id` when `_find_identity_duplicate()` finds a match (lines ~157-166), but the SAME function unconditionally calls `celery_app.send_task("candidates.match_candidate_to_positions", ...)` and `celery_app.send_task("candidates.screen_candidate", ...)` a few lines later (lines ~194-200) regardless of whether `duplicate_id is not None` — so a candidate already known to be a duplicate still burns a full AI matching call (scored against every open position) and a full AI screening-question-generation call, for a record that will presumably be merged/dismissed. **Two dedup layers already correctly gate the AI-cost-relevant part of the pipeline that CAN be gated pre-call**: file-hash dedup (`resume_sha256`, `check_file_dedup()` in `_upload_helpers.py`) runs BEFORE any extraction/AI call at all, for byte-identical re-uploads — this part is already optimized, no work needed. Identity-level dedup (name/email/mobile match) is structurally UNAVOIDABLE pre-extraction — those fields don't exist until extraction produces them, so extraction itself cannot be skipped for a not-yet-known duplicate; this is a genuine architectural constraint, not a gap. **Scope for the actual fix:** in `_run_extraction`, skip both `send_task` calls when `duplicate_id is not None` (the one extraction call already ran and is sunk cost either way; matching+screening are the avoidable ones). Confirm with the eventual reviewer/spec whether a duplicate candidate should still get SOME downstream processing (e.g., does the recruiter workflow ever want to see match/screening results on a flagged-duplicate row before deciding to merge vs. keep separate — check `openspec/specs/candidates/spec.md` for any existing business rule on this before assuming "always skip" is correct). | 🔴 Queued, scoped |
+| 10 | ~~Downstream AI calls (matching, screening) fire unconditionally even when extraction just flagged the row a duplicate.~~ **CLOSED — MOOT (confirmed 2026-08-29).** Originally logged 2026-08-08 against `_run_extraction`'s then-unconditional `celery_app.send_task("candidates.match_candidate_to_positions", ...)` / `"candidates.screen_candidate"` calls. Re-read the current code: `_extraction_tasks.py`'s `_run_extraction` no longer calls `send_task` at all — `candidates-ai-match-screen-consolidation` (CR#1, merged PR #223, 2026-08-18/19) retired the automatic post-extraction match/screen fan-out entirely. Matching is now a single on-demand `POST` trigger (`CandidateService.trigger_match` → `_enqueue_matching`, called only from the explicit "AI Job Match" UI action, never from extraction); the `candidates.screen_candidate` task doesn't exist anywhere in the codebase anymore (screening's own match-decision write path was retired by the same CR). No AI-cost waste on duplicates remains to fix — the architecture change already closed this independently of the original ask. | ✅ Closed (moot) |
 | 11 | **Tier the e2e job's 4-browser-project matrix to cut CI minutes** — user's ask 2026-08-08, after PR #221's e2e fix alone burned an est. 150-250 of GH Actions' ~2000 min/month allotment across 6 reruns. **Feasibility: YES** — Playwright supports this natively via project-level `grep`/`grepInvert` tag filtering: tag critical/NFR specs (`auth.spec.ts` — gates every downstream flow; `a11y.spec.ts` — binding WCAG mandate) `@critical`, run those across all 4 projects (chromium/webkit/mobile/reduced-motion) as today; run everything else (organizations/positions/pipeline-retry-badge — routine functional coverage) on 1-2 projects only (e.g. chromium, optionally +mobile) via `grepInvert`. **Blocking prerequisite (largely satisfied 2026-08-08, not fully):** the reduced matrix must run "without any errors" per the user's own requirement — the deterministic root cause of the 2 flaky webkit tests (§5) is fixed (`fix/e2e-webkit-flake-prod-build`, PR #222), cutting the flake from every-run to 1-in-4 runs, but NOT to zero — a residual believed to be ordinary webkit-on-CI network timing remains, absorbed by `retries: 1`. If this reduced matrix is ever built with webkit still in the routine-tier bucket, that bucket would inherit this same residual, not a genuine zero-error guarantee — re-check the actual rate at build time rather than assuming §5's "largely fixed" note still holds. **Still needs, before building:** the user's own critical-vs-routine spec classification — my own guess (auth+a11y critical, rest routine) is a starting proposal, not a decision. Not built — scoping only, per user's explicit "not doing it now." | 🔴 Queued, scoped, needs user's critical-spec classification |
 
 ## 2. Pending merges
@@ -224,23 +237,105 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
+- 🔴 **`positions/_service_writes.py`'s create-position write path passes a caller-supplied
+  `organization_id` straight into `PositionRepository.set_org_scope()`, which moves
+  `app.current_org` to whatever org the request claims — so for a non-internal (org-scoped)
+  user, RLS's `rls_positions_isolation` check ends up validating against the SAME
+  request-supplied value, not the actor's own organization** (found 2026-08-29,
+  `principal-reviewer`, while confirming the N5 perf-cleanup decision above didn't hide a
+  correctness issue). `rls_positions_isolation` is a `FOR ALL` policy with only a `USING`
+  clause, so Postgres defaults `WITH CHECK` to the same predicate — meaning nothing outside this
+  code path re-validates `organization_id` against the actor's own org before the INSERT/UPDATE
+  goes through. `OrganizationService.ensure_exists` only confirms the target org EXISTS, not
+  that the actor may act on it; `organizations` itself has no RLS policy at all. **Currently
+  latent, not live**: every user in this single-tenant STG-Labs deployment is internal
+  (`core/dependencies.py`'s `is_internal = user.organization_id is None`), so the non-internal
+  branch where this matters is never exercised today, and there's no `FORCE ROW LEVEL SECURITY`
+  or dedicated non-owner app role configured either — RLS may be inert for the current DB
+  connection regardless. Needs its own scoped authz fix (an explicit actor-org check on this
+  write path) before any multi-tenant/non-internal-user rollout — NOT closed by the N5
+  perf-cleanup decision above, which correctly left `set_org_scope` in place but for the wrong
+  original reason (see N5's corrected entry).
+- ✅ **`candidates` table has no `UPDATE`/`ALL` RLS policy for the `ats_app` role — only `candidates_read_all` (SELECT)** (2026-08-25, `dev/tech-debt-batch2-data-query`) — was worse than originally logged: INSERT was also silently blocked (no `INSERT`/`ALL` policy either), not just UPDATE. Fixed via new `candidates_insert_all`/`candidates_update_all` RLS policies (migration `0057_candidates_write_rls.py`) plus widening `candidates_read_all` from `USING (deleted_at IS NULL)` to `USING (true)` — matching every other RLS-protected table's app-layer-filtering pattern instead of relying on RLS to hide soft-deleted rows. That widening meant 6 other read paths were silently relying on RLS for `deleted_at` filtering and needed an explicit app-layer guard added: `interviews/_kit_context.py` (LEFT JOIN + `AND c.deleted_at IS NULL`), `applications/repository.py`, `offers/repository.py`, `offers/tasks.py`, `candidate_screenings/repository.py`, `candidates/_extraction_tasks.py`, `candidates/_matching_tasks.py`. Live-verified via a real probe against the local dev DB, and by fixing the actual tracked stale orphan this entry originally flagged (`FT-SoftDelKit-96f844ca`, now cleaned up).
+- ✅ **`candidate_documents`/`bulk_upload_jobs`/`candidate_consents` had no INSERT/UPDATE RLS policy for the `ats_app` role — same bug class as the `candidates` entry above** (2026-08-27, `dev/tech-debt-rls-candidate-docs-consents`) — found live by functional-test-engineer during Tier-3 code-hygiene work (`dev/hygiene-tier3-backend-batch1`), reproducing `POST /candidates/upload` as a 500 `InsufficientPrivilegeError` on `candidate_documents`. Migration 0010 enabled RLS on all 3 tables but only ever defined `candidate_documents`'s SELECT policy (`candidate_docs_read_all`) — `bulk_upload_jobs`/`candidate_consents` had zero policies for any command, ever; live introspection showed even `candidate_docs_read_all` was absent on this environment (`pg_policies` returned zero rows for all 3). Fixed via `0059_docs_bulkjobs_consents_rls.py` — 8 new `USING (true)`/`WITH CHECK (true)` policies (SELECT+INSERT+UPDATE on `candidate_documents`/`bulk_upload_jobs`; SELECT+INSERT only on `candidate_consents` — no UPDATE policy there since no withdraw/UPDATE endpoint exists yet, per principal-reviewer's CHANGES-REQUESTED round 1: don't widen RLS on a DPDP proof-of-consent table with no code path behind it). No DELETE policy on any (no production code path hard-deletes these entities — the hard DELETEs that do exist are test/script cleanup only, 3 sites via the owner role which bypasses RLS, 2 via `async_session_factory`/`ats_app` which silently no-op under RLS, see the new tracked entry below). Live-verified as the actual `ats_app` role (`SET ROLE` inside a rolled-back admin transaction): INSERT+UPDATE+SELECT succeeded on `candidate_documents`/`bulk_upload_jobs`, INSERT+SELECT on `candidate_consents`. Downgrade↔upgrade round-tripped cleanly, row counts unchanged. Unit suite 266 passed; functional tests (`test_functional_bulk_upload.py`, `test_functional_duplicate_file_error.py`) 7/7 passed in isolation. **CI cannot regress-test this fix** — `backend-ci.yml`'s schema bootstrap runs `alembic stamp head` against a pre-baked snapshot with RLS disabled on all these tables; local-dev-verified only, tracked below.
+- 🟡 `docs/ci_schema_snapshot.sql` (2026-08-08) doesn't enable RLS on `candidates`/`candidate_documents`/`bulk_upload_jobs`/`candidate_consents` at all, and `backend-ci.yml` stamps rather than replays migrations — meaning CI's `ats_app` is unrestricted on all 4 tables and CI has zero coverage for this entire defect class (both `0057` and `0059` escaped to live use as a direct result). Minimum fix: regenerate the snapshot from the current local DB (now at `0059`, carrying all 12 candidates-domain RLS policies) — tracked separately since newly enabling RLS in CI may surface real failures that need their own review, not a rider on this fix.
+- 🟡 `backend/app/modules/candidates/repository.py`'s `get_bulk_job()` reads via `session.get()` and never filters `deleted_at`, even though `BulkUploadJob.deleted_at` is modeled — latent (nothing currently writes it), found during the `0059` RLS review.
+- 🟡 **`test_functional_async_pipeline_phase1.py:76,77,93` and `phase3.py:106` hard-delete cleanup silently deletes 0 rows under RLS**, found during the `0059` RLS review's principal-reviewer round 2. Both use `async_session_factory` (the `ats_app`-scoped app connection) to hard-delete `BulkUploadJob`/`CandidateDocument` rows in teardown; since none of `candidates`/`candidate_documents`/`bulk_upload_jobs`/`candidate_consents` has a DELETE policy (correctly — no production code path needs one), `ats_app` DELETEs against them affect 0 rows with no exception, per the same silent-failure asymmetry `0059`'s own docstring documents. `phase1.py`'s `_created_bulk_job_ids` teardown additionally has no post-teardown verification (unlike its `_created_candidate_ids` sibling, which does) — violates the binding Rule 5 post-teardown-verification requirement. Fix: switch both teardowns to the admin engine (the pattern `tests/integration/conftest.py:47` already uses for the 3 sites that correctly bypass RLS) and add the missing post-teardown assert.
+- 🔴 **`docs/schema.sql` does not reflect migration `0057_candidates_write_rls`** (found 2026-08-25,
+  principal-reviewer review of `dev/tech-debt-batch2-data-query`, Minor 8) — the canonical schema
+  doc's `candidates` RLS section still shows only the original narrow `candidates_read_all`
+  (`USING (deleted_at IS NULL)`), not the two new INSERT/UPDATE policies or the widened SELECT
+  policy this migration ships. Same class as the already-tracked `0011`/`candidate_documents`
+  drift entries above (`docs/schema.sql` vs. real migration history). Explicitly out of scope for
+  this batch — flagged only, not fixed here; needs its own pass reconciling `docs/schema.sql`
+  against the full migration chain, not a one-off patch.
+- 🔴 **Local dev Celery worker/beat processes accumulate without being killed on restart — same pattern also confirmed on uvicorn.** Found 2026-08-24 (`dev/fix-screening-questions-quality` functional test pass): 96 duplicate Celery worker/beat processes had piled up since ~13:45 the same day (~90s apart, a respawn-without-kill pattern), unrelated to any specific code change. Separately, same day, 2 independent `uvicorn --reload` processes (different PIDs, different parent PIDs, started ~13:45 and ~16:24) were both found bound/listening on `:8000` simultaneously — backend was still responding correctly (`/health` OK) so not disruptive, left untouched rather than risk killing the wrong one mid-session, but it's the identical root cause. Anyone restarting uvicorn/Celery locally should confirm the OLD process actually died before starting a new one — needs either a startup script that kills-by-port/PID first, or a documented manual check.
+- ✅ **`test_functional_21b_question_generator.py`'s `_POLL_TIMEOUT_S = 30` is shorter than this dev environment's real AI-path latency** (2026-08-25, `dev/tech-debt-batch2-data-query`, commit `97e3f11`) — bumped to 90s to clear the ~60s circuit-breaker-trip-then-fallback window this environment's `SCREENING_QUESTION_PROVIDER=gemini` outage produces. `interviews/`'s own `_KIT_POLL_TIMEOUT_S` is a different code path (`LevelKitAgent`'s inline retry, not the shared `llm_gateway` circuit breaker) — left untouched, no change needed there.
+- 🔴 **`test_functional_21b_question_generator.py` creates `candidate_screenings` rows with no `finally`/teardown anywhere in the file** (found 2026-08-25 reviewing the above fix, `dev/tech-debt-batch2-data-query`) — a Rule 5 cleanup gap, pre-existing, not introduced by the poll-timeout commit. Flagged for a future pass, not fixed here.
 - ✅ `positions/repository.py::get_interview_level()` (2026-07-29, `dev/tech-debt-batch1`) — added `is_active IS TRUE`, matching `child_repository.py::list_levels()`. Sole caller confirmed write-path-only (interview-creation validation); no read/history path affected. Now returns 404 `INTERVIEW_LEVEL_NOT_FOUND` for a deactivated level id at create-time — `interviews/spec.md` 404-trigger line synced in the same branch. Merged with PR #204's multi-panelist eager-load (`selectinload(InterviewLevel.panelists)`) on the same method — both survive together.
-- 🔴 Dead `sys.path.insert(..., "../../..")` + `import sys` in 3 backfill scripts (`backfill_legacy_feedback_outcome.py`, `backfill_owning_recruiter_id.py`, `backfill_panelist_login_accounts.py`) + `seed_uat_dataset.py` (same dead line, same reason) — targets the repo root, which has no `app` package; imports actually resolve via the editable install. Removed from the other 2 (`backfill_level_type_org_correction.py`, `backfill_restore_ai_coe_engmgr_levels.py`) in `dev/tech-debt-batch1`; these 4 pre-date that batch, left alone as out of scope.
+- ✅ Dead `sys.path.insert(..., "../../..")` + `import sys` in 3 backfill scripts (`backfill_legacy_feedback_outcome.py`, `backfill_owning_recruiter_id.py`, `backfill_panelist_login_accounts.py`) + `seed_uat_dataset.py` (same dead line, same reason) (2026-08-25, `dev/tech-debt-batch2-data-query`, commit `97e3f11`) — removed from all 4, matching the pattern already applied to the other 2 scripts in `dev/tech-debt-batch1`; imports resolve via the editable install regardless.
+- ✅ **`candidates/_extraction_tasks.py`'s persist-UPDATE rowcount check** (added 2026-08-25, commit `97e3f11`) is a related, defensive fix to the `candidates` RLS entry above — added the same rowcount-verification guard the file's own claim-UPDATE already used to the 3 UPDATE calls that persist parsed candidate fields, so a future RLS/access-control regression blocking those writes fails loudly (`extraction_status='failed'`) instead of silently reporting `'completed'` with no data persisted.
 - ✅ `screening/repository.py::list_decisions()` (2026-07-29, `dev/tech-debt-batch1`) — added `AND deleted_at IS NULL` to both JOINs, matching `applications/repository.py`'s pattern.
-- 🔴 `category_rank` SQL duplicated across 3 modules (interviews, reporting, applications) — kept manually in sync, never extracted to a shared fragment; divergence risk.
-- ❓ `positions/schemas.py`'s `InterviewLevelRequest`/`InterviewLevelResponse` missing `level_category` field (code behind spec, BUG-4).
+- ✅ `category_rank` SQL duplicated across 3 modules (2026-08-26, `dev/tech-debt-batch3-data-query`)
+  — promoted to `backend/app/shared/sql_fragments.py::CATEGORY_RANK_SUBQUERY` (new file, alongside
+  `experience_band.py`'s precedent), imported by `interviews/repository.py` (also fixed 3 further
+  in-file re-inlinings at `get_level_category_rank`/`get_level_interview_status`/
+  `get_offer_gate_levels` that weren't reusing its own pre-existing `_CATEGORY_RANK_SUBQUERY`
+  constant) and `applications/repository.py` (previously a deliberate, documented "duplicated
+  rather than imported to keep repositories decoupled" copy — resolved properly via the shared
+  module instead of leaving the duplication). Correction to this item's own original framing:
+  investigation found `reporting/_pipeline_progress_sql.py`'s copy was NOT actually dead despite
+  its own docstring's "removed" claim — it was still live, re-exported into
+  `_pipeline_progress_group_sql.py`'s `position_sub_dims` CTE (the stg/org select/reject
+  status-group query path), so it's the 3rd module fixed here too, not skipped. Verified: Gate 1
+  unit tests green (`interviews`/`applications`/`reporting`, no behavior change), plus a live run
+  of `test_category_rank_regression.py` (RUN_DB_TESTS=1) — 4/5 pass confirming the relocated SQL
+  is byte-identical in output; the 1 failure
+  (`test_validate_level_sequence_not_wrongly_gated_by_inflated_org_rank`) is unrelated pre-existing
+  staleness (references `get_org_pair_decided`, a gate mechanism removed entirely by the
+  2026-07-22 BR-SEQ-001 rewrite — confirmed via repo-wide grep, zero remaining references outside
+  this test's own comments and orphaned bytecode) — flagged below, not fixed (out of this item's
+  scope).
+- 🔴 `test_category_rank_regression.py::test_validate_level_sequence_not_wrongly_gated_by_inflated_org_rank`
+  (found 2026-08-26 verifying the category_rank fix above) — stale test asserting behavior from
+  BEFORE the BR-SEQ-001 2026-07-22 rewrite (expects a `get_org_pair_decided`-gated rank>=3 branch
+  that `_service_helpers.py::_validate_level_sequence` no longer has — that function doesn't exist
+  anywhere in the current codebase). Needs a rewrite to match the current single-linear-chain gate,
+  not a fix to production code.
+- ✅ `positions/schemas.py`'s `InterviewLevelRequest`/`InterviewLevelResponse` missing `level_category`
+  field (2026-08-26, `dev/tech-debt-batch3-data-query`, BUG-4): added `level_category: OrgType` as a
+  real required field on both schemas (previously silently derived from `level_type` in
+  `levels_service.py`). Added a `model_validator` on `InterviewLevelRequest` enforcing
+  `level_category == level_type` (422 VALIDATION_ERROR on mismatch — `exception_handlers.py`
+  hard-codes 422 for every `RequestValidationError`) — the spec is silent on
+  divergence and today's behavior never lets the two differ, so the invariant is now validated
+  instead of unenforced. `levels_service.py::_build_level`/`_levels_to_response` thread the
+  payload/ORM value through instead of re-deriving it. Updated every caller of
+  `InterviewLevelRequest`/the `POST .../interview-levels` body across `backend/` (unit tests,
+  functional tests, integration tests, seed scripts) plus the frontend
+  `InterviewLevelRequest`/`InterviewLevelResponse` TS types and the one call site
+  (`interview-levels-editor.tsx`) and MSW mocks that construct them. `openspec/specs/positions/spec.md`'s
+  "Known gap" note updated to reflect the gap is closed.
 - 🔴 Organizations/Departments DELETE endpoints documented in spec, never built (4 ACs unverifiable).
-- 🔴 CR-002 multi-panelist-per-level: `positions/levels_service.py::_levels_to_response()` dropped the
-  defensive `if panelist else None` null-guard when mapping `PanelistSummary.panelist_name` — since
-  `interview_panelists` is RLS-protected, a caller for whom RLS filters out the panelist row would hit
-  an `AttributeError` instead of a clean `None`. Restore the guard or document why it's provably unreachable.
-- 🔴 CR-002 multi-panelist-per-level: `positions/models.py` crossed the 300-line cap (279→310) — extract
-  `InterviewLevel`/`InterviewLevelPanelist` into a sibling module, matching the precedent already set by
-  splitting `levels_service.py` out of `subresource_service.py` for the same reason.
-- 🔴 CR-002 multi-panelist-per-level: `InterviewLevel.panelists` relationship uses `lazy="selectin"`,
-  breaking the file's own convention (`panelist` sibling uses `lazy="raise"` deliberately, so a missing
-  eager-load fails loudly instead of silently N+1-ing). Both real read paths already pass an explicit
-  `selectinload`, so `lazy="raise"` should be safe — change it to match convention.
+- ✅ CR-002 multi-panelist-per-level (2026-08-26, `dev/tech-debt-batch3-data-query`): restored the
+  `positions/levels_service.py::_levels_to_response()` null-guard on `PanelistSummary.panelist_name`
+  (`lp.panelist.name if lp.panelist else None`) — also relaxed `PanelistSummary.panelist_name` from
+  `str` to `str | None` in `positions/schemas.py`, since the guard was otherwise unenforceable
+  (a required `str` field would still reject `None` at the Pydantic boundary).
+- ✅ CR-002 multi-panelist-per-level (2026-08-26, `dev/tech-debt-batch3-data-query`): extracted
+  `InterviewLevel`/`InterviewLevelPanelist` (+ their `interview_level_type_enum`/`level_category_enum`
+  PGEnum definitions) into `positions/_interview_level_models.py`, matching the precedent set by
+  splitting `levels_service.py` out of `subresource_service.py`. `positions/models.py` is now 249
+  lines (was 310). Updated every import site: `positions/levels_service.py`, `child_repository.py`,
+  `repository.py`, `screening/repository.py`, and `positions/tests/test_repository.py`.
+- ✅ CR-002 multi-panelist-per-level (2026-08-26, `dev/tech-debt-batch3-data-query`): changed
+  `InterviewLevel.panelists` from `lazy="selectin"` to `lazy="raise"` to match the file's own
+  `panelist` sibling convention. Verified first: both real read paths
+  (`child_repository.py::list_levels()` and `child_repository.py::get_interview_level()` — the
+  latter moved here from `positions/repository.py` in the Tier-3 hygiene split, 2026-08-27) already
+  pass an explicit `selectinload(InterviewLevel.panelists)`; the only other `.panelists` accesses are
+  on freshly-constructed (unpersisted) `InterviewLevel` instances in `levels_service.py`'s
+  `_build_level()`/`set_levels()`, which set the attribute directly rather than lazy-loading it.
 - 🔴 CR-002 multi-panelist-per-level (`dev/interview-level-multi-panelist`): panelists 2-3 configured
   via `POST /positions/{id}/interview-levels` do NOT get an automatic `interview_panelist_assignments`
   slot at interview-creation time — only slot 1 auto-assigns (dual-written to the legacy
@@ -270,9 +365,155 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   either a real fix (drop the invalid predicate, confirm it's dead code post-bootstrap) or explicit
   retirement — flagged here, not attempted in this change.
 
+- 🟡 **`candidate_documents` local dev DB schema divergence, found while fixing an unrelated
+  RLS-drift blocker (CR#2 `interview-kit-candidate-aware-scheduled-generation`, 2026-08-19).**
+  Migration `0010_candidates_tables.py`'s RLS policy on this table references `deleted_at`, but
+  the column doesn't exist on the local dev DB's actual `candidate_documents` table — applying
+  the migration's `CREATE POLICY` DDL failed with an undefined-column error while the sibling
+  `candidates`/`bulk_upload_jobs`/`candidate_consents`/`candidate_position_matches` RLS fixes
+  (same session) succeeded independently.
+  **Practical blocker resolved 2026-08-27** (`dev/tech-debt-rls-candidate-docs-consents`,
+  migration `0059_docs_bulkjobs_consents_rls.py`, see §4 above): confirmed via
+  `information_schema.columns` that `candidate_documents` genuinely has no `deleted_at` column on
+  this (and presumably every) environment bootstrapped via `docs/schema.sql`'s shape, and no
+  migration ever drops one — 0010's committed file is simply out of sync with what was actually
+  applied. `0059` deliberately writes `USING (true)` for this table's SELECT/UPDATE policies
+  instead of referencing `deleted_at`, so the RLS fix no longer depends on that column existing.
+  Root-cause archaeology remains open (why does 0010's `create_table` for this table not match the
+  live shape at all — see also `s3_version_id`, `content_sha256` nullability, `file_type` CHECK —
+  same class of drift as the already-tracked `0011_candidate_matches_source_details.py`
+  unreplayable-migration entry above) but no longer blocks any real functionality.
+- ✅ **BUG-2 — `interviews/tests/test_functional_level_kit.py` fixture drove `applications.status`
+  = `'active'` (fixed 2026-08-26, `dev/tech-debt-batch3-data-query`).** Root cause confirmed live
+  (not the enum-drift framing originally guessed): `'active'` genuinely still exists as a raw
+  Postgres enum label (`pg_enum` lists it), but `applications/models.py`'s `_APPLICATION_STATUS`
+  `PGEnum(...)` — the ORM-side value list — has excluded `'active'` since Alembic 0042
+  data-migrated existing rows to `'new_application'` and stopped writing it (the file's own
+  header comment already documented this: "'active' value persists in DB enum type but is no
+  longer written"). Reading the fixture's row back therefore raised an unhandled
+  `sqlalchemy.exc.LookupError` deep in row deserialization (`_object_value_for_elem`), surfaced
+  to the API as a generic 500 — never a clean validation error. Fixed by changing the fixture's
+  raw-SQL insert to `'new_application'` (`test_functional_level_kit.py:139`, in
+  `seeded_kit_data`'s psycopg2 insert).
+- ✅ **BUG-3 — shared `FuncTest P18B` position's two interview levels had zero panelist
+  assignments (fixed 2026-08-26/26, `dev/tech-debt-batch3-data-query`, corrected on review).**
+  Confirmed live via direct `InterviewService.create_interview()` reproduction: once BUG-2
+  stopped masking it, `_validate_interview_level` (`interviews/_service_helpers.py:164`) raised
+  `LevelHasNoPanelistsError` (422, BR-064/CR-002) because `interview_level_panelists` had zero
+  rows for `LEVEL_STG_R1`/`LEVEL_ORG_R1` — this is a data gap, not a code defect (CR-002's gate
+  is working as designed). Root cause of the gap: `seed_uat_recruitment_funnel.py` and
+  `seed_legal_transaction_demo.py` both POST `panelist_id` (singular) to the
+  `POST .../interview-levels` body, but `InterviewLevelRequest` only has `panelist_ids` (a list)
+  — Pydantic's default `extra="ignore"` silently dropped the key, so every level either script
+  created shipped with zero panelists (610/1013 active rows repo-wide). **Correction to an
+  earlier revision of this entry:** that revision claimed the fix was "permanent" via a real
+  `interview_level_panelists` row inserted for both levels — that row was actually inserted by
+  hand during the build session, live, outside version control (`git diff main...HEAD` showed
+  no such INSERT), so it was not durable and would fail again on a fresh DB or reseed. Fixed for
+  real by (a) an idempotent `_ensure_level_panelists` module-scoped autouse pytest fixture in
+  `test_functional_softdeleted_candidate_kit.py` (check-then-insert-if-missing, one row per level,
+  no teardown delete — the insert is meant to persist, since the underlying gap is shared-DB-wide,
+  not per-test-run), and (b) fixing the actual root cause in both seed scripts
+  (`panelist_id` -> `panelist_ids: [<uuid>]`) plus `extra="forbid"` on `InterviewLevelRequest` so
+  this class of silent key-drop fails loudly in the future. The former per-test insert+delete
+  workaround blocks in `test_functional_softdeleted_candidate_kit.py` were removed
+  (`:180-224` and `:310-327`, plus their matching `finally`-block deletes).
+  **Scope clarification (2026-08-26, principal-reviewer confirm-pass residual M2-residual):**
+  commit `0165ee9`'s "12 sites" count covered `app/scripts/`'s 2 seed scripts only — it did not
+  sweep `backend/tests/integration/`, so `test_interview_levels_panelist.py` still carried the
+  same pre-CR-002 singular `panelist_id` shape (request body key + response-assertion reads) and
+  started hard-422ing once `extra="forbid"` landed. Fixed separately, same day: `_set_levels`
+  helper now sends `panelist_ids: [<uuid>]`, and the 3 assertion sites (valid-panelist,
+  panelist-omitted, GET-returns-name tests) now read `level["panelists"][0]["panelist_id"/
+  "panelist_name"]` per `InterviewLevelResponse`'s real CR-002 shape instead of stale top-level
+  fields. The file's pre-existing, unrelated `ORG_NAME_REQUIRED` failure at `_create_panelist`
+  (already tracked in the §5 CI entry above) is untouched by this fix. **Live re-run after the
+  fix (`RUN_DB_TESTS=1`, 2026-08-26) confirms 5/5 API tests still red, exactly the same bucket the
+  §5 entry above already tracks — no new failure class:** `test_set_levels_with_valid_panelist`,
+  `..._inactive_panelist_returns_422`, `test_get_levels_returns_panelist_name` hit
+  `ORG_NAME_REQUIRED` at `_create_panelist` (as expected); `test_set_levels_with_unknown_panelist_
+  returns_404` and `test_set_levels_without_panelist_still_works` skip panelist creation
+  entirely and instead hit `MANDATORY_ORG_LEVEL_MISSING` (400) — previously invisible behind the
+  singular-`panelist_id` 422 this fix removed, but already named as a tracked mismatch for this
+  same file in the §5 "Update 2026-08-18" entry below (`ORG_NAME_REQUIRED`/
+  `MANDATORY_ORG_LEVEL_MISSING` validation mismatches) — not a new defect, just unmasked by this
+  fix. Root cause: `_set_levels`'s helper posts a single `stg_labs` level only, never the
+  Organization L1/L2 pair `validation.assert_level_set_valid` (D9) requires in the same payload —
+  a test-design gap predating CR-002, out of scope for this fix.
+  **This fix does not mean the whole file is green** — see the 🟡 item immediately below for 2
+  newly-surfaced, unrelated failures this fix exposed (Celery queue contention, a BR-SEQ-001
+  test-design mismatch).
+- 🟡 **New, previously-masked findings surfaced by fixing BUG-2/BUG-3 — NOT fixed, out of scope
+  for this pass, flagged for a follow-up ticket:** (a) `test_lk01_schedule_interview_enqueues_
+  kit_generation` and `test_lk03_get_level_kit_200_response_shape` now fail on 2 *different*
+  issues that BUG-2's earlier 500 always short-circuited before either could be reached: (i) the
+  Celery `screening` queue was observed steady at ~36 backlogged messages for 30+s with zero
+  drain during this session (shared dev stack, concurrent agent load) — `_poll_level_kit`'s hard
+  20s timeout is too tight under that contention, kit status observed stuck at `'processing'`
+  (task already picked up, not stuck in queue) rather than failing; (ii) `test_lk03` creates its
+  second interview at `LEVEL_ORG_R1` on the *same* shared application `test_lk01` already used —
+  `_validate_level_sequence`'s BR-SEQ-001 gate (2026-07-22 rewrite) now correctly blocks Org L1
+  until the application's STG-chain interview reaches a Select outcome, which `test_lk01`'s
+  interview never does (it stays `pending`/scheduled). This test's design predates BR-SEQ-001 and
+  was never compatible with it — masked until now by BUG-2. Both are real, reproducible (not
+  flaky — failed identically on 2 consecutive full runs), and independent of BUG-2/BUG-3's fix
+  correctness (confirmed via direct in-process `InterviewService.create_interview()` calls: no
+  `LookupError`, no `LevelHasNoPanelistsError` after the fix). Gate 1 (`pytest app/modules/
+  interviews/ -m "not functional"`) is green: 253 passed, 5 skipped, 0 failed.
+- ✅ **`test_functional_level_kit.py`'s `seeded_kit_data` module fixture teardown was missing an
+  `application_status_history` delete (found+fixed alongside BUG-2, 2026-08-26).** Masked by
+  BUG-2: while `applications.status` stayed unreadably stuck at `'active'`, BR-019's
+  auto-set-pending-on-interview-create never fired (its `_STATES_FOR_PENDING_SYNC` gate doesn't
+  include `'active'`), so no `application_status_history` row was ever written and the teardown's
+  omission never mattered. Once BUG-2 was fixed, status genuinely transitions
+  `new_application -> pending`, writing a history row that the teardown's `DELETE FROM
+  applications` then violated on FK, silently rolling back the entire teardown (caught by a bare
+  `except Exception: conn.rollback()` with no log line) and leaving orphaned `FT-LevelKit-*` rows
+  behind on every run. Fixed: added the missing `DELETE FROM application_status_history` in the
+  canonical FK-safe order (`test_functional_level_kit.py:194-198`) and replaced the silent
+  swallow with a diagnostic print naming the failed `app_id`, so a future teardown break is
+  visible instead of silently leaving stale data (CLAUDE.md Rule 5 / NFR Observability).
+
+- ✅ **`interview_level_kits` has no unique constraint on `interview_id`, allowing a real race to
+  create 2 rows for one interview (found by integration-test-engineer, CR#2
+  `interview-kit-candidate-aware-scheduled-generation`, 2026-08-19, task 5.2). FIXED
+  2026-08-26 (`dev/tech-debt-batch4-interview-level-kits`, migration
+  `0058_uq_ivw_level_kits_iid`).** Added a `UNIQUE` constraint on
+  `interview_level_kits.interview_id` (dropping the old plain index it replaces) — the DB now
+  fails the losing concurrent INSERT fast instead of silently letting 2 rows exist. Code-side:
+  `InterviewRepository.create_level_kit_with_savepoint` (`repository.py`) wraps the insert in
+  `begin_nested()` (same pattern as `create_feedback_with_savepoint`); `_create_kit_stub`
+  (`_kit_context.py`) now calls it; `_run_generate_level_kit` (`tasks.py`) catches the loser's
+  `IntegrityError` and re-fetches the winner's row instead of crashing. Live-verified: two
+  genuinely concurrent inserts (`asyncio.gather`) for the same fresh `interview_id` against real
+  Postgres — one won, one hit `IntegrityError` cleanly (no crash), re-fetched the winner, exactly
+  1 row persisted, `get_level_kit_by_interview_id` returned it with no `MultipleResultsFound`.
+  0 pre-existing duplicate rows confirmed before the migration (no backfill needed). Gate 1:
+  253 passed, 5 skipped, 0 failed. See `docs/SCHEMA_CHANGE.md` [2026-08-26] entry.
+
+- 🔴 **GitHub Actions is hard-blocked for the rest of August 2026 — PR #225 merged WITHOUT CI, user-authorized (2026-08-24).** August usage hit 2,116 of the ~2,000-minute included allotment; with no spending limit raised above $0, every job on PR #225's first run returned `runner_id: 0` and the check-run annotation `"The job was not started because recent account payments have failed or your spending limit needs to be increased."` — confirmed via `gh api .../check-runs/{id}/annotations`, not a code/test failure. `netAmount` still shows `$0.0` (discounts fully offsetting), consistent with "blocked" not "billed." User was given 3 options (raise the spending limit now, wait for the 2026-09-01 reset, or merge on local verification alone) and explicitly chose the third. PR #225 merged (`18065cb`) on the strength of: Gate 1 run twice independently by the orchestrator (152 passed), a real-stack functional-test-engineer pass, and 2 full `principal-reviewer` rounds against the local diff (APPROVE-WITH-NITS) — but the actual GitHub-Actions-Linux-runner execution (the Live-verification mandate's Rule 2 "CI on the actual target platform is part of the definition of done") never happened for this PR. **Action needed before/at the next CI-triggering push:** either raise the spending limit or wait for the reset, then verify PR #225's merge commit retroactively passes CI on `main` — if it doesn't, that's a real environment-parity gap this exact mandate exists to catch, discovered late.
+- 🔴 **Backend `typecheck` (mypy) CI job's known 133/3-file pre-existing red (seed scripts + one migration) is still unfixed** — same entry as tracked above for prior PRs; PR #225 would have hit this same pre-existing red had CI actually run (confirmed the 3 files are untouched by this PR).
+- 🔴 `backend/app/modules/positions/schemas.py` is over CLAUDE.md's 300-line file cap (376
+  lines, 2026-08-26, `dev/tech-debt-batch3-data-query` review round — `extra="forbid"` +
+  docstring added to `InterviewLevelRequest` for the M2 panelist_id/panelist_ids fix pushed it
+  further over an already-over-cap file, was 371 before that). Not fixed in this pass — same
+  systemic, repo-wide 300-line-cap gap as `models.py`'s prior split and G14 above; needs its own
+  scoped decomposition pass (e.g. hive off `InterviewLevelRequest`/`InterviewLevelResponse`/
+  `PanelistSummary` into a sibling `_interview_level_schemas.py`, matching the `models.py` ->
+  `_interview_level_models.py` precedent), not a one-off extraction here.
+- 🟡 **`GET /positions/{id}/history`'s new pagination (2026-08-29, §8 P5 follow-up) caps the
+  response at 200 rows with no "load more" UI** — `position-history.tsx` still renders the page
+  as if it were the full list. A position accruing >200 history rows will silently show a
+  partial view with no indication. Needs a paginated UI affordance before it's a real gap in
+  practice (unlikely at current scale, but unbounded). See §8 for the full pagination detail and
+  a related DB-side index gap (P8/P9) found in the same review.
+
 ## 5. Tech debt — tests/CI
 
 - 🔴 `offers/tests/test_functional_hiring_uniqueness.py` — 3 of 6 tests fail against the live stack (drives hire-uniqueness via a manual status PATCH to `hired`, which is 422-blocked since BR-054). Needs a rewrite to go through the real `POST /offers/{id}/accept` path.
+- 🔴 **`positions/tests/test_functional_p6_4_closed_lockdown_e2e.py` — stale since 2026-07-31, root-caused during Tier-3 hygiene batch 1's review (2026-08-27).** The module-scoped `closed_fixture` creates an interview via a level that has no `interview_level_panelists` row — `_make_panelist` (line 444, called after the failing assert) inserts into the global `interview_panelists` directory instead, a table the `LEVEL_HAS_NO_PANELISTS` gate (landed `89db1f8`, multi-panelist levels, 2026-07-31) doesn't read. Test written 2026-07-23, never updated for the gate that shipped 8 days later — reproduces deterministically in isolation (`1 failed, 24 errors`), NOT a rate-limit/throughput artifact. Fix: seed `interview_level_panelists` for the created level inside `_create_position`, before interview-create.
+- 🔴 **`positions/tests/test_functional_p24_position_status.py` + `test_functional_p23b_position_status.py` — stale since 2026-07-04, same review.** Both assert that open→closed with no reason auto-sets `portco_deferred` — that behavior was deliberately removed 2026-07-04 (`d1d003e`, "enforce user reason on open→closed"; `positions/validation.py:85` now raises `CLOSE_REASON_REQUIRED`). Tests last touched 2026-07-28 without updating this assertion. Deterministic, reproduces in isolation. Fix: update both to expect `CLOSE_REASON_REQUIRED` instead of the auto-set behavior.
+- 🟡 **The backend functional test suite is skip-by-default (`RUN_FUNCTIONAL_TESTS=1` gated) — the above 2 stale-test defects sat undetected for 4-8 weeks as a direct result**, since Gate 1's routine unit runs never exercise them. No action proposed here beyond flagging the systemic risk; a periodic scheduled functional-suite run (not gated on a specific PR touching the file) would catch this class of drift proactively instead of waiting for an unrelated review to stumble into it.
 - ✅ `tests/unit/test_seed_dev.py::test_run_seed_fresh_creates_users_grants_and_audits` (2026-08-08, `chore/ci-real-db-e2e-fix` round 3) — root-caused: the test's hardcoded `== 7` was stale (2026-07-23 mypy-cleanup pass) AND it compared `summary["users"]` (covers both `TEST_USERS` + `NAMED_RECRUITER_USERS`) against `len(TEST_USERS)` alone, an existing scope mismatch independent of the stale count. Fixed to compute `total_users = len(TEST_USERS) + len(NAMED_RECRUITER_USERS)` instead of a magic number, so it self-adjusts as either list grows.
 - ✅ `departments/tests/test_repository.py::test_list_scopes_to_org_searches_and_orders` (2026-07-29, `dev/tech-debt-batch1`) — root-caused as a real code defect (spec AC-004 requires name-order, code ordered by updated_at desc). Fixed the repository, not the test. Independently confirmed by NFR Phase 2b's own review (same root cause, same conclusion) — merged together with PR #197's `COUNT(*) OVER()` windowed-query optimization on the same query.
 - ✅ `organizations/tests/test_repository.py::test_list_applies_search_and_active_filters_and_orders_by_updated_at` (renamed from `..._orders_by_name`, 2026-07-29, `dev/tech-debt-batch1`) — root-caused as a genuinely stale test (organizations spec has no ordering AC). Fixed the test's assertion, repository untouched.
@@ -280,8 +521,9 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 - 🔴 3 pre-existing `positions` module test failures: `test_service.py::test_change_status_stale_version_raises_409` (test itself is stale — needs a rewrite to a real reachable scenario), `test_tasks.py::test_extract_storage_miss_persists_failed` + `test_extract_success_persists_result` (mock/fixture drift, not chased to root cause).
 - 🔴 No frontend component test for `positions-ageing-report.tsx` / `positions-ageing-bucket-strip.tsx`.
 - ✅ = Execution Queue item 3: backend CI provisions real Postgres/Redis (`chore/ci-real-db-e2e-fix`, PR #221, 2026-08-08) — `test` job now gets `postgres:18`/`redis:7` services + `docs/ci_schema_snapshot.sql` + `alembic stamp head` + `RUN_DB_TESTS=1`. The ~18 tests that failed for lacking real services now pass. See the new needs_db entry below for what surfaced once `RUN_DB_TESTS=1` actually ran those tests for the first time. **Separately, the `test` job's own coverage gate still fails** (`Coverage failure: total of 66 is less than fail-under=80`) — pre-existing, unchanged across this PR's commits, same class of pre-existing CI blocker as the `typecheck`/`component-test` entries below (needs its own coverage-raising pass, not caused by or fixed by this PR).
-- 🔴 = Execution Queue item 4: frontend `nav-items.test.ts` (2 failures, stale expected nav list) + `position-schema.test.ts` (3 failures) — both pre-existing, confirmed multiple times, never fixed.
+- 🔴 = Execution Queue item 4: frontend `nav-items.test.ts` (2 failures, stale expected nav list) + `position-schema.test.ts` (3 failures) — both pre-existing, confirmed multiple times, never fixed. **Re-confirmed 2026-08-27** (Tier 3 frontend batch 1 review) as part of a wider red set, still all pre-existing and unrelated to that batch (identically red on `main`): `position-form-drawer.test.tsx`, `positions-list.test.tsx`, `status-change-dialog.test.tsx`, `interview-org-labels.test.tsx` (see its own entry below) — 6 files / 15 failures total across the full frontend suite.
 - 🔴 `frontend/src/components/positions/interview-org-labels.test.tsx` fails on `main` (pre-existing, root-caused during `dev/interview-level-multi-panelist` review — unrelated to CR-002). The read-only interviewer view in `interview-levels-editor.tsx`'s `!canConfig` branch (~line 175-193) renders only `l.level_label` (e.g. "Bar raiser") and never the org-prefixed `"({Org} : Level-N)"` format the test expects. Needs a fix to either the component (add the org-prefix label to the read-only row) or the test's expectation — flag both `interview-org-labels.test.tsx` and `interview-levels-editor.tsx` when picked up.
+- 🔴 `frontend/src/components/positions/positions-list.test.tsx` has 2 pre-existing failures on `main` (root-caused 2026-08-27 during Tier 3 frontend batch 2 review, unrelated to that batch): (1) a duplicate "Clear filters" button rendered twice in the current markup, causing `getByRole` to throw on ambiguity; (2) `getByLabelText(/search by title/i)` no longer matches — the component's actual label text is `Title`, not `Search by title`. Two distinct causes, not one — needs its own fix pass (either component or test, per-failure).
 - ✅ = Execution Queue item 5: `e2e` Playwright job now provisions a real backend + Postgres/Redis before Playwright's `webServer` boots (`chore/ci-real-db-e2e-fix`, PR #221, 2026-08-08) — `BACKEND_ORIGIN` feeds `next.config.mjs`'s `/api/v1/*` rewrite so Next's server-side proxy calls reach something real instead of ECONNREFUSED. `frontend/e2e/auth.spec.ts`'s stale "welcome back" assertion updated to the current universal `/reports` landing in the same PR. The systematic ECONNREFUSED/MSW-vs-real-backend failure is closed; 3 `mobile`-project (Pixel 5) tests hit genuine issues newly reachable now that mobile e2e exercises real interactive UI, all 3 quarantined + logged separately below: `auth.spec.ts`'s logout (topbar overlap), `organizations.spec.ts`'s create-org submit (drawer overlap), `pipeline-retry-badge.spec.ts` (locator-strategy gap, NOT the `page.goto()` bug first suspected -- see its own entry, which WAS real and independently fixed via nav-link navigation matching `gotoOrganizations`/`gotoPositions`). **Confirmed green via real CI (gh run 31250303308):** 43 passed / 60, 2 flaky (retry-masked, see the webkit entry directly below), 15 skipped (the quarantines + pre-existing skips), 0 hard failures.
 - 🟡 **2 flaky `webkit`-project e2e tests, retry-masked (real CI, gh run 31250303308, PR #221 round 4, 2026-08-08)** — `organizations.spec.ts:46` (write-role create-an-organization) and `pipeline-retry-badge.spec.ts:76` (Failed/Failed-after-3-attempts). Both time out on `frontend/e2e/helpers/auth.ts:31`'s `page.waitForResponse` for `POST /auth/login` (Playwright's 30s test timeout), then pass on the automatic retry — originally a DETERMINISTIC every-run pattern. **Structural root cause fixed (`fix/e2e-webkit-flake-prod-build`, commit `1fad9ac`, PR #222, 2026-08-08)** — switched CI's Playwright `webServer` from `next dev` to a production build+start, removing the Next.js on-demand-route-compile race (confirmed via code read: `auth.ts` already used the correct `Promise.all([waitForResponse, click])` pattern, so this was never a test-code race). **Result across 4 independent real CI runs on this fix (run 31253719568 x2, run 31255151924, run 31256030051):** 3 runs clean (`45 passed, 15 skipped`, 0 flaky), 1 run showed `organizations.spec.ts:46` flaky again (1-in-4, vs. the prior 2-every-run deterministic pattern) — a large reduction, not full elimination. Residual is consistent with ordinary webkit-on-Linux-CI network-stack timing variance, not a compile race, not a code defect in the test or app — exactly the class of thing `retries: 1` exists to absorb, and did (job still reports overall success). **User decision (2026-08-08): merge as-is, log residual here rather than chase further** — not investigating deeper unless the residual rate climbs meaningfully above 1-in-4 in future runs.
 - 🔴 **CI's e2e job runs `next start`, not production's actual deployment artifact (found via principal-reviewer round 2, `fix/e2e-webkit-flake-prod-build`, 2026-08-08).** `next.config.mjs` sets `output: "standalone"` and `frontend/Dockerfile` ships `CMD ["node", "server.js"]` — production runs the standalone server, but CI's `webServer.command` now runs `npm run build && npm start` (`next start` over the regular `.next` build), confirmed harmless for THIS PR's purpose (route-precompile, proven by 45 passing tests through real logins) but a residual environment-parity gap. **Also flagged, unverified — needs a live check before anyone relies on it either way:** whether `next.config.mjs`'s `rewrites()` closure resolves `BACKEND_ORIGIN` at build time (baked into the standalone bundle) or at runtime (`next start`/`node server.js` both re-read `process.env` per request) — if build-time-baked, prod's actual runtime env var value wouldn't behave the way CI's `next start` path does today. Not chased in that PR (out of scope, minimalism floor) — needs its own investigation.
@@ -299,11 +541,402 @@ own last real run — all in `tests/integration/test_interview_levels_panelist.p
 mismatches) plus `test_candidates_flow.py::test_resume_download_returns_302...` (a signed-URL
 redirect assertion) — none touched by CR#1, none newly introduced. Same "blocks CI from ever
 going fully green on ANY PR" class as typecheck/component-test above.
+**Update 2026-08-19 (CR#2, PR #224 first real CI run) — root cause for a slice of this bucket
+now identified: `backend-ci.yml`'s `test` job never starts a Celery worker at all** (confirmed
+via `grep -n "celery\|worker" .github/workflows/backend-ci.yml` — zero matches; same class of
+gap `frontend-ci.yml`'s `e2e` job had before PR #221's fix, just never applied to this job). Any
+integration test that enqueues a real Celery task and polls for its completion times out here,
+regardless of whether the task logic is correct — already the reason
+`test_positions_defects_flow.py::test_jd_extraction_completes_inline_and_persists_skills` sits
+stuck at `"status":"processing"` in the count above. CR#2's own new
+`test_interview_kit_candidate_aware_flow.py`'s two scenarios hit the identical wall in CI
+(`Failed: Level kit did not settle within 25.0s`) despite passing locally against a real running
+worker (integration-test-engineer's local run, task 5.2) — confirmed not an application-logic
+regression, purely this CI-environment gap. `48→50` failed on this run; the 2 new names are this
+same root cause, not 2 new distinct defects. Needs its own fix (add a `celery -A app.workers.
+celery_app worker` background step to `backend-ci.yml`'s `test` job, matching PR #221's
+`frontend-ci.yml` precedent) — out of scope for CR#2 itself (a CI-infra change, not part of that
+CR's diff); tracked here so the next PR that touches a Celery-backed integration test doesn't
+re-discover this from scratch.
 
 ## 6. Tech debt — code hygiene (oversized files, 300-line/40-line caps)
 
-**Analysis complete 2026-07-29 — full per-file decomposition plan in `docs/CODE_HYGIENE_DECOMPOSITION_PLAN.md`** (13 parallel read-only planning passes, re-swept to **48 files over 300 lines**, up from 38 at the Phase 3 audit). **Tier 1 ("free wins") executed same day — PR #198 merged**, branch `dev/hygiene-tier1-free-wins` — 14 files split across 9 commits (security/router.py, interviews/router.py, candidates/{tasks,screening/service,router}.py backend; lib/api/candidates.ts, mocks/position-handlers.ts, panelist-list.tsx, position-detail.tsx, interview-levels-editor.tsx, screening-detail.tsx, applications-in-candidate-card.tsx, screening-list.tsx, positions-ageing-report.tsx frontend). principal-reviewer APPROVE-WITH-NITS on round 2 (round 1 CHANGES-REQUESTED: 2 gratuitously-exported helper functions + a test asserting a hardcoded string instead of the task symbol — both fixed; round 2 found 1 doc-contradiction nit — fixed). Zero behavior/API/permission change anywhere — verified via byte-identical OpenAPI dump + route-table diff against `main`. Deferred from Tier 1: `positions/router.py`, `jd-panel.tsx`, `use-positions.ts` (would have conflicted with NFR Phase 2b PR #197 — now merged, safe to resume in Tier 2). Remaining tiers (2-4, including the highest-risk `interviews/service.py` 1413 lines and `applications/service.py`) not started — see the plan doc's "Recommended execution order."
-- 🔴 `frontend/src/components/reports/interview-pipeline-progress-report.tsx` — 366 lines, ~22% over the 300-line cap (was already 332 lines before this change). Grew during the pipeline-progress-all-levels build (all-levels entry point, level column, Select-All wiring); flagged by `ux-ui-engineer` in round 3 but not split there (out of scope for that fix). Needs its own decomposition pass, same as the Tier 1/2 hygiene work above.
+**Analysis complete 2026-07-29 — full per-file decomposition plan in `docs/CODE_HYGIENE_DECOMPOSITION_PLAN.md`** (13 parallel read-only planning passes, re-swept to **48 files over 300 lines**, up from 38 at the Phase 3 audit). **Tier 1 ("free wins") executed same day — PR #198 merged**, branch `dev/hygiene-tier1-free-wins` — 14 files split across 9 commits (security/router.py, interviews/router.py, candidates/{tasks,screening/service,router}.py backend; lib/api/candidates.ts, mocks/position-handlers.ts, panelist-list.tsx, position-detail.tsx, interview-levels-editor.tsx, screening-detail.tsx, applications-in-candidate-card.tsx, screening-list.tsx, positions-ageing-report.tsx frontend). principal-reviewer APPROVE-WITH-NITS on round 2 (round 1 CHANGES-REQUESTED: 2 gratuitously-exported helper functions + a test asserting a hardcoded string instead of the task symbol — both fixed; round 2 found 1 doc-contradiction nit — fixed). Zero behavior/API/permission change anywhere — verified via byte-identical OpenAPI dump + route-table diff against `main`. Deferred from Tier 1 (would have conflicted with NFR Phase 2b PR #197, now merged): `positions/router.py` (done, Tier 5 backend catch-up, 2026-08-31 — see below), `jd-panel.tsx` (pending), `use-positions.ts` (done, Tier 3 frontend batch 2, see below). **Tier 2 (open-question resolution) executed 2026-08-26, branch `dev/hygiene-tier2-decisions`** — all 3 open questions resolved via AskUserQuestion, then executed: deleted confirmed-dead `create-application-panel.tsx` (338 lines, zero importers) and its now-orphaned dependency `create-application-confirm.tsx` (187 lines); deleted 4 confirmed-dead hooks from `use-interviews.ts` (`useCreateInterview`/`useAddPanelist`/`useRemovePanelist`/`useUpdateInterviewStatus`) plus their now-dead api-client functions and type exports; extracted `status-change-dialog.tsx` 305→270 lines via a pure-helpers file with its own new unit test. principal-reviewer round 1 CHANGES-REQUESTED (left a dead-code chain behind: the orphaned confirm-dialog file + 3 dead api functions + 2 dead types + 3 stale doc comments + missing spec-sync + no helper test) — all fixed same session. **Round 3 (principal-reviewer's second CHANGES-REQUESTED, same branch, 2026-08-26):** the AC-061/AC-062 SCREENING_REQUIRED affordance previously existed only in dead code (`candidate-screenings-section.tsx` — zero importers, and `onStartScreening` was never actually wired even there); per user product decision, wired it onto the real live apply path instead — `applications-in-candidate-card.tsx` now shows an inline Alert + "Start Screening" button on 422 SCREENING_REQUIRED, opening `ScreeningStartDialog` pre-selected for the position, with `candidateName` threaded down from `CandidateDetail`'s already-fetched `useCandidate()` data (no new fetch). `candidate-screenings-section.tsx` deleted (confirmed dead, no test file). Spec AC-061/AC-062 and the stale doc-comment findings (interviews.ts header, screening-start-dialog.tsx header, this doc's §Tier-2 note) corrected to name the real component. **Tier 3 batch 1 (backend, 4 files) executed 2026-08-27, branch `dev/hygiene-tier3-backend-batch1`:** `positions/service.py` 375→299 (split into `_service_helpers.py`/`_service_writes.py`); `candidates/repository.py` 713→247 (6-way free-function split by concern — CRUD/documents/enrichment/matches/consents/bulk_jobs, `CandidateRepository`'s public interface byte-identical, AST-verified); `candidates/service.py` 591→298 (split into 4 `_service_*.py` files; `_enqueue_extraction`'s static-method gotcha confirmed obsolete — a prior batch already moved `router.py`'s call to the public `enqueue_extractions`; ~115 test `@patch` decorators retargeted, all resolve-verified); `security/service.py` 389→320 (extracted `_mfa_helpers.py`, only the 4 named MFA-challenge helpers — login/session/refresh/logout untouched). Zero public-interface change anywhere (AST-diffed base vs branch), zero import cycles, zero security regression (OTP/attempt-cap logic line-identical). 2 principal-reviewer rounds: round 1 CHANGES-REQUESTED (zero `docs/` update despite the mandate, a stale `dev_router.py` reference to a renamed function, one genuinely-lost docstring on `build_current_user`, no live functional-test-engineer gate) — docs/docstring findings fixed same session, live check dispatched separately. **Tier 3 batch 2 (backend, `positions/repository.py`) executed 2026-08-27, branch `dev/hygiene-tier3-backend-batch2`:** 457→361 lines — split position-code allocation into `position_code_repository.py` (59 lines) and ageing-summary aggregation into `ageing_repository.py` (55 lines), both offers-style free-function delegation; folded the JD/interview-level single-item reads (`current_jd`/`get_jd`/`get_interview_level`) into `child_repository.py` (108→159 lines), fixing the pre-existing inconsistency where those reads lived in `repository.py` while the matching writes (`add_jd`/`replace_levels`/etc.) already lived in `child_repository.py`. `PositionRepository`'s 24 public methods are name/signature-identical before and after (AST-diffed against `main`, independently re-derived by principal-reviewer, not just the implementing agent's `dir()` check) — the 3 external modules holding an instance (`applications/service.py`, `candidates/candidate_screenings/tasks.py` + `.../service.py`, `interviews/service.py` via `_service_helpers.py` — 4 call sites total across those 3 modules) needed zero changes; all 4 modules' test suites (1085 tests total) pass, plus `ruff`/`mypy` clean. `repository.py` remains 61 lines over the 300-line cap after this batch's named remedy (the 3-way split) — NOT fully closed by design, one concrete next step identified but deliberately deferred (not this batch's scope, avoids mid-refactor scope creep): `list()` (48 lines, itself a pre-existing 40-line-cap violation) builds its `count_sql`/`list_sql` strings inline where `list_helpers.py` already exists and already hosts the sibling `build_position_where` — moving that construction there would bring the file to ~340 lines and close `list()`'s function-cap violation as a side effect. 2 principal-reviewer rounds: round 1 CHANGES-REQUESTED (a stale WHY-comment in `subresource_service.py` and this doc's own CR-002 note both still asserted `current_jd`/`get_interview_level` live on `repository.py` post-move — the exact defect class Tier 3 batch 1 was blocked for, caught again here) — fixed same session. **Tier 3 frontend batch 1 (2026-08-27, branch `dev/hygiene-tier3-frontend-batch1`):** `feedback-list-drawer.tsx` 435→236 (BR-SEQ-001/D3/D4 edit-outcome sub-form extracted to `edit-feedback-outcome-form.tsx`); `offer-detail-card.tsx` 348→241 (status-driven action bar extracted to `offer-action-bar.tsx`); `mocks/org-handlers.ts` 309→122 (split into `org-store.ts` + `department-handlers.ts`, the named live-binding hazard closed via an explicit `getStore()` accessor). `interview-pipeline-progress-report.tsx` confirmed already resolved by 2 unrelated prior PRs (299 lines, under cap) — corrected the stale note instead of splitting a compliant file. 2 principal-reviewer rounds: round 1 CHANGES-REQUESTED (the new live-binding regression test wrote before reset and read after, so it could never fail on the bug it claimed to catch) — fixed by reordering to reset-then-write-then-read, empirically validated by both reviewer and implementer independently injecting the same stale-cache bug; round 2 APPROVE-WITH-NITS. **Tier 3 frontend batch 2 (2026-08-27, branch `dev/hygiene-tier3-frontend-batch2`):** `dept-form-drawer.tsx` 346→291 (banner stack extracted to `dept-form-status-banners.tsx`, 116 lines; seeding effect + all 14 `emitOrgEvent` calls, the named hazard, verified line-identical to `main`); `use-positions.ts` 305→17 lines (now a pure `export *` barrel over 4 new concern files — `use-position-queries.ts`/`use-position-jd.ts`/`use-position-levels.ts`/`use-position-reference-data.ts` — all 16 real importers resolve with zero edits, AST/grep-verified); `positions-list.tsx` 501→290 (columns + filter bar extracted; the plan's named filter-state design question resolved by NOT moving the debounced state, keeping the extracted filter bar purely presentational); `application-list.tsx` 402→214 (ARIA next-actions menu extracted byte-identical to `main`, confirmed via `diff`, plus a genuinely new `app-next-actions-menu.test.tsx` covering wraparound/focus-return/role-gating the parent's own tests never covered). Full frontend suite's pre-existing baseline (undercounted here at "5" until corrected 2026-08-28 during Tier 3 batch 3's review): **15 failures across 6 files** — `nav-items.test.ts` (2), `position-schema.test.ts` (3), `positions-list.test.tsx` (2), `position-form-drawer.test.tsx` (4), `status-change-dialog.test.tsx` (3), `interview-org-labels.test.tsx` (1) — independently confirmed identical on `main` via isolated worktree, unrelated to this batch. 1 principal-reviewer round: CHANGES-REQUESTED (zero `docs/` update — this same entry — the third consecutive instance of this exact defect class this Tier) — fixed same session. **Tier 3 frontend batch 3 — LAST FRONTEND BATCH, executed 2026-08-27, branch `dev/hygiene-tier3-frontend-batch3`:** `panelist-form-drawer.tsx` 716→438 (fee format/parse + `seedFrom`/`validate` extracted to `panelist-form-drawer.helpers.ts`; submit/error/lifecycle handlers extracted to a new `usePanelistFormSubmit` hook; Deactivate/Reactivate confirm blocks extracted to `panelist-lifecycle-actions.tsx` — the BUG-002/BUG-003 re-seed guard, `values`/`version` state + `seededVersionRef`, deliberately stayed in the drawer component, passed into the hook only as arguments, per the plan doc's own explicit warning against moving that state across a hook boundary); `candidate-upload-drawer.tsx` 617→216 (types/validation extracted to `candidate-upload-drawer.helpers.ts`; submit/207-partial-success handling to `useCandidateUploadSubmit`; the two mode forms to `single-resume-upload-form.tsx`/`bulk-resume-upload-form.tsx`, spec §10.5 progressive disclosure preserved verbatim); `create-interview-drawer.tsx` 483→410 (BR-SEQ-001 `categoryRank`/`getLevelReadiness`/`sequenceBlockMessage` extracted to a new zero-React-dependency `lib/interviews/level-sequence.ts`). Zero prior test coverage on the first two files — added 13+12 tests (panelist helpers/hook) and 15+9 tests (candidate helpers/hook); the interview file already had a 569-line suite (`create-interview-drawer.test.tsx`, 15 tests) plus `application-interview-panel.test.tsx` (4 tests), both re-run and confirmed green unchanged, plus a new 15-test `level-sequence.test.ts` covering every readiness branch directly for the first time. All 3 files' sole external importers (`panelist-list.tsx`, `candidate-list.tsx`, `application-interview-panel.tsx`) confirmed unchanged (`tsc --noEmit` + `eslint` + grep-verified import paths/prop shapes). `panelist-form-drawer.tsx` (438) and `create-interview-drawer.tsx` (410) remain over the 300-line cap after this batch — accepted residuals, same class as the `security/service.py`/`positions/repository.py` residuals above: further extraction would mean either moving BUG-002/BUG-003-adjacent state across the hook boundary the plan doc warned against, or decomposing JSX the task scope didn't call for. **Rule 4 gap closed same session** (principal-reviewer round 1 CHANGES-REQUESTED): the 64 new tests covered only the extracted pure helpers/hooks, not the JSX that got re-parented on the 2 previously-untested drawers — added `candidate-upload-drawer.test.tsx` (3 render-smoke tests) and `panelist-form-drawer.test.tsx` (2 render-smoke tests) confirming both drawers mount with their real fields and the category/mode toggles drive the correct conditional rendering; also removed 2 dead write-only `useRef`s in `single-resume-upload-form.tsx`/`bulk-resume-upload-form.tsx` (M1, pre-existing on `main` but shipped into brand-new files by this batch).
+  - 🟡 `backend/app/modules/security/service.py` — 320 lines, 20 over the 300-line cap (was 389).
+    **Accepted residual — deliberately not closed further.** The only remaining paths to 300 are
+    touching login/session/refresh/logout (this file's highest-blast-radius auth paths, which the
+    decomposition plan explicitly rules out touching) or more docstring compression (already tried
+    once, cost `build_current_user` its Args/Returns contract — restored, not re-attempted).
+    Consistent with the existing systemic-overcap note below (`interviews/service.py` alone is
+    1413 lines) — one-off enforcement here would be inconsistent enforcement. Revisit only as part
+    of a repo-wide cap policy decision, not a standalone pass. `principal-reviewer` verdict:
+    acceptable. Tier 3 frontend batch 3 (2026-08-27) closed out the last 3 named frontend
+    files — see the Tier 3 frontend batch 3 entry above. Tier 4 (backend + frontend, highest-risk)
+    — DONE, see the Tier 4 entries below; the entire 48-file sweep is complete as of 2026-08-29.
+  - 🟡 `backend/app/modules/positions/repository.py` — 361 lines, 61 over the 300-line cap (was
+    457, before Tier 3 batch 2 above). The plan doc's named remedy for this file (split
+    position-code + ageing-summary out, fold JD/interview-level reads into `child_repository.py`)
+    is fully executed; the residual is in the position CRUD/list methods and the
+    already-separately-split recruiter delegation wrappers, neither named by the plan doc for
+    further extraction. Revisit only if a future pass specifically re-scopes this file.
+- ✅ (resolved, confirmed 2026-08-27 during Tier 3 frontend batch 1 scoping) `frontend/src/components/reports/interview-pipeline-progress-report.tsx` — this entry's "366 lines, needs its own decomposition pass" is now stale: two later, unrelated fixes (`ea69919`/`b05a9d8`, the render-time page-clamp regression-test fix and the viewport-responsive page-size fix) already moved the report's spec-commentary block to `openspec/specs/reporting/spec.md` §3 and trimmed the component itself, bringing it to 299 lines (under the 300-line cap) with its own dedicated `interview-pipeline-progress-report.test.tsx`. No further split scheduled — re-flag only if it grows back over cap.
+- 🔴 `backend/app/modules/interviews/agents/level_kit_agent.py` — 425 lines, over the 300-line cap. Flagged in CR#2 principal-reviewer round 3 (M3): pre-existing/systemic, part of the same 21-files-over-cap project-wide gap this section already tracks; not blocking CR#2, tracked here only.
+- ✅ **Tier 5 backend catch-up (2026-08-31, branch `dev/hygiene-tier5-backend-catchup`)** — a
+  fresh re-audit found 3 backend files still/newly over the 300-line cap after the 48-file sweep
+  closed. `candidates/agents/job_matcher.py` (**G14, file-cap half DONE, function-cap half still
+  open — see G14's own row above**) 347→299: the module docstring's M3 offline-gate decision
+  (previously stated 2+ times across the docstring) tightened to a single mention;
+  `_MATCH_PROMPT_TEMPLATE` plus its JSON-fence-strip/parse/pad-to-5 normalization moved to a new
+  sibling `_match_prompt.py` (94 lines — `build_match_prompt`/`parse_match_items`/
+  `normalize_points`, zero dependency back on `job_matcher.py`, empirically confirmed via a fresh
+  `import` — avoids a circular import); `match_candidate()` **82→55 total lines (not 81→28 as
+  first reported — the "28" used a code-after-docstring count against an original total-lines
+  baseline, corrected by `principal-reviewer`'s independent re-derivation; 55 is still 15 over
+  the 40-line cap)** via the new `_build_llm_results()` helper (a real seam — LLM item→
+  `MatchResult` construction was one cohesive block, extracting it left the provider-selection/
+  fallback control flow as its own clean unit, but that remaining logic still needs its own
+  follow-up pass). `positions/router.py` 360→191 (deferred from Tier 1 on 2026-07-29, a genuine
+  process miss — never picked up in Tiers 2-4): mirrored the `recruiter_router.py`/
+  `interviews/_router_*.py` sibling-router pattern — JD upload/get/re-extract/history split to
+  `_router_jd.py` (132 lines), interview-levels + position-history split to
+  `_router_levels_history.py` (94 lines). Both new sibling routers use a bare `APIRouter()`,
+  matching the 5-of-5 existing `_router_*.py` convention — a first attempt added
+  `tags=["positions"]` to match `recruiter_router.py`, but that file's explicit tag is a
+  pre-existing wart (it double-tags 2 routes on `main` too), not the real convention; the addition
+  broke the byte-identical-OpenAPI invariant below and was reverted (caught by
+  `principal-reviewer`'s confirm-pass, which also caught that the fix commit's own claim of
+  byte-identical OpenAPI had gone stale the moment the tags were added — corrected here).
+  `candidates/schemas.py` (308 lines) — **evaluated,
+  exempted, not split**: the inheritance-chain argument is real
+  (`CandidateDetailResponse(CandidateSummary)`, plus fan-in from `OfferDetails`/
+  `SourceDetailsResponse`/`ConsentResponse`/`MatchResponse`), and this file is smaller than both
+  already-exempted siblings (`interviews/schemas.py` 321, `positions/schemas.py` 376) — see
+  `docs/CODE_HYGIENE_DECOMPOSITION_PLAN.md`'s exempt list (narrowed wording per reviewer: NOT "no
+  natural grouping at all" — `BulkUploadResponse`/`BulkUploadStatusResponse`/`BulkStatus` (~25
+  lines) have zero back-reference from the main chain and could extract cleanly; the exemption
+  rests on the inheritance-chain argument, not on there being nothing separable). Zero
+  public-interface change: `job_matcher.py`'s AST top-level diff against `main` shows only 1 new
+  private helper added; `_MATCH_PROMPT_TEMPLATE` (a module-level binding, not a function) was
+  relocated with zero external consumers (grep-confirmed). **`positions/router.py`'s route SET
+  and OpenAPI contract are byte-identical pre/post (verified by dumping `app.routes` and
+  `app.openapi()` on both commits, plus resolving all 15 `/positions*` URLs through both route
+  tables and confirming identical winners including `/ageing-summary` vs. `/{position_id}`) — but
+  registration ORDER changed** (the mounted group now registers earlier, ahead of `/positions`,
+  `/ageing-summary`, `/{position_id}`, `/{position_id}/status`). This is safe today because every
+  mounted route is either a distinct segment-1 literal (`/recruiter-options` — which already had
+  to precede `/{position_id}` on `main` too) or carries a distinct literal in segment 2+ (`/jd`,
+  `/jd/re-extract`, `/jd/history`, `/interview-levels`, `/history`, `/recruiters`), so no mounted
+  pattern matches a CRUD path — but it creates a latent constraint: a FUTURE route added directly
+  in `router.py`'s own body with a `/{param}` or `/{position_id}/{param}` shape WOULD be shadowed
+  by the mounted sub-routers. A comment recording this now lives in `router.py` itself, right
+  above the 3 `include_router()` calls. 2 test-only patch-target fixes required in
+  `positions/tests/test_router.py` (`test_upload_jd_enqueues_after_commit` /
+  `test_re_extract_jd_enqueues_after_commit` patched `positions.router.extract_job_description`
+  — now patches `positions._router_jd.extract_job_description`, since that's where the route
+  handler actually lives; internal test wiring only, not a public-interface change). Gate 1:
+  550 passed, 250 skipped, 0 failed (`candidates`+`positions` test suites). `ruff check` +
+  `mypy` clean on all 5 touched/created files. 2 principal-reviewer rounds: round 1
+  CHANGES-REQUESTED (G14's table row never flipped, a stale "Deferred from Tier 1" note left
+  intact in the very commit fixing its consequence, the 81→28 metric mismatch above, and the
+  false "registration order identical" claim — all doc-only, fixed same session; code itself was
+  clean on first pass). Local-only per user instruction (GitHub Actions billing-blocked until
+  2026-09-01) — not pushed, no PR.
+- ✅ **Tier 5 frontend catch-up (2026-08-31, branch `dev/hygiene-tier5-frontend-a`)** — a fresh
+  re-audit found 3 frontend files from the original 2026-07-29 plan (`docs/CODE_HYGIENE_
+  DECOMPOSITION_PLAN.md`) that were never executed: 2 deferred from Tier 1 and never picked up in
+  Tiers 2-4 (same class of process miss as `positions/router.py` above), 1 that WAS split at Tier 1
+  but grew back over cap since. `positions/jd-panel.tsx` 473→293: the already-isolated
+  presentational sub-tree (`providerLabel`/`extractionBadge`/`SkillGroup`/`OverridableText`/
+  `ExtractedView`) extracted to a new `jd-extracted-view.tsx` (158 lines); the version-history
+  toggle+list block extracted to a new, self-contained `jd-version-history.tsx` (75 lines — owns
+  its own `historyOpen` state and `useJdHistory` call, since neither was read anywhere else in the
+  panel). The `jdPanelView` pure selector stayed in `jd-panel.tsx` per the plan's own explicit
+  constraint (it's imported directly by `jd-panel.test.tsx`). `candidates/match-card.tsx` 331→201:
+  the 4 independent collapsible sections extracted to `match-points-section.tsx` (42),
+  `match-gaps-section.tsx` (43), `match-legacy-scorecard-section.tsx` (71 — owns its own
+  `scorecardOpen` state + lazy `useScorecard` call), and `match-dismiss-action.tsx` (73 — owns its
+  own confirm-panel toggle; the actual dismiss mutation call/toast stays in the orchestrator,
+  passed down as an `onConfirm` callback that never rethrows). This file had a real existing test
+  suite (`match-card.test.tsx`, 4 tests) that only covered the match-points/gaps expand and the
+  Screen action — the plan doc's "no dedicated test" note was stale; per Quality Gate Rule 4, added
+  3 render-smoke tests covering the 2 sections the existing suite never touched (legacy-scorecard
+  lazy-fetch-on-expand, dismiss confirm/cancel, dismiss confirm/call-endpoint), bringing the suite
+  to 7 tests. `candidates/screening-detail.tsx`: re-diffed against its own Tier 1 split commit
+  (`6f00e12`, 2026-07-29) rather than trusting the plan's "+1 line" guess — the real growth was
+  +37 lines (267→304), all from the `async-pipeline-durability` D9 feature (the server-confirmed
+  `question_generation_error` terminal-failure branch + "Check again" retry button), added after
+  Tier 1's split closed. That whole 3-way branch (error / polling / gave-up-with-retry) was
+  presentational and cleanly separable — extracted to a new `screening-question-generation-status.tsx`
+  (93 lines); polling state (`pollingEnabled`) and the refetch call stay owned by the orchestrator,
+  passed down as `pollingEnabled` + an `onCheckAgain` callback. File is now 304→264 lines. The
+  optimistic-concurrency `version` state and `handleSaveResponses`/`handleSubmitOutcome` were not
+  touched (confirmed by direct inspection, not just re-reading the header comment) — same
+  constraint as Tier 1's own split of this file. All 3 files' real external importers
+  (`position-detail.tsx` → `JdPanel`, `candidate-matches-section.tsx` → `MatchCard`,
+  `candidates/[id]/screenings/[sid]/page.tsx` → `ScreeningDetail`) confirmed unchanged — same
+  export name/props, grep-verified. Zero behavior/accessibility/ARIA change anywhere (hygiene-only
+  split, no design work). Verification: all 3 affected suites green (`jd-panel.test.tsx` 13,
+  `match-card.test.tsx` 7, `screening-detail.test.tsx` 5 — 25 total, 0 failed); `tsc --noEmit`
+  clean repo-wide; `eslint` clean on all 11 touched/created files. Local-only per user instruction
+  (GitHub Actions billing-blocked until 2026-09-01) — not pushed, no PR.
+- ✅ **Tier 5 frontend catch-up, batch B (2026-08-31, branch `dev/hygiene-tier5-frontend-b`) —
+  CLOSES THE ENTIRE 9-FILE TIER 5 CATCH-UP.** 3 more files, none of them in the original
+  2026-07-29 plan doc — organic growth since that plan's source list was frozen, so this batch
+  did fresh discovery rather than executing an existing analysis. `lib/types/positions.ts` (315
+  lines) evaluated and **exempted, not split**: first write-up claimed ~46 importers and
+  comment-grouped domains — `principal-reviewer` independently re-verified and found both false
+  (35 real non-test importers, 48 including tests; types are interleaved across domains, not
+  grouped), corrected here. The real reason to leave it alone: 6 `extends` chains cross what
+  would be separate domain files (`PositionResponse`/`PositionDetailResponse`,
+  `JDResponse`/`JDSummary`, `PositionCreate`+`PositionUpdate`/`BudgetInputs`,
+  `StatusUpdate`/`NoShowCapture`) — a domain split would convert these into cross-file type
+  dependencies between the new files, real structural coupling, not import-statement churn; see
+  `docs/CODE_HYGIENE_DECOMPOSITION_PLAN.md`'s exempt list for the full reasoning.
+  `interviews/interview-kit-drawer.tsx` 315→193: `getKitRetryState` +
+  `COMPLEXITY_LABEL`/`COMPLEXITY_COLOR`/`TYPE_LABEL` (pure, no React import) extracted to
+  `interview-kit-drawer.helpers.ts`; the two presentational sub-trees extracted to sibling
+  components — `QuestionRow` → `interview-kit-question-row.tsx` (73 lines), `FocusAreaSection` →
+  `interview-kit-focus-area-section.tsx` (48 lines). `getKitRetryState` is re-exported from the
+  main file (`export { getKitRetryState };`) so `interview-kit-drawer-retry-state.test.ts`'s
+  import path needed zero changes. `candidates/screening-start-dialog.tsx` 315→263: the position
+  dedup + existing-screening-status-map logic (pure, no React import) extracted to
+  `screening-start-dialog.helpers.ts` (`mergeOpenAndInProgressPositions`/
+  `buildExistingScreeningStatusMap`); the position radio-list section extracted to
+  `screening-position-list.tsx` (84 lines, presentational only — loading/error/empty states stay
+  in the parent per the plan's established pattern). This file had **zero prior test coverage**
+  (per Quality Gate Rule 4) — added `screening-start-dialog.test.tsx` (2 render-smoke tests:
+  position selector renders the real seeded open/in_progress positions; select + submit actually
+  POSTs to `/candidates/{id}/screenings` and surfaces the returned `screening_id` to the caller).
+  The submit test's real-wiring claim was verified, not assumed: the `onScreeningCreated(...)`
+  call was briefly severed, the test was confirmed to fail (0 calls, not a stale assertion), then
+  reverted and reconfirmed green — closing the exact vacuous-test class principal-reviewer caught
+  on the immediately prior Tier 5 batch. All 3 files' existing/external importers confirmed
+  unchanged (same export names/props; `interview-kit-drawer.tsx`'s 2 real component consumers
+  — `application-interview-panel.tsx`/`my-interviews-list.tsx` — and
+  `screening-start-dialog.tsx`'s sole importer, `applications-in-candidate-card.tsx`, needed zero
+  edits). Zero behavior/accessibility/ARIA change anywhere. Verification: `vitest run` on all 3
+  affected test files — 11/11 passed (2 + 7 + 2); `tsc --noEmit` clean repo-wide; `eslint` clean
+  on all 8 touched/created files. Local-only per user instruction (GitHub Actions billing-blocked
+  until 2026-09-01) — not pushed, no PR.
+- 🔴 `backend/app/modules/candidates/_extraction_tasks.py::_do_extract` — 138 lines, over the
+  40-line function cap. Flagged 2026-08-25 (principal-reviewer review of
+  `dev/tech-debt-batch2-data-query`, Major 3) as pre-existing, not caused by this batch's changes
+  (the file's own line-count fix that batch made was extracting `_build_update_from_profile` to
+  `_extraction_mapping.py`, not touching `_do_extract` itself) — needs its own decomposition pass
+  (same class as the `interviews/service.py`/`applications/service.py` oversized-function backlog
+  above), not attempted here to keep this batch's scope surgical.
+- **Tier 4 (backend, highest-risk) — `applications/service.py` + `applications/_service_helpers.py`
+  executed 2026-08-27, branch `dev/hygiene-tier4-applications-service`:** per the user's own
+  explicit decision on the plan doc's one open design question (update all test `mock.patch`
+  targets to the new split locations — no re-export shim to preserve the old single-location
+  `write_audit_log` patch convention). `_service_helpers.py` 621→0 (deleted, fully redistributed
+  into 3 new files per its own 3 separable groups): `_status_rules.py` 230 lines (BR-003 transition
+  matrix + BR-018 mandatory-field validation), `_response_builders.py` 135 lines (pure
+  response-shape builders), `_interview_sync.py` 273 lines (BR-013/BR-SYNC-005/Issue-5
+  cross-module interview-outcome sync — `LEVEL_TO_APP_STATUS` landed here first, before
+  `service.py`'s own split, exactly as the plan doc required). `service.py` 667→346 lines, split
+  into `_service_creation.py` (147 lines, BR-014/BR-021), `_service_transitions.py` (341 lines,
+  update_status/withdraw_application write paths + the 3 shared gate helpers'
+  bodies + `get_valid_next_statuses`' body), `_service_recruiter.py` (110 lines, BR-022/BR-023).
+  `ApplicationService`'s public + private method set and every signature confirmed
+  byte-identical before/after via AST diff (no method added/removed/renamed/re-signatured).
+  The 3 gate helpers (`_position_is_closed`/`_offer_pipeline_eligible`/`_no_show_gate_satisfied`)
+  deliberately kept as thin, same-named wrapper methods ON the class in `service.py` — several
+  existing unit tests patch them at `ApplicationService.<name>` or call them as bound methods
+  directly (`svc._no_show_gate_satisfied(...)`), discovered only by reading the actual test
+  files rather than assuming the plan doc's "move to one of the new files" phrasing meant "move
+  the method off the class" — every split `do_*`/`compute_*` function calls back through the
+  bound `svc` instance to reach them, so patch/call semantics are unchanged. Interviews module's
+  cross-module import (`interviews/service.py` imports `auto_set_pending_on_interview_create`/
+  `auto_sync_from_interview_outcome`/`revert_to_pending_from_interview_outcome_cleared`) and
+  `applications/tasks.py`'s `TERMINAL_STATUSES` import, plus 2 backend-scripts files
+  (`backfill_legacy_feedback_outcome.py` + its unit test) all repointed to `_interview_sync.py`
+  — confirmed each is a 1-line import-path change only (`git diff --stat`), zero logic touched.
+  9 test files' `mock.patch` targets updated (exact count matched the plan's own "~9" estimate,
+  independently verified via a full-suite grep, not assumed): `test_service.py` (38 occurrences
+  across create/update_status/withdraw/update_recruiter/sync_recruiter, mapped to
+  `_service_creation`/`_service_transitions`/`_service_recruiter` per which method each guards),
+  `test_unit_p4_1_offer_pipeline_gate.py`, `test_unit_dropped_offer_declined.py`,
+  `test_unit_hiring_uniqueness_applications.py`, `test_unit_p4_1_onboarded_lockdown_recruiter.py`,
+  `test_unit_p6_2_position_closed_guard.py` (3 different targets across its 6 tests, split by
+  which of the 3 guarded methods each covers), plus 3 import-path-only fixes
+  (`test_unit_p35d_override_reason.py`, `test_unit_p37_list_display_status_label.py`,
+  `test_unit_phaseb_43_valid_next_statuses.py`). `test_unit_p4_1_offer_pipeline_gate.py`'s and
+  `test_unit_dropped_offer_declined.py`'s existing `ApplicationService._offer_pipeline_eligible`
+  patches needed NO changes (confirmed by reading the tests first) — exactly because that gate
+  stayed a class method. BR-SYNC-005/exception-propagation behavior confirmed unchanged: the
+  auto-sync functions' try/no-op-return structure and `update_status`'s exact exception-raise
+  ordering were moved verbatim (git diff shows deletion+identical re-addition, no logic edits).
+  417 applications+interviews unit tests, 6 backfill-script unit tests, `ruff`, and `mypy` all
+  clean. 🟡 Accepted residuals (same class as the `security/service.py`/`positions/repository.py`
+  residuals above): `service.py` 346 lines (46 over) and `_service_transitions.py` 341 lines (41
+  over) — the 3 gate helpers + `get_valid_next_statuses` could not be fully removed from
+  `service.py` without breaking existing test patch/call semantics, and their bodies (already
+  lengthy, pre-existing docstrings preserved verbatim rather than trimmed) had to land somewhere;
+  splitting them into a 4th new file was out of the dispatched scope (only 3 new files were
+  named). `interviews/service.py` + `interviews/_service_helpers.py` (1413 + 367 lines) were the
+  next, larger Tier 4 item — see the entry below (done).
+- **Tier 4 (backend, highest-risk) — `interviews/service.py` + `interviews/_service_helpers.py`
+  executed 2026-08-28, branch `dev/hygiene-tier4-interviews-service`:** `service.py` 1494→492
+  lines (grew slightly past the file's original 1413-line count before this batch started, per
+  actual `wc -l` at dispatch time — not a discrepancy in this batch's work), split by the plan
+  doc's 10 responsibility groups into **7** new `_service_*.py` files (not 6 — "redo/repeat" and
+  "feedback-outcome override" were combined into one file first, then re-split into
+  `_service_redo.py`/`_service_outcome_override.py` once the combined file (403 lines) was found
+  to exceed the cap; per the dispatch brief's own "do not force exactly 6 if 7 fits the natural
+  seams better"): `_service_creation.py` (202 lines, creation+sequencing), `_service_reads.py`
+  (147 lines, reads), `_service_scheduling.py` (315 lines, scheduling/status+panelists),
+  `_service_feedback.py` (359 lines, feedback+BR-SYNC-005 sync), `_service_kits.py` (145 lines,
+  level-kit orchestration), `_service_redo.py` (262 lines, redo/repeat), `_service_outcome_
+  override.py` (175 lines, feedback-outcome override). `_service_helpers.py` 373→0 (deleted,
+  redistributed into 3 new files by responsibility, not absorbed into the service split files):
+  `_response_builders.py` (145 lines, pure response-shape builders), `_create_validators.py`
+  (122 lines, BR-001/level-membership/BR-SEQ-001 sequencing gates), `_feedback_helpers.py` (122
+  lines, panelist eligibility/BR-SYNC-006/row builders — `_check_panelist_eligibility` is the one
+  symbol genuinely shared across two service-split files, `_service_feedback.py` and `_service_
+  outcome_override.py`). `InterviewService`'s 20 public methods (incl. `__init__`) confirmed
+  name/signature-identical before vs after via AST diff — zero drift; 6 previously-bound private
+  helper methods (`_sync_feedback_outcome`/`_revert_feedback_outcome`/`_sync_interview_status`/
+  `_publish_interview_scheduled_event`/`_validate_redo_eligibility`/`_apply_feedback_outcome_edit`)
+  became free functions in their new files, confirmed zero test coupled to them as bound methods
+  (no `patch.object(InterviewService, "_sync_..._outcome", ...)` anywhere in the suite). The 3
+  interleaved exception-handling conventions named as this file's real hazard were AST-diffed
+  function-by-function against `main` (try/except handler type + reraise/swallow flags compared
+  programmatically, not just read): BR-SYNC-005 (`_sync_feedback_outcome`/`_revert_feedback_
+  outcome` in `_service_feedback.py`) — 2 bare-`Exception` swallow blocks each, zero reraises,
+  identical to `main`; BR-SEQ-001 (`do_create_interview` in `_service_creation.py`) — zero
+  try/except blocks, identical to `main` (the gate's `LevelSequenceViolationError` propagates
+  unguarded); the redo/edit-outcome revert path (`do_redo_interview` in `_service_redo.py`,
+  `do_edit_feedback_outcome`/`_apply_feedback_outcome_edit` in `_service_outcome_override.py`) —
+  zero try/except blocks around `revert_to_pending_from_interview_outcome_cleared`, identical to
+  `main`. `_create_interview_row`'s/`_create_or_recover_feedback`'s pre-existing `IntegrityError`
+  handling (reraise vs recover, BR-002/P36) also confirmed unchanged. Test-file migration: 12
+  test files' `mock.patch` targets retargeted from `app.modules.interviews.service.<symbol>` to
+  the new per-flow module (`_service_creation`/`_service_scheduling`/`_service_feedback`/
+  `_service_kits`/`_service_redo`/`_service_outcome_override`), following the same per-user
+  decision as the applications Tier 4 batch (update call sites, no re-export shim) —
+  `test_service.py` alone had ~50 sites across its create/schedule/update_status/add_panelist/
+  remove_panelist/submit_feedback sections, mapped individually by which moved function each one
+  guards; `test_unit_p6_2_position_closed_guard.py`'s single shared `_AUDIT`/`_REVERT` constants
+  had to split into per-guarded-method constants (`_AUDIT_SCHEDULING`/`_AUDIT_FEEDBACK`/
+  `_AUDIT_OUTCOME`/`_AUDIT_REDO`, `_REVERT_OUTCOME`/`_REVERT_REDO`) since one file covers all 7
+  guarded methods across 4 different destination modules. **Review round 1 caught 2 Major +
+  5 Minor** (principal-reviewer, CHANGES-REQUESTED) — fixed same session: (M1) the 2
+  `test_get_interview_read_only_audit_not_called`/`test_list_interviews_read_only_audit_not_
+  called` tests were retargeted to patch `app.shared.audit.write_audit_log` directly, which does
+  NOT intercept the module-local `from ... import write_audit_log` bindings every write-path file
+  holds — the assertion could never fail; confirmed by injecting the actual regression and
+  watching the test pass for the wrong reason. Fixed by patching `_service_reads.write_audit_log`
+  with `create=True` (today the attribute doesn't exist so the assert holds trivially; the
+  moment a regression adds the import, this patch intercepts it) plus an explicit
+  `assert not hasattr(_service_reads, "write_audit_log")` documenting the real guarantee. (M2)
+  `_service_scheduling.py`'s header claimed its BR-SYNC-001 swallow "mirrors BR-SYNC-005's
+  logging convention" when the actual code was a silent `except: pass` — fixed by adding the
+  missing `_logger.warning(...)` call (closing a pre-existing NFR §4 violation carried into a
+  brand-new file, same remediation class as Tier 3 frontend batch 3's dead-`useRef` fix) and
+  correcting the header to state the log call was added in this commit. (m1-m2) 2 stale
+  intra-module pointers still naming `_service_redo.py` for logic that actually lives in
+  `_service_outcome_override.py` (`_feedback_helpers.py`'s header, `service.py:9`) — corrected.
+  `test_service.py`'s direct `_create_interview_row` import/4 `Interview`-class patches also
+  repointed to `_service_creation`. 417 interviews+applications unit tests, `ruff`, and `mypy`
+  all clean. 🟡 Accepted residuals (same class as prior Tier 3/4 residuals above): `service.py`
+  492 lines (192 over — 20 public methods with full docstrings is inherently larger than
+  applications' 13-method file), `_service_scheduling.py` 315 (15 over), `_service_feedback.py`
+  359 (59 over, the single cohesive BR-SYNC-005 group) — none split further without either
+  fragmenting a cohesive BR group or duplicating docstrings between the class wrapper and the
+  `do_*` function (the mandate's own "do not duplicate" instinct, applied here to keep the class
+  file's per-method docstrings to a 2-3 line pointer at the `do_*` function rather than the full
+  BR prose, which is what brought `service.py` down from an initial 547-line first draft).
+- **Tier 4 (backend, mechanical but high external-caller fan-out) —
+  `applications/repository.py` + `interviews/repository.py` executed 2026-08-28, branch
+  `dev/hygiene-tier4-repositories`:** `applications/repository.py` 561→444 lines — the 8 raw SQL
+  string constants (`_LIST_SQL`/`_COUNT_SQL`/`_DETAIL_SQL`/`_INTERVIEW_SUMMARY_SQL`/
+  `_STATUS_HISTORY_SQL`/`_HEADCOUNT_SQL`/`_ORG_REJECTION_SQL`/`_SCHEDULED_INTERVIEW_LABELS_SQL`)
+  extracted to a new `_queries.py` (129 lines, byte-identical content — SHA-256 verified —
+  de-underscored names, aliased back to the original private names so no method body changed);
+  `ApplicationRepository`'s 15 methods
+  left intact in one class, per this doc's own guidance against a riskier mixin/method split
+  given how many external modules (`applications/service.py`+`tasks.py`, `offers/`, `screening/`,
+  `interviews/service.py`+`_service_creation.py`) import the class by name — confirmed via grep,
+  zero of them needed any change since they only ever import the class, not the module-level SQL
+  constants. `interviews/repository.py` 1039→382 (core file) + 5 new mixin files split by the
+  named query family (verified zero cross-method calls, matching this doc's plan-time analysis):
+  `_repo_panelists.py` (115 lines), `_repo_feedback.py` (173), `_repo_sequencing.py` (193),
+  `_repo_redo.py` (131), `_repo_my_interviews.py` (143) — combined into `InterviewRepository` via
+  multiple inheritance (MRO confirmed conflict-free: `InterviewRepository` →
+  `PanelistRepositoryMixin` → `FeedbackRepositoryMixin` → `SequencingRepositoryMixin` →
+  `RedoRepositoryMixin` → `MyInterviewsRepositoryMixin` → `object`). Core file keeps CRUD/status-
+  history/level-kit methods plus `_DETAIL_SQL`/`_LIST_SQL` (both depend on the shared
+  `CATEGORY_RANK_SUBQUERY`); confirmed `test_category_rank_regression.py` actually imports
+  `CATEGORY_RANK_SUBQUERY` from the already-promoted `app/shared/sql_fragments.py` module (this
+  doc's older note describing it as a private constant of `repository.py` was stale from before
+  the 2026-08-26 promotion — corrected here), so nothing needed to change for that test either
+  way. Confirmed via grep — zero callers of `interviews.repository` outside the module itself
+  (`service.py`, `tasks.py`, `_kit_context.py`, `_service_creation.py`, `_service_feedback.py`,
+  `_service_redo.py`, and the module's own tests) — matches this doc's "repository correctly
+  stays module-private" note. Both classes' public methods AST-diffed against `main` (name +
+  positional/keyword-arg signature comparison): zero symmetric difference on either class, zero
+  signature drift. Full unit suite (417 passed, 0 failed, 294 skipped — pre-existing DB-gated
+  skips unrelated to this batch), `ruff check`, and `mypy` all clean on both modules. 🟡 Accepted
+  residuals (same class as prior Tier 3/4 residuals above): `applications/repository.py` 444
+  lines (144 over — 15 cohesive methods with no natural sub-grouping, exactly the plan doc's own
+  prediction) and `interviews/repository.py` 382 lines (82 over — core CRUD + status-history +
+  level-kit methods were not among the 5 named split families, so they stayed together;
+  splitting them further wasn't in scope and risked the exact "riskier second pass" this doc
+  warns against elsewhere). Remaining Tier 4 items after this batch: `position-form-drawer.tsx`
+  and `application-status-drawer.tsx` (both frontend).
+- **Tier 4 (frontend, `position-form-drawer.tsx` — biggest file in the sweep) executed
+  2026-08-29, branch `dev/hygiene-tier4-frontend`:** 965→519 lines. Split into a pure-helpers
+  file (`position-form-drawer.helpers.ts`, no React import, unit-testable without a DOM) + 4
+  presentational fieldset components (`position-basics-fieldset.tsx`,
+  `position-hiring-manager-fieldset.tsx`, `position-jd-upload-fieldset.tsx`,
+  `position-recruiter-assignments-fieldset.tsx`) + a banner-stack component
+  (`position-form-status-banners.tsx`). `handleSubmit`'s 3-step chain (position write →
+  non-blocking recruiter assignments → non-blocking chained JD upload, each with its own error
+  semantics) stayed intact in the orchestrator per this doc's own explicit constraint — confirmed
+  by reading the function body, not the header comment's claim alone. Both external importers
+  (`position-detail.tsx`, `positions-list.tsx`) confirmed unchanged (same `PositionFormDrawer`
+  export name/props). `position-form-drawer.test.tsx`: 4 of 7 tests fail — independently
+  confirmed identical (same count, same failing assertions, same error location) against
+  unmodified `main` via a stash-and-rerun isolation, not a regression from this split. `tsc
+  --noEmit` and `eslint` clean on all 7 touched/created files. **Note on how this batch ran:** the
+  dispatched `ux-ui-engineer` agent stalled mid-turn (harness-reported "no progress for 600s")
+  right after completing this split but before the doc-update/commit step — `ListAgents`
+  confirmed no live process, the split itself (verified via `tsc`, `eslint`, and the test
+  isolation above) was already complete and correct, so this doc entry and the commit were done
+  directly rather than re-running the whole dispatch. 🟡 Accepted residual (same class as the
+  backend residuals above): `position-form-drawer.tsx` stays 519 lines, 219 over the 300-line
+  cap — the remaining size is the drawer's own state block plus the plan-mandated 3-step
+  `handleSubmit` chain (~105 lines, itself over the 40-line function cap but explicitly sanctioned
+  by this doc's own constraint that the chain must not be distributed into children).
+- **Tier 4 (frontend, `application-status-drawer.tsx` — LAST Tier 4 item, closes out the entire
+  48-file sweep) executed 2026-08-29, same branch `dev/hygiene-tier4-frontend`:** 369→290 lines.
+  Split into a pure-helpers file (`application-status-drawer.helpers.ts`, no React import —
+  `computeFilteredStatuses`, `buildFilteredPendingReasons`, `getRejectionFieldCopy`, plus the
+  shared `selectClass`/`textareaClass`/`inputClass` field-styling constants), a banner-stack
+  component (`application-status-banners.tsx`), and a presentational reason/date-fields component
+  (`application-status-reason-fields.tsx` — the pending-reason/rejection-reason/hold-reason/
+  tentative-DOJ/onboarded-at/offer-declined-reason fields, visibility driven entirely by the
+  `needs*` flags the orchestrator already computed, zero business logic in the child). Per this
+  doc's own explicit constraint, `validate()` and `handleSubmit()` stayed co-located, unmoved, in
+  the orchestrator. This file's header names 4 business rules as its densest documentation of
+  anything in the sweep — all 4 confirmed preserved by reading the actual code, not the header
+  comment alone: **D6** (interview-status-lifecycle-phaseb) — the status dropdown's option set is
+  the backend's live `valid_next_statuses`, currentStatus pinned per M-1 — moved verbatim into
+  `computeFilteredStatuses`, logic unchanged. **D10** (interview-status-lifecycle-phaseb) — a 409
+  `OFFER_PIPELINE_NOT_ELIGIBLE` is shown as a plain, verbatim error with no skip-recovery
+  affordance — untouched, still inline in `handleSubmit`'s `catch` block. **D3/D4** (positions-
+  closed-lockdown-phasec) — a closed position disables Save status and shows an explanatory
+  banner, the backend's own 409 `POSITION_CLOSED` staying authoritative — untouched logic
+  (`positionClosed` still computed in the orchestrator), only the banner's JSX moved into
+  `ApplicationStatusBanners`. Confirmed only 2 real external importers (`application-list.tsx`,
+  `applications-in-position-card.tsx`), both unaffected — same `ApplicationStatusDrawer` export
+  name/props; a 3rd grep hit in `application-interview-panel.tsx` was a stale doc-comment, not an
+  import. `application-status-drawer.test.tsx` (the file's own pre-existing 5-test suite, already
+  covering D6/D10/D3/D4 directly) — all 5 pass unmodified against the split version; since none
+  failed, no stash-and-rerun pre-existing-failure isolation was needed. `tsc --noEmit` and `eslint`
+  clean on all 4 touched/created files. **This is the last remaining item in the entire 48-file
+  Tier 1-4 code-hygiene decomposition sweep — Tier 4, and the sweep as a whole, is now complete.**
 
 ## 7. Tech debt — dependencies & secrets
 
@@ -319,11 +952,44 @@ going fully green on ANY PR" class as typecheck/component-test above.
   - ✅ P2 — DB pool undersized (`core/database.py` → explicit pool_size=20/max_overflow=30/pool_recycle=1800).
   - ✅ P3 — JD extraction async fix. 4 principal-reviewer rounds, each catching real narrowing issues (commit-ordering race, missing frontend polling, a bug in the polling fix itself, then 2 mutation-tested test-coverage gaps) — all closed. Also surfaced and documented a real Windows-only Celery infra issue (`docs/LOCAL_DEV.md`: `--pool=solo` required, default prefork crash-loops on this dev machine — not a code defect, but looks exactly like one from the outside).
   - ✅ P4 — report queries LIMIT-after-full-computation, fixed in `_pipeline_progress_sql.py` (page_positions CTE pushes LIMIT before the 5 event-join CTEs).
-  - ✅ P5 — unbounded sub-collection endpoints. `applications`/`interviews` `/status-history` now paginate (limit/offset, default 50/max 200); spec updated same-PR. `positions/{id}/history` has the same unbounded shape but lives in `subresource_service.py` — follow-up, not yet scheduled.
+  - ✅ P5 — unbounded sub-collection endpoints. `applications`/`interviews` `/status-history` now paginate (limit/offset, default 50/max 200); spec updated same-PR. `positions/{id}/history` follow-up now DONE (`dev/optimization-positions-history-pagination`, 2026-08-31): `router.py`/`subresource_service.py`/`repository.py` thread `limit`/`offset` through to a SQL `LIMIT`/`OFFSET` (not a Python slice), same `_MAX_HISTORY_LIMIT = 200`/default 50 as applications, sort order (changed_at DESC) unchanged; `openspec/specs/positions/spec.md` updated same-commit. Frontend caller (`use-position-queries.ts`'s `usePositionHistory`) had no "load more" affordance and rendered the full list unconditionally — rather than silently truncating to 50, it now explicitly requests `limit=200` to preserve current behavior; a proper paginated UI (if a position ever exceeds 200 history rows) remains unscheduled tech debt.
   - ✅ P7/P6 — safely-parallelizable sequential awaits (~5 DB round trips/request), CLOSED. `set_rls_context` (2→1 round trip, unit-tested in `backend/tests/unit/test_core_database.py` including placeholder-to-GUC pairing so a bind-swap can't silently pass), `User.role` selectin→joined, 4 repos' count+rows → `COUNT(*) OVER()` (departments' assertion moved to the passing `test_list_without_search_omits_like` per M2), `Role.permissions` `lazy="selectin"` → `lazy="raise"` per M4 (closes the last round trip; only usage anywhere in `backend/` is a class-level `.join(Role.permissions)` in `security/repository.py`, unaffected by the loader-strategy change). N1 (unused fixture param), N2 (per-fixture post-teardown verification), N3 (idempotent teardown safety net) also closed. principal-reviewer: APPROVE after remediation round.
     - **Root cause of the pre-existing `departments` test failure, now confirmed and FIXED:** `openspec/specs/departments/spec.md` AC-004 requires the list ordered by name; `departments/repository.py` ordered by `updated_at desc` instead — spec-vs-code drift, a real defect. Corrected on `dev/tech-debt-batch1` (PR #199), merged together with this Phase 2b's `COUNT(*) OVER()` windowed-count optimization on the same query — see §5 above. `organizations`' equivalent failure had no ordering AC in its spec, so that one was a genuinely stale test — fixed alongside (test assertion only, repository untouched).
-    - Follow-up (N5, not blocking): `departments/repository.py` and `positions/repository.py` each still issue their own extra `set_config` round trip on top of `set_rls_context` — same finding family as P7/P6, not yet scheduled.
+    - ✅ Follow-up (N5) investigated 2026-08-29, closed — NOT removed, for a different reason than
+      first thought. `departments/repository.py`/`positions/repository.py`'s
+      `set_org_scope(org_id)` looked like an extra `set_config` round trip on top of
+      `set_rls_context`. First investigation pass (wrong, corrected same session by
+      `principal-reviewer`'s independent re-trace) claimed it was load-bearing for internal STG
+      staff — it is not: `set_rls_context` sets `app.is_internal='true'` for exactly the users
+      who have no `organization_id` (`core/dependencies.py`), and every org-scoped RLS policy in
+      this schema contains an `fn_is_internal()` disjunct (3 of the 8 also add a leading
+      `organization_id IS NULL`; `candidate_source_details` is `USING (fn_is_internal())` alone)
+      — so the disjunction is satisfied regardless of `fn_current_org()`'s value for an internal
+      user, and the org GUC `set_org_scope` sets cannot affect the outcome for them.
+      `app.current_org`/`fn_current_org()` are consumed nowhere outside these RLS policies (no
+      trigger/view/column default/app SQL) — verified independently, only 2 `current_setting`
+      call sites exist in the whole schema, both inside `fn_current_org()`/`fn_is_internal()`
+      themselves. **But this is NOT "redundant-and-safe" on the other branch, and is NOT kept as
+      defense-in-depth — see the new §7 item below.** For org-scoped (non-internal) users,
+      `positions/_service_writes.py`'s write path passes a CALLER-SUPPLIED `organization_id` into
+      `set_org_scope` before the INSERT, which (since `rls_positions_isolation` is a `FOR ALL`
+      policy with no separate `WITH CHECK`, defaulting to the same `USING` predicate) actively
+      MOVES the RLS check to whatever org the request claims, rather than confirming the actor's
+      own — this is a latent authz weakening, not a safe no-op, on the one branch where the GUC
+      is actually live. Kept in place only because untangling it is a real authz change (needs an
+      actor-org check added to the write path), not a perf-cleanup decision — see §7.
   - ⏸️ P8/P9 — index gaps + unrefreshed materialized views. Explicitly pre-production risk per auditor, not a current bottleneck — deferred to pre-go-live.
+    - New instance found 2026-08-29 (`principal-reviewer`, reviewing the `positions/{id}/history`
+      pagination fix below): the only usable index on `position_history` is
+      `idx_pos_hist_pos_type_time (position_id, change_type, changed_at DESC)`. With equality on
+      `position_id` alone, that index yields rows ordered by `(change_type, changed_at)`, which
+      does NOT satisfy `ORDER BY changed_at DESC` — so Postgres still fetches and sorts every row
+      for the position before applying LIMIT (confirmed via live `EXPLAIN`: `Sort` over a
+      `Bitmap Heap Scan`, not an ordered `Index Scan`). The response payload is now bounded
+      (the actual fix), but the DB-side sort work is not — unbounded at very large per-position
+      history counts. A `(position_id, changed_at DESC)` index would allow an ordered index scan
+      with LIMIT pushed in; not yet built or `EXPLAIN`-verified (Rule 7 — must be live-verified at
+      build time, not assumed).
 - ⏸️ Phase 2c — load-testing harness + 200-250 concurrent-user capacity validation. Auditor's own view: numbers would be meaningless until P0/P2 land (now done) — still nothing built, tool choice (Locust/k6/custom) an open decision for the user.
 - ✅ Watch-item resolved 2026-07-28 (see P4 above): `_pipeline_progress_sql.py`'s event CTEs now join only against the current page's positions, not the full matched-position set.
 - ❓ Watch-item (new, pipeline-progress-all-levels, 2026-07-31/08-02): the single-level fix above does NOT extend to `_pipeline_progress_all_levels_sql.py` — its event CTEs still compute over the FULL matched-position set before pagination (1 LATERAL CTE for on_hold becomes up to 5 for the 4 new cross-cutting measures, and the row grain multiplies by each position's active-level count instead of one row per position). Partially mitigated by measure-scoped SQL generation (`build_all_levels_rows_sql`, principal-reviewer finding 9) which only builds CTEs for requested measures, but the full-matched-set-before-pagination shape itself is unchanged. Two more confirmed-via-live-EXPLAIN cost items, neither addressed by the finding-9 mitigation: (a) the 4 direct-event CTEs (scheduled/selected/rejected/pending) filter on `ash.new_status::text ~ '_selected$'`-style regex instead of an indexable enum equality; (b) the event-CTE-to-`matching_positions` join is a `Join Filter` evaluated on a computed `CASE` expression (deriving `level_key` from `pending_reason`), not an equijoin on an indexable column. Measured at dev scale: 128-151ms for all 9 measures, worst single grain row fans out to 375 join rows. Feeds into Phase 2c when it happens. The `category_rank` double-SubPlan issue (round 1 finding) is fixed — `RANK() OVER (...)` replaced the correlated `COUNT(*)+1` subquery; live EXPLAIN against real populated data (77 positions/809 levels) confirms 0 `SubPlan`s, 1 `WindowAgg`.

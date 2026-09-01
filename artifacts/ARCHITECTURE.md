@@ -93,6 +93,15 @@ JD extraction, candidate-to-position matching, screening-question generation, an
 interview-kit generation are exempt from these synchronous-request targets — they run
 asynchronously via Celery, off the request path, by design.
 
+`POST /auth/login` is exempt from the < 300ms p95 write target, by explicit user decision
+(2026-08-29, `docs/BACKLOG.md` G13). Root cause: bcrypt (12 rounds) password verification is
+GIL-bound in the thread-pool executor, producing a genuine fixed-cost floor (measured
+p95=793.75ms at 1 VU, zero concurrency — not a queueing artifact, see the caveats below).
+Reducing `BCRYPT_ROUNDS` was considered and explicitly declined in favor of keeping the current
+security posture; sizing the API Fargate task's vCPU count (G10) does not lower this floor
+either. Login remains functionally correct and available (0% error rate in every measured run)
+— this is a documented latency exemption, not an outstanding defect.
+
 **Status: first real measured baseline recorded 2026-08-17** (GitHub Actions run
 [32053886296](https://github.com/hareeshstggit/ats-platform-project/actions/runs/32053886296),
 `load-test.yml`, 30 max VUs — the harness's own lowered-from-200 default per this

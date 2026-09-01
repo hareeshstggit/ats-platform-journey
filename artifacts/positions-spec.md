@@ -316,10 +316,15 @@ Response 201 : List[InterviewLevelResponse]
   Used when setting up the interview pipeline before candidates are mapped.
   InterviewLevelResponse includes:
     panelists      : array of { panelist_id, panelist_name } (0-3 items, ordered by
-                     sequence_number 1-3 — assignment order, not interview order)
+                     sequence_number 1-3 — assignment order, not interview order).
+                     panelist_name is nullable: it is `null` when the caller's RLS
+                     context cannot read the `interview_panelists` master record
+                     (`interview_panelists_internal_only` — non-internal sessions).
     level_category : 'stg_labs' | 'organization'
 Errors:
-  400 VALIDATION_ERROR         — level_category missing or not one of 'stg_labs'/'organization'
+  422 VALIDATION_ERROR         — level_category missing or not one of 'stg_labs'/'organization'
+                                 (FastAPI's RequestValidationError handler is hard-coded to
+                                 422 for every validation failure, per `exception_handlers.py`)
   400 PANELIST_MIN_REQUIRED    — an update would drop panelist_ids below 1 for a level that
                                  already has panelists. Message: "at least one interview
                                  panelist need to be assigned to the interview level."
@@ -342,13 +347,14 @@ reads the configured list and gates on it (see interviews/spec.md's scheduling e
 multi-panelist structure as the sole (sequence_number = 1) entry for that level —
 additive, no data loss, per CLAUDE.md's backfill mandate.
 
-**Known gap (spec-sync audit 2026-07-10, tracked as BUG-4 in
-test_functional_p27_pos_close_autoclose.py:648):** `InterviewLevelRequest` and
-`InterviewLevelResponse` in schemas.py do NOT actually declare a `level_category`
-field — the service computes it internally from `level_type` instead of accepting/
-returning it as documented above. This is a real code gap versus this spec
-(spec is ahead of code here), not stale documentation — do not "fix" by removing
-the field from this spec; fix the code to match.
+**Gap closed (spec-sync audit 2026-07-10 → fixed docs/BACKLOG.md §4 BUG-4):**
+`InterviewLevelRequest` and `InterviewLevelResponse` in schemas.py now declare
+`level_category` as documented above — a real, accepted request field and a real
+response field, no longer silently derived from `level_type` in the service. A
+model validator on `InterviewLevelRequest` enforces `level_category == level_type`
+(422 VALIDATION_ERROR on mismatch) — the spec is silent on the two diverging, and
+today's product behavior never lets them, so the invariant is enforced rather than
+left unvalidated.
 
 Note (P27): level_category drives two downstream behaviours:
   1. Per-level interview kit generation (interviews module, §10) — kits are generated
@@ -370,7 +376,10 @@ Response 200 : List[InterviewLevelResponse] ordered by sequence_order
 
 ### GET /api/v1/positions/{id}/history
 Auth    : Bearer — roles: hr_admin, recruiter
-Response 200 : List[PositionHistoryResponse]
+Query   : offset (int, >=0, default 0), limit (int, 1-200, default 50) — this log grows
+          unboundedly over a position's lifecycle (NFR Phase 2b, P5 follow-up); the endpoint
+          is paginated like applications' /status-history rather than returning every row.
+Response 200 : List[PositionHistoryResponse], page-bounded by offset/limit
   All changes: creation, count changes, JD changes, status changes
   Ordered by changed_at DESC
 
@@ -532,7 +541,8 @@ AC-008a Invalid status transition (onboarded → open) → 409
 AC-009  Full-text search positions with search="python developer" →
         returns positions whose title matches
 AC-010  GET position history → shows created, count changes, JD changes
-        in reverse chronological order
+        in reverse chronological order; returns a page (default limit=50, max 200) of
+        history rows, page-bounded by offset/limit
 AC-011  Create/patch a position with approved_at set → stored; GET returns approved_at
         (Position Approved Date) and created_at (Position Creation Date)
 AC-012  TAT tranches: count 10 approved 01-May-2026, raised to 20 on 20-May-2026 →
