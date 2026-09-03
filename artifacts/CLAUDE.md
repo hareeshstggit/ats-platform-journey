@@ -618,6 +618,36 @@ Threshold: material risk to one of the 10 dimensions, calibrated the same way
 everything, always, is itself a violation of this mandate's own economy: it degrades signal and
 adds cost without adding protection.
 
+## Coverage-gate risk-impact caveat (binding — added 2026-09-03)
+
+The 80% test-coverage gate (Code quality, above) stays fixed at 80% — it is never lowered,
+scoped down, or relaxed to make a shortfall mergeable. This section governs what happens when
+a merge candidate's coverage sits below 80% anyway (a "delta shortage"): the gate number never
+moves, but a red gate alone is not automatically a merge blocker — a red gate that provably
+touches one of the 10 dimensions from Proactive Deviation Flagging (above) is.
+
+Before deciding whether a coverage shortfall is mergeable:
+1. Identify the SPECIFIC files/lines that make up the delta (the uncovered code causing the
+   shortfall) — not the aggregate percentage alone.
+2. State explicitly, for each, whether it touches any of the 10 dimensions (Quality,
+   Performance, Scalability, Reliability, Security, Observability, Modularity, Maintainability,
+   Code/Design, Architecture/Extensibility) — e.g. an untested authz path, an untested
+   retry/idempotency path, an untested audit-log emission, an untested migration downgrade.
+3. **If any uncovered path touches any dimension**: the 80% gate is a hard blocker for that
+   merge — coverage there must be raised first, no exception.
+4. **If the uncovered delta is provably inert against all 10** (e.g. dead code in a
+   standalone demo/seed script, trivial boilerplate with no behavior of its own): merging
+   despite the red gate is explicitly permitted, with the per-item reasoning from step 2
+   stated in the PR/commit — never silently assumed clear.
+5. **If both the coverage shortfall AND any other tracked low-urgency item are confirmed, by
+   this same assessment, to have no impact on the 10 dimensions**: track them in
+   `docs/BACKLOG.md` and continue — do not block a merge on low-urgency, no-impact debt.
+
+This is a risk-weighted enforcement of the same fixed 80% number, not a policy exception —
+`principal-reviewer`'s standing checklist additionally confirms: (e) was the coverage delta's
+file/line list actually identified (not just the aggregate %), and (f) was each item's
+10-dimension impact stated explicitly, not assumed away.
+
 ## Token-optimized development (binding — every task)
 
 Compute cost is real; discipline keeps it proportionate to value delivered.
@@ -848,6 +878,27 @@ versioned — not buried in chat. This is enforced in the SAME change, never aft
   run `git checkout main && git pull origin main && alembic upgrade head` and confirm
   `alembic current` shows `(head)`. Local dev DB and main must always be at the same
   Alembic head.
+
+### Branch-protection process substitute (binding — added 2026-09-03)
+
+GitHub's native branch protection / required-status-checks feature is UNAVAILABLE on this
+repo (private repo, free plan — confirmed via `gh api repos/.../branches/main/protection` →
+`403`, requires GitHub Pro/Team/Enterprise for a private repo). A red CI has never been able
+to physically block a merge here; it only ever informs a human decision. The user's explicit
+call: no plan upgrade unless there is no other option. Two things close most of the real gap
+at $0:
+
+1. **Process-level substitute (does the actual work).** A merge instruction — from the user
+   or self-directed — is never carried out while any of that PR's required CI jobs are red,
+   without an explicit override. Before running `gh pr merge` (or advising the user it's safe
+   to), check `gh pr checks <PR>` first; if anything is red, surface it and ask, on the same
+   footing as the 3-request override pattern — a single "merge it" does not override a red
+   check.
+2. **Visibility booster.** `backend-ci.yml` and `frontend-ci.yml` each carry a
+   `pr-status-summary` job (`needs:` all of that workflow's real jobs, `if: always()`) that
+   posts/updates one PR comment summarizing every job's result as a single ✅/❌ line —
+   reporting-only, cannot gate or affect the jobs it reads. Makes a red PR impossible to miss
+   at a glance without opening the Actions tab.
 
 ### GitHub Actions minutes — usage check is mandatory, not optional (binding — added 2026-08-02)
 
