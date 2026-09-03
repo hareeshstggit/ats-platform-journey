@@ -16,6 +16,22 @@ documentation — function docstrings, per-module dependency headers, and the
 auto-generated API reference — updates with **every** code or spec change (see
 "Engineering mandate" and "Living documentation" below).
 
+## Table of Contents
+
+- Bird's-eye view
+- Engineering mandate
+- Performance & Scalability (SLOs)
+- Code map
+- The two main flows
+- Architecture Invariants
+- Boundaries
+- Living documentation
+- Where to make a change
+- Baseline artifact placement
+- What this document is not
+
+---
+
 ## Bird's-eye view
 
 The ATS accepts candidate profiles and job descriptions from recruiters (through

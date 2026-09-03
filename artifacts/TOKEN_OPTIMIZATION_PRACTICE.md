@@ -9,6 +9,22 @@ Version history in the [Changelog](#changelog) at the bottom.
 
 ---
 
+## Table of Contents
+
+- Who this is for
+- The core insight
+- Part 1: Project setup (before the first line of code)
+  — 1.1 Working agreement file · 1.2 Specialized agent definitions · 1.3 Skills for
+  mechanical work · 1.4 Cavecrew agents · 1.5 Prose compression · 1.6 Memory & progress
+  capture · 1.7 Pre-code setup checklist
+- Part 2: During development — the disciplines (D1–D15)
+- Part 3: Cost benchmarks (living)
+- Part 4: Anti-patterns (living)
+- Part 5: How this playbook evolves
+- Changelog
+
+---
+
 ## Who this is for
 
 Any team using Claude Code (or a similar AI coding assistant) on a production project.

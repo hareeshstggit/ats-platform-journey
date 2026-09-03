@@ -20,6 +20,23 @@ narrative, only current state.
 
 ---
 
+## Table of Contents
+
+- PRIORITY (read first)
+- 0. Go-Live readiness
+- 1. Active execution queue
+- 2. Pending merges
+- 3. Business-rule gaps
+- 4. Tech debt — data/query correctness
+- 5. Tech debt — tests/CI
+- 6. Tech debt — code hygiene
+- 7. Tech debt — dependencies & secrets
+- 8. NFR
+- 9. Feature backlog
+- How items move through this doc
+
+---
+
 ## PRIORITY (updated 2026-09-03 — read before anything else in this file)
 
 1. **`fix/main-ci-break` (PR #231) — MERGED to `main` 2026-09-03 (commit `97c18d78`).** Cleared

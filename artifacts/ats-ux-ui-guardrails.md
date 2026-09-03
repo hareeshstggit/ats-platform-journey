@@ -14,6 +14,46 @@ paths:
 
 ---
 
+## Table of Contents
+
+1. Mandatory pre-work before any UX/UI output
+2. ATS role coverage baseline
+3. Non-negotiable product principles
+4. Required UX discovery questions
+5. Information architecture and navigation guardrails
+6. Dashboard and task inbox guardrails
+7. Pipeline and workflow guardrails
+8. Candidate experience guardrails
+9. Candidate profile guardrails
+10. Requisition and job setup guardrails
+11. Search, filters, and data table guardrails
+12. Forms, validation, and recovery guardrails
+13. Collaboration and communication guardrails
+14. Interview scheduling and feedback guardrails
+15. Offer, approval, and onboarding guardrails
+16. Admin and configuration guardrails
+17. Permissions, privacy, security, and compliance guardrails
+18. AI, automation, and resume parsing guardrails
+19. Accessibility guardrails
+20. Localization and global enterprise guardrails
+21. Analytics and reporting guardrails
+22. Integration and sync guardrails
+23. Data quality and duplicate management guardrails
+24. Notifications and attention management guardrails
+25. Bulk action guardrails
+26. Visual design and design system guardrails
+27. Performance and scalability guardrails
+28. Screen state checklist
+29. Production UI definition of done
+30. OpenSpec artifact rules for ATS UX/UI work
+31. Claude Code usage rule
+32. Prohibited patterns
+33. Quick pre-flight checklist for agents
+34. Recommended repository wiring
+35. Maintenance rule
+
+---
+
 ## 1. Mandatory pre-work before any UX/UI output
 
 Before creating a screen, wireframe, component, interaction, page, route, or production UI, the agent MUST complete this sequence:

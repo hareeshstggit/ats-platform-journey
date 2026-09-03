@@ -7,56 +7,125 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (2026-09-03 — PR #231 merged to main; G15d/G15e/G19 still open pending
-## rebase; bucket (b) + coverage-gate policy still awaiting user's call)
+<details>
+<summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-**`fix/main-ci-break` → PR #231 → MERGED to `main` (commit `97c18d78`, 2026-09-03).** Clears
-43 of `main`'s original 48 tracked `test`-job failures + all 133 `typecheck` errors. Went
-through 4 `principal-reviewer` rounds (1: APPROVE-WITH-NITS on the mypy+3-stale-test-cluster
-work; a separate round caught and corrected a real near-regression — see below; rounds on the
-final 2 items: CHANGES-REQUESTED → CHANGES-REQUESTED [a real bug the fix itself introduced,
-an `autouse=True` fixture scope error that would have silently skipped 10 unrelated tests,
-caught by the reviewer executing the file, not reading it] → APPROVE-WITH-NITS). Local dev
-synced (`git pull` + `alembic upgrade head`, confirmed at `0061` head — no schema change in
-this PR). External docs mirror (`ats-platform-journey`) re-synced same batch.
+- 2026-09-03 — RESUME HERE FIRST: G15/G15b/G15c-G19 series + main-CI-break + bucket (b) ALL closed
+- 2026-09-01 — backend-ci Celery-worker saga CLOSED end-to-end
+- 2026-09-01 — G14 + P8/P9 code-optimization items CLOSED
+- 2026-09-01 — G16 audit_log partition gap CLOSED (PR #226)
+- 2026-08-31 — Tier 5 frontend-B CLOSED (9-file Tier 5 catch-up complete)
+- 2026-08-31 — Tier 5 code-hygiene backend catch-up CLOSED
+- 2026-08-29 — code-optimization batch 1 CLOSED
+- 2026-08-29 — BACKLOG §6 code-hygiene 48-file sweep CLOSED
+- 2026-08-28 — BACKLOG §6 Tier 4 batch 3 (repository.py splits) CLOSED
+- 2026-08-28 — BACKLOG §6 Tier 4 batch 2 (interviews/service.py) CLOSED
+- 2026-08-28 — BACKLOG §6 Tier 4 batch 1 (applications/service.py) CLOSED
+- 2026-08-28 — BACKLOG §6 Tier 3 frontend batch 3 (last frontend batch) CLOSED
+- 2026-08-28 — BACKLOG §6 Tier 3 frontend batch 2 CLOSED
+- 2026-08-27 — BACKLOG §6 Tier 3 frontend batch 1 CLOSED
+- 2026-08-27 — BACKLOG §6 Tier 3 backend fully CLOSED
+- 2026-08-27 — BACKLOG §6 Tier 2 + Tier 3 batch 1 CLOSED
+- 2026-08-27 — BACKLOG §6 code-hygiene Tier 2 CLOSED
+- 2026-08-26 — BACKLOG §4 tech-debt FULLY CLOSED
+- 2026-08-08 — superseded block, kept for history
+- 2026-08-07 — `async-pipeline-durability` fully merged, all 6 phases (PR #214-#219)
+- 2026-08-05 — live async-pipeline incident root-caused and fixed, Phase 1 merged (PR #214)
+- 2026-08-05 — 3 queued chart follow-ups merged (PR #212)
+- 2026-08-04 — Gemini interim LLM provider merged (PR #211); dev-stack watchdog live
+- 2026-08-04 — CI test-infrastructure PR #210 open, e2e login broken (paused)
+- 2026-08-04 — pipeline-progress-status-groups merged (PR #209)
+- 2026-08-02/03 — pipeline-progress-status-groups planning notes (superseded by above)
+- 2026-07-31 — CR-002 multi-panelist interview levels merged (PR #204)
+- 2026-07-24 — Execution Queue (user-ordered, one PR per item)
+- 2026-07-28 — UAT recruitment-funnel seeder built + verified
+- 2026-07-29 — NFR Phase 2b P0-P7/P6 done, PR #197 open pending CI
+- 2026-07-28 — real HTTP-based seed script built, verified
+- 2026-07-24 — GitHub Actions quota exhausted (paused, resumed 2026-08-01)
+- 2026-07-24 — PR #193 merged: agent model-tiering + CI independence + governance mandates
+- 2026-07-23 — paused, nothing in flight
+- 2026-07-23 — Phase C (positions closed-lockdown) merged (PR #191)
+- 2026-07-23 — Phase B consolidated interview-sequencing rework merged (PR #190)
+- 2026-07-21 — Phase A merged (PR #189)
+- 2026-07-21 — paused (superseded by above)
+- 2026-07-21 — Current state snapshot
+- — Backlog & tech debt — see docs/BACKLOG.md
+- 2026-07-21 — Restore-reliability incident — why this file exists
 
-**Near-miss during this cycle, corrected before merge**: a "fix" for a money-precision test
-briefly changed `BudgetPanel`'s schema fields `float`→`Decimal` — `principal-reviewer` caught
-this was reverting a deliberate prior fix (Pydantic v2 serializes `Decimal` as a JSON STRING,
-not a number, which would break the frontend's `typeof v === "number"` guards — confirmed by
-executing the actual serialization myself, not trusting the investigation's claim). Reverted;
-real fix applied instead (wrap test assertions in `Decimal(str(x))` — the actual bug was
-`Decimal(json_decoded_float)` exposing the IEEE-754 binary expansion, a test-harness artifact).
-Added a wire-type-pinning test + a spec note so this can't flip a 3rd time. **This exact
-near-miss is why the "orchestrator-level live-verification of third-party claims" mandate
-(below) now exists.**
+</details>
 
-**Still open, both the user's call, neither a code fix:**
-1. **Bucket (b)**: 5 failures in `app/modules/interviews/tests/test_category_rank_regression.py`
-   (a fixture FK-violation inserting `interview_levels` against a `position_id` never actually
-   persisted — separate root cause, never in `fix/main-ci-break`'s scope). Open since
-   2026-08-08 — past the new 14-day debt-escalation clock (see `docs/BACKLOG.md`'s PRIORITY
-   section). Needs a scheduling decision.
-2. **Coverage gate** (was 65.86% vs 80% required; not re-measured post-merge). Policy decision
-   — raise/lower/scope the threshold vs. chase genuinely-missing coverage; a large chunk of the
-   gap is structural (skipped/environment-gated tests + test files themselves count in the
-   denominator).
+## RESUME HERE FIRST (2026-09-03 — G15/G15b/G15c-G19 series + main-CI-break + bucket (b) ALL
+## closed; 5 PRs merged; only the coverage-gate itself (mergeable per the new caveat) is open)
 
-**PRs #228 (G15d), #229 (G15e), #230 (G19)** — still open, unmerged, code-complete and
-review-approved from 2026-09-02. Their first CI runs were red only because they inherited
-`main`'s pre-fix break; now that `main` has the fix, they likely need a rebase (or will
-auto-resolve once re-run against the new `main` — check on resume, don't assume).
+**6 PRs merged to `main` today, in order: #231 (`fix/main-ci-break`, `97c18d78`), #228 (G15d),
+#230 (G19), #229 (G15e), #232 (bucket (b), `fix/bucket-b-category-rank-fixture`, `5472a7d2`),
+#233 (`docs/claude-md-restructure`, `c572b21`).** Local dev synced each time (`git pull` +
+`alembic upgrade head`, confirmed at `0061` head — no schema change in any of the 6). External
+docs mirror re-synced each time (only whichever of the 18 mirrored files actually changed —
+mostly `BACKLOG.md`, twice `.claude/CLAUDE.md`).
 
-**Process root-cause + concrete measures (2026-09-03) — DONE, written into `.claude/CLAUDE.md`
-the same day** (not still pending, unlike this file's stale prior entry claimed): 3 new binding
-sections (review-round & script-verification discipline; debt-escalation & pre-investigation
-discipline; proactive deviation flagging) + a 4th (branch-protection process substitute: no
-plan upgrade, so a `pr-status-summary` CI job posts a merge-readiness comment per PR — already
-live-verified on PR #231's own real run — plus a process rule that a merge instruction is
-never treated as authorization while a required check is red without the user being shown
-exactly what's red first). `Documents/CLAUDE.md` (the near-duplicate parent-directory copy)
-deduplicated to a one-line pointer at `.claude/CLAUDE.md` — confirmed zero unique content lost
-before stubbing it.
+**#233 — `.claude/CLAUDE.md` restructured for readability**: added a Table of Contents grouping
+all 26 sections into 8 logical Parts; original section order preserved exactly (no reordering,
+no cross-reference risk); only heading levels changed one notch deeper under new Part headers.
+Zero content removed — verified via `git diff` line-by-line before merge. User reviewed
+via VS Code diff and approved. Purely structural — no rule/behavior change.
+
+**#228/#229 each needed a real rebase (merge conflict)** — `git merge-tree`'s "clean" exit code
+was WRONG both times; GitHub's own mergeability check caught what it missed, both times (once
+in `memory/resume-pointer.md`, once in `docs/BACKLOG.md` — resolved by combining each branch's
+own up-to-date content, not picking one side). **Lesson: don't trust `git merge-tree` alone on
+a heavily-narrated doc file — check GitHub's own `mergeable`/`mergeStateStatus` too.**
+
+**Near-miss during `fix/main-ci-break`, corrected before merge**: a "fix" for a money-precision
+test briefly changed `BudgetPanel`'s schema fields `float`→`Decimal` — `principal-reviewer`
+caught this was reverting a deliberate prior fix (Pydantic v2 serializes `Decimal` as a JSON
+STRING, not a number, breaking the frontend's `typeof v === "number"` guards — confirmed by
+executing the actual serialization myself, not trusting the claim). Reverted; real fix applied
+instead. **This is why "orchestrator-level live-verification of third-party claims" (below) is
+a binding mandate now, not just a good habit.**
+
+**Bucket (b) fix (PR #232) — own retro, since I made a real mistake mid-fix worth remembering**:
+root-caused correctly (a hardcoded FK-target UUID + a stale BR-SEQ-001 test), all 5 tests
+confirmed passing in REAL CI (not just locally) before merge. But my own first BACKLOG update
+for it asserted "scope closed (only 2 remaining carriers)" of the same dead-UUID class WITHOUT
+independently re-deriving it — `principal-reviewer` live-grepped and found 19 files across 6
+distinct dead UUIDs, not 2. Corrected with the reviewer's own verified numbers (2 more rounds
+to get the exact per-UUID counts right too — I undercounted twice more before it stuck).
+**This is the proactive-deviation-flagging mandate's own failure mode, caught by the review
+gate exactly as designed — a live demonstration of why that gate stays mandatory even on
+"just a docs update."**
+
+**Coverage-gate risk-impact assessment (per the new caveat mandate) — DONE, user decided to
+merge anyway.** Real application code (`app/modules/`, `app/shared/`, `app/workers/`) measured
+at **88.2%** via a full `--cov-report=json` run — already above the 80% gate. The aggregate 66%
+is entirely structural: 10 standalone `app/scripts/` files (seed/backfill/demo tools, 1,543
+statements, 15.7% covered), confirmed via repo-wide grep to be imported by ZERO production
+code, dragging the denominator down. Per-dimension assessment: inert against all 10
+(Quality/Performance/Scalability/Reliability/Security/Observability/Modularity/Maintainability/
+Code-Design/Architecture-Extensibility) — user explicitly approved merging with the gate
+red-but-explained. The gate itself was NOT lowered/scoped down; this is the risk-weighted
+enforcement the caveat exists for, applied for the first time.
+
+**Genuinely all that's left from this whole session's arc — both the user's call, neither
+blocking anything already merged:**
+1. **The coverage gate itself remains red** (66% aggregate) — user has NOT asked to configure
+   `pyproject.toml`'s `[tool.coverage.run] omit=` to exclude `app/scripts/*` from the
+   denominator (which would make the reported number match the real ~88%). Purely cosmetic/
+   reporting-accuracy at this point, not a risk decision — the risk decision is already made.
+2. **`app/modules/offers/tasks.py`** — 0% covered, 89 statements, a real Celery-task gap
+   touching Reliability/Observability (found during the coverage assessment, logged in
+   `docs/BACKLOG.md` §5, not blocking, needs its own scoped pass).
+3. **The 19-file dead-UUID class** (bucket (b)'s sibling defect, `docs/BACKLOG.md` §5) — same
+   fix shape as bucket (b), not yet scheduled.
+4. **G15c/G17** — already-parked, low-urgency, unrelated to today.
+
+**Process root-cause + concrete measures (2026-09-03) — DONE, in `.claude/CLAUDE.md`:** 4 new
+binding sections (review-round & script-verification discipline; debt-escalation &
+pre-investigation discipline; proactive deviation flagging — the 10-dimension standing duty;
+coverage-gate risk-impact caveat) + the branch-protection process substitute (no plan upgrade —
+a `pr-status-summary` CI job, live-verified on 5 real PRs today, plus a process rule that a
+merge instruction is never authorization while a required check is red without the user being
+shown exactly what's red first). `Documents/CLAUDE.md` deduplicated to a one-line pointer.
 
 ## RESUME HERE (2026-09-01 ~18:24 IST, backend-ci Celery-worker saga CLOSED end-to-end,
 ## merged AND PUSHED to origin/main, real-CI-confirmed clean — no follow-up needed)

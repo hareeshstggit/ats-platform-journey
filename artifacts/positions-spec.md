@@ -42,6 +42,25 @@
 # Status       : Ready for implementation
 # ─────────────────────────────────────────────────────────────
 
+## Table of Contents
+
+1. Purpose
+1A. Module ownership boundary (interview kit)
+2. AI Agent — JDExtractorAgent
+2A. Position dates, count history & Turnaround Time (TAT)
+3. API Endpoints
+4. Business Rules
+5. Acceptance Criteria
+6. Reporting Requirements
+7. Files to Create
+8. Dependencies
+8A. Position Status Engine — Phase 23B *(added 2026-07-02)*
+8B. Position Status Engine — Phase P24 *(added 2026-07-03)*
+9. No-Show Status *(v2.2 — added 11-Jun-2026)*
+10. Position Budget & Multi-Currency Cost Model *(v2.2 — added 11-Jun-2026)*
+11. Recruiter Ownership *(v2.2 enhancement — 2026-06-24)*
+
+---
 
 ## 1. Purpose
 
@@ -624,8 +643,7 @@ REPORT-3: Turnaround Time (TAT) — Organisation >> Position ID >> Position Titl
 # 8A. POSITION STATUS ENGINE — Phase 23B   (added 2026-07-02)
 # ════════════════════════════════════════════════════════════════════
 
-## 8A.1 Status transition matrix (Phase 23B + P24; open→closed row superseded
-## 2026-07-04 by the P24-gaps follow-up — see BR-NEW-002 and §8B.2 BR-P24-003)
+## 8A.1 Status transition matrix (Phase 23B + P24; open→closed row superseded 2026-07-04 by the P24-gaps follow-up — see BR-NEW-002 and §8B.2 BR-P24-003)
 
 | From        | To          | Trigger     | Guard                     | Reason handling                           |
 |-------------|-------------|-------------|---------------------------|-------------------------------------------|
