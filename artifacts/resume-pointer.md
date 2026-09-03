@@ -57,18 +57,29 @@ below before doing anything else.
 ## RESUME HERE FIRST (2026-09-03 — G15/G15b/G15c-G19 series + main-CI-break + bucket (b) ALL
 ## closed; 5 PRs merged; only the coverage-gate itself (mergeable per the new caveat) is open)
 
-**6 PRs merged to `main` today, in order: #231 (`fix/main-ci-break`, `97c18d78`), #228 (G15d),
+**7 PRs merged to `main` today, in order: #231 (`fix/main-ci-break`, `97c18d78`), #228 (G15d),
 #230 (G19), #229 (G15e), #232 (bucket (b), `fix/bucket-b-category-rank-fixture`, `5472a7d2`),
-#233 (`docs/claude-md-restructure`, `c572b21`).** Local dev synced each time (`git pull` +
-`alembic upgrade head`, confirmed at `0061` head — no schema change in any of the 6). External
-docs mirror re-synced each time (only whichever of the 18 mirrored files actually changed —
-mostly `BACKLOG.md`, twice `.claude/CLAUDE.md`).
+#233 (`docs/claude-md-restructure`, `c572b21`), #234 (`docs/mirrored-files-restructure`,
+`50c5cd4`).** Local dev synced each time (`git pull` + `alembic upgrade head`, confirmed at
+`0061` head — no schema change in any of the 7). External docs mirror re-synced each time
+(only whichever of the 18 mirrored files actually changed — mostly `BACKLOG.md`, twice
+`.claude/CLAUDE.md`, plus #234's 6-file batch).
 
 **#233 — `.claude/CLAUDE.md` restructured for readability**: added a Table of Contents grouping
 all 26 sections into 8 logical Parts; original section order preserved exactly (no reordering,
 no cross-reference risk); only heading levels changed one notch deeper under new Part headers.
 Zero content removed — verified via `git diff` line-by-line before merge. User reviewed
 via VS Code diff and approved. Purely structural — no rule/behavior change.
+
+**#234 — remaining 17 mirrored docs, restructured or scoped-out per file nature**: static
+reference docs (`ARCHITECTURE.md`, `TOKEN_OPTIMIZATION_PRACTICE.md`, `ats-ux-ui-guardrails.md`,
+`positions/spec.md`) got a Table of Contents; chronological logs (`BACKLOG.md`,
+`SCHEMA_CHANGE.md`, this file) got a light-touch collapsible dated index only — no reordering,
+per user's explicit scope call (logs are built around newest-first scanning, full restructure
+would hurt that). 8 `.claude/agents/*.md` + `SCHEMA_EVOLUTION.md` left untouched — already
+short/well-headed. Also fixed a genuine markdown defect in `positions/spec.md` §8A.1 (a
+hard-wrapped heading with a stray mid-line `##`, producing a bogus orphan heading). Zero content
+removed — verified via `git diff` before merge. User reviewed via VS Code diff, approved.
 
 **#228/#229 each needed a real rebase (merge conflict)** — `git merge-tree`'s "clean" exit code
 was WRONG both times; GitHub's own mergeability check caught what it missed, both times (once
