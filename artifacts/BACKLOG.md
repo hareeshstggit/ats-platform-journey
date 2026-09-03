@@ -20,25 +20,41 @@ narrative, only current state.
 
 ---
 
-## PRIORITY (flagged 2026-09-03 — read before anything else in this file)
+## PRIORITY (updated 2026-09-03 — read before anything else in this file)
 
-1. **`fix/main-ci-break` (not yet a PR) — all 3 tracked code items DONE (2026-09-03); only the
-   coverage-gate policy decision remains before it can merge.** Full detail in §5's "UPDATE
-   2026-09-02/03" block. Branch clears 43 of the original 48 tracked `test`-job failures + all
-   133 `typecheck` errors — the 5 NOT cleared are bucket (b) below (item 3), which was never in
-   this branch's scope.
-2. **Process root-cause + concrete measures (2026-09-03, user-requested) — written into
-   `.claude/CLAUDE.md` the same day** (3 new binding sections + the branch-protection process
-   substitute — see CLAUDE.md directly, not duplicated here). Core finding: the debt in item 1
-   was already fully documented in §5 since 2026-08-08, referenced again 2026-08-18/19/09-01,
-   and re-investigated from scratch anyway on 2026-09-02 — a real, avoidable cost.
-3. **DEBT-ESCALATION CLOCK EXCEEDED — flagging per the new mandate in item 2, not deferring
-   again.** §5's bucket (b), `app/modules/interviews/tests/test_category_rank_regression.py`
-   (5 failures, a fixture FK-violation inserting `interview_levels` against a `position_id`
-   never actually persisted), has been open and documented since 2026-08-08 — 26 days, past
-   the mandate's 14-day clock. It blocks CI for every PR the same way bucket (a)/(c)/(d) did.
-   Needs a scheduling decision: fix now (own Gate-5 pass, root cause already narrowed to a
-   fixture defect, not app logic) or explicitly deferred with a stated reason and a new date.
+1. **`fix/main-ci-break` (PR #231) — MERGED to `main` 2026-09-03 (commit `97c18d78`).** Cleared
+   43 of the original 48 tracked `test`-job failures + all 133 `typecheck` errors. G15d
+   (PR #228), G19 (PR #230), G15e (PR #229) also all MERGED same day — the full G15/G15b/
+   G15c-G19 series is closed except G15c/G17 (already-parked, low-urgency, unrelated to today).
+2. **Process root-cause + concrete measures (2026-09-03) — DONE, in `.claude/CLAUDE.md`.** 4
+   new binding sections: review-round & script-verification discipline; debt-escalation &
+   pre-investigation discipline; proactive deviation flagging (the 10-dimension standing duty);
+   coverage-gate risk-impact caveat (keeps the 80% gate fixed, but a red gate is a hard blocker
+   only if the specific uncovered delta touches one of the 10 dimensions — tracked debt
+   otherwise). Plus the branch-protection process substitute (no plan upgrade — a
+   `pr-status-summary` CI job + a merge-gating process rule).
+3. **Bucket (b) — FIXED 2026-09-03, branch `fix/bucket-b-category-rank-fixture`, review in
+   progress, NOT YET MERGED.** Both root causes closed: (a) the hardcoded `POSITION_ID` FK
+   violation (4 of 5 tests) — replaced with a `position_id` fixture resolving a real position
+   dynamically; (b) the stale BR-SEQ-001 test (the 5th) — rewritten to prove the still-relevant
+   inflated-rank regression under the current linear-chain gate. All 5 tests pass locally
+   against real Postgres. `principal-reviewer` round 1: CHANGES-REQUESTED (BACKLOG not updated
+   in the same change — this entry; a few cheap nits) — fixed same session, round 2 pending.
+4. **Coverage-gate risk-impact assessment — DONE (2026-09-03), per item 2's new caveat; the
+   80% gate itself is confirmed NOT lowered.** Live-measured via a full `--cov-report=json` run:
+   real application code (`app/modules/`, `app/shared/`, `app/workers/`) is at **88.2%**,
+   already above the gate. The entire aggregate shortfall (66%) is structural — 10 standalone
+   `app/scripts/` files (seed/backfill/demo/cleanup tools, 1,543 statements, 15.7% covered)
+   dragging the denominator down. Confirmed via repo-wide grep: zero production code imports
+   anything from `app/scripts/` — these scripts are never on any request path in any
+   environment. Per-dimension assessment: **no impact on any of the 10 dimensions** — inert
+   against Quality/Performance/Scalability/Reliability/Security/Observability/Modularity/
+   Maintainability/Code-Design/Architecture-Extensibility. Awaiting the user's decision on
+   whether this closes the coverage-gate question or whether they want it handled differently
+   (e.g. `--cov-report`'s own `omit=` config excluding `app/scripts/*` from the denominator).
+   **Separately flagged, NOT part of the gate math but a real gap**: `app/modules/offers/
+   tasks.py` is 0% covered (89 statements) — a Celery task file, genuinely untested, touching
+   Reliability/Observability. Tracked in §5 below, not blocking, needs its own pass.
 
 ---
 
@@ -326,12 +342,16 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   2026-07-22 BR-SEQ-001 rewrite — confirmed via repo-wide grep, zero remaining references outside
   this test's own comments and orphaned bytecode) — flagged below, not fixed (out of this item's
   scope).
-- 🔴 `test_category_rank_regression.py::test_validate_level_sequence_not_wrongly_gated_by_inflated_org_rank`
-  (found 2026-08-26 verifying the category_rank fix above) — stale test asserting behavior from
-  BEFORE the BR-SEQ-001 2026-07-22 rewrite (expects a `get_org_pair_decided`-gated rank>=3 branch
-  that `_service_helpers.py::_validate_level_sequence` no longer has — that function doesn't exist
-  anywhere in the current codebase). Needs a rewrite to match the current single-linear-chain gate,
-  not a fix to production code.
+- ✅ **`test_category_rank_regression.py::test_validate_level_sequence_not_wrongly_gated_by_inflated_org_rank`
+  (found 2026-08-26, FIXED 2026-09-03, branch `fix/bucket-b-category-rank-fixture`).** Rewritten
+  as `test_validate_level_sequence_names_correct_non_inflated_prior_rank`: proves the same
+  inflated-computed-rank concern under BR-SEQ-001's current single-linear-chain rule (the old
+  `get_org_pair_decided`/rank>=3 assertion this test used to make no longer applies) — confirms
+  `get_level_category_rank` still computes rank 2 (not inflated to 3) despite an inactive
+  duplicate, and that `_validate_level_sequence`'s resulting error names the correct,
+  non-inflated prior rank's real label. The "succeeds once selected" half is already covered at
+  the unit layer (`test_unit_level_sequencing.py`'s parametrized cases) — not duplicated here.
+  Same fix batch also closed the other 4 tests in this file — see the next entry.
 - ✅ `positions/schemas.py`'s `InterviewLevelRequest`/`InterviewLevelResponse` missing `level_category`
   field (2026-08-26, `dev/tech-debt-batch3-data-query`, BUG-4): added `level_category: OrgType` as a
   real required field on both schemas (previously silently derived from `level_type` in
@@ -540,6 +560,31 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 5. Tech debt — tests/CI
 
+- 🔴 **Same dead-UUID class as bucket (b) — NOT scope-closed at 2, an earlier version of this
+  entry claimed that without independently re-deriving it and was wrong.** Live-verified against
+  local Postgres 2026-09-03 (principal-reviewer, bucket-b review round 2): **19 files** carry one
+  of **6 distinct** hardcoded position UUIDs, and **all 6 are dead** (zero matching rows; only 3
+  positions exist in the DB today). Named examples: `backend/app/modules/interviews/tests/
+  test_functional_p29_sequencing.py:40` (carries `22ed4a54-...`, the same one bucket (b) fixed,
+  plus dead `LEVEL_L1_ID`/`LEVEL_L2_ID`/`LEVEL_COUNT = 4`) and `backend/app/scripts/
+  seed_positions_data.py:44` (an 8-position ageing-bucket map, `22ed4a54-...` at that line) — but
+  17 more files carry the other 5 dead UUIDs (`c180a718-...` in 8 files, `6d76a990-...` in 3,
+  `b4a16264-...` in 3, `166ab03e-...` in 1, `6ed3b751-...` in 2). Carriers do NOT all use the
+  `POSITION_ID` variable name — e.g. `test_functional_p20_screening.py:58` holds `c180a718-...`
+  as `POSITION_WITH_LEVELS`, and `backfill_level_type_org_correction.py:17`/`seed_positions_data.py:38`
+  carry `6ed3b751-...` in a docstring/dict-key — a future scoped pass must grep the UUID values
+  themselves, not assume a shared variable name. All `RUN_FUNCTIONAL_TESTS`-gated (don't block
+  CI) or standalone scripts (not on any request path) — correctly out of scope for the bucket-b
+  fix itself. Separately, a hardcoded local-dev DB password (`P@ssword1-1`) appears across 31
+  files — pre-existing, unrelated to this UUID class, flagging here so it isn't "discovered"
+  again later. Needs its own scoped pass — same fix shape as bucket (b): resolve
+  each position dynamically instead of hardcoding.
+- 🔴 **`app/modules/offers/tasks.py` — 0% test coverage, 89 statements** (found 2026-09-03
+  during the coverage-gate risk-impact assessment, PRIORITY item 4). A Celery task file with
+  zero automated coverage — touches Reliability/Observability per the 10-dimension mandate,
+  not inert like the standalone `app/scripts/*` files driving the aggregate 66%. Not blocking
+  any of today's merges (it's inside the 88.2%-covered real-app-code slice, which already
+  clears the 80% gate in aggregate) — needs its own scoped test-writing pass.
 - 🔴 **`tests/integration/test_candidates_flow.py:160` — `_require_offline_providers` has the
   same `autouse=True`-module-scope + denylist shape principal-reviewer found and fixed in
   `test_positions_defects_flow.py` (branch `fix/main-ci-break`, round 4, 2026-09-03).** Its
@@ -707,12 +752,12 @@ cost is itself a named root-cause finding, discussed with the user 2026-09-03 (s
   policy decision still pending** (raise/lower/scope the threshold vs. find genuinely-missing
   coverage — a large chunk of the gap is structural: skipped/environment-gated tests and test
   files themselves count in the denominator).
-Net: this branch clears **43 of the original 48** `test`-job failures + all 133 `typecheck`
-errors — NOT all 48: bucket (b)'s 5 failures in
-`app/modules/interviews/tests/test_category_rank_regression.py` (a fixture FK-violation
-inserting `interview_levels` against a `position_id` never actually persisted — a separate,
-unrelated defect) were never in scope for this branch and remain untouched. Not yet a PR, not
-yet merged — that bucket + the coverage policy question are the only items still open.
+**MERGED 2026-09-03 as PR #231 (`97c18d78`).** Net: this branch cleared **43 of the original
+48** `test`-job failures + all 133 `typecheck` errors — NOT all 48: bucket (b)'s 5 failures in
+`app/modules/interviews/tests/test_category_rank_regression.py` were never in this branch's
+scope and were correctly left untouched here. **Bucket (b) itself fixed separately, same day,
+on `fix/bucket-b-category-rank-fixture`** — see the ✅ entries above. Only the coverage-gate
+policy question (see PRIORITY item 4) remains open from this whole arc.
 
 - 🟡 **Latent inline-vs-real-Celery-worker race, 2 items flagged for future investigation
   (2026-09-01, found while fixing the `test_candidates_flow.py` regression above — explicitly
