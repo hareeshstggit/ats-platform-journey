@@ -3,9 +3,57 @@
 ---
 
 # CLAUDE.md — ATS Code Standards & Working Agreement
-# Claude Code reads this before EVERY task. All generated code complies.
+Claude Code reads this before EVERY task. All generated code complies.
 
-## Project
+## Table of Contents
+
+**Part I — Project, Stack & Architecture**
+- Project
+- Architecture (Router → Service → Repository)
+
+**Part II — Code Standards & Documentation**
+- Code quality
+- Engineering mandate
+- Docstring & API-doc standard
+- Living documentation
+
+**Part III — Data, Schema & Versioning**
+- Database schema evolution
+- Versioning & baseline
+
+**Part IV — Spec Workflow & Progress Tracking**
+- OpenSpec workflow (incl. Spec-implementation sync mandate)
+- Progress capture & compaction
+
+**Part V — Agents, Gates & Mandates (core delivery discipline)**
+- Subagents
+- Quality gate & first-time pass rate
+- Regression prevention gates
+- Model tier & CI independence mandate
+- Live-verification & environment-parity mandate
+- Review-round & script-verification discipline
+- Debt-escalation & pre-investigation discipline
+- Proactive deviation flagging
+- Coverage-gate risk-impact caveat
+
+**Part VI — Token Economics & Verification**
+- Token-optimized development
+- Verification discipline
+- NFR compliance checklist
+
+**Part VII — Provenance, Git & Release**
+- Agent provenance & review gate
+- Git (incl. Branch-protection process substitute, GitHub Actions minutes usage check)
+
+**Part VIII — External Sharing & UX/UI**
+- External-sharing artifact sync
+- ATS UX/UI guardrail
+
+---
+
+## Part I — Project, Stack & Architecture
+
+### Project
 - Name: ATS Platform — STG Labs (Bengaluru)
 - Purpose: Production enterprise Applicant Tracking System.
   Full lifecycle: Sourcing → Screening → Interview → Offer → Onboarding.
@@ -18,7 +66,7 @@
   docs/SCHEMA_CHANGE.md, docs/PERFORMANCE_TESTING.md
   Specs: openspec/specs/<module>/spec.md (source of truth — read before implementing)
 
-## Architecture (Router → Service → Repository — strict)
+### Architecture (Router → Service → Repository — strict)
 - router.py     : HTTP only. Validate input, call service, shape response. No business logic.
 - service.py    : ALL business logic. No raw DB queries, no HTTP concepts.
 - repository.py : ALL DB access. No business logic. Returns ORM objects.
@@ -27,7 +75,11 @@
 - exceptions.py : One custom exception class hierarchy per module.
 - Inter-module calls go through the other module's service interface ONLY.
 
-## Code quality (non-negotiable)
+---
+
+## Part II — Code Standards & Documentation
+
+### Code quality (non-negotiable)
 - Type hints on EVERY parameter and return value.
 - Docstring on every public function/method and every API route (format below).
 - Max 40 lines per function, max 300 lines per file.
@@ -39,7 +91,7 @@
 - Optimistic concurrency: pass expected version on updates to versioned tables.
 - Idempotency-Key honored on all mutating endpoints.
 
-## Engineering mandate (binding — minimal, optimized, modular, maintainable)
+### Engineering mandate (binding — minimal, optimized, modular, maintainable)
 This is a hard contract, not advice. It governs every line you generate.
 The authoritative expansion is docs/ARCHITECTURE.md ("Engineering mandate").
 
@@ -65,7 +117,7 @@ The code that IS written must be:
 3. Maintainable, with workflows and dependencies documented from line one and
    kept current — see "Living documentation" below.
 
-## Docstring & API-doc standard (REQUIRED — keep to 2–3 lines)
+### Docstring & API-doc standard (REQUIRED — keep to 2–3 lines)
 Every function: one-line purpose, then Args and Returns (and Raises if it throws).
 Be concrete about parameter names, types, and what comes back.
 
@@ -88,7 +140,7 @@ FastAPI route: give the decorator a summary and description so it renders in Ope
                  description="Accepts a PDF/DOCX, stores it, and starts extraction. "
                              "Returns 202 with candidate_id; processing is async.")
 
-## Living documentation (part of the definition of done — updated every change)
+### Living documentation (part of the definition of done — updated every change)
 Documentation is written with the code in the SAME commit, never later. From the
 first line, every module documents four things, kept current on every code/spec
 change:
@@ -114,7 +166,11 @@ Enforcement (this is what "auto-updated on every change" means in practice):
   its implementation (/opsx:verify).
 - Edit spec.md first, regenerate code, then /opsx:verify before /opsx:archive.
 
-## Database schema evolution (binding — extend, never break; log every change)
+---
+
+## Part III — Data, Schema & Versioning
+
+### Database schema evolution (binding — extend, never break; log every change)
 ANY schema extension or evolution — triggered whenever a new feature or module is
 added, OR an existing feature or module is updated (whether via a spec change or a
 code change) — that adds or alters a table, column, enum, index, constraint,
@@ -177,7 +233,7 @@ NOT done.
    user-tested record. Fixed by `backend/app/scripts/backfill_legacy_feedback_outcome.py`
    — this incident is the reason the rule exists, not a hypothetical.
 
-## Versioning & baseline (read before generating any code)
+### Versioning & baseline (read before generating any code)
 - Current baseline: **v2.2 — 11-Jun-2026** (= v2.0 + the 11-Jun-2026 scope addendum).
   Manifest: `.claude/VERSION.md`; Git tag: `v2.2-baseline-2026-06-12`. v2.0 source:
   ATS_requirement_v2_0_08-Jun-2026.docx.
@@ -194,13 +250,16 @@ NOT done.
 - The full rule is in docs/VERSIONING.md. When a new requirements doc arrives,
   a new dated baseline is cut and tagged before code is generated against it.
 
-## OpenSpec workflow
+---
+
+## Part IV — Spec Workflow & Progress Tracking
+
+### OpenSpec workflow
 - Before implementing a feature: read openspec/specs/<module>/spec.md.
 - If no spec exists for the work, run /opsx:propose <name> first and have it reviewed.
 - After implementing: /opsx:verify, then /opsx:archive. Keep specs in sync with code.
 
-### Spec-implementation sync mandate (binding, no exceptions — added 2026-07-10
-### after a full spec-vs-code drift audit found gaps across 8 modules)
+#### Spec-implementation sync mandate (binding, no exceptions — added 2026-07-10 after a full spec-vs-code drift audit found gaps across 8 modules)
 Build order is always spec-first: the spec.md is the contract, code implements it —
 never the reverse. This mandate closes the loop for what happens after code ships:
 - Any change request, enhancement, or bug fix that alters observable API behavior,
@@ -217,7 +276,7 @@ never the reverse. This mandate closes the loop for what happens after code ship
   basis, not just at baseline cut time — treat spec drift itself as a defect
   class, on the same footing as a functional bug.
 
-## Progress capture & compaction (binding — lightweight)
+### Progress capture & compaction (binding — lightweight)
 After each PR merges to main: (1) update `memory/resume-pointer.md` with what landed
 (2–3 lines); (2) flip the relevant row in `docs/GO_LIVE_CHECKLIST.md` inline in the
 SAME PR as the code — no separate docs PRs, no phase logs, no DEVELOPMENT_JOURNEY.md
@@ -225,15 +284,20 @@ updates. Run `/compact` after any large phase; no pre-compact docs PR required �
 `resume-pointer.md` is the durable restore point. To restore context after a compact,
 read `resume-pointer.md` first, then `docs/GO_LIVE_CHECKLIST.md` and the relevant spec.
 
-## Subagents (delegate — see .claude/agents/)
+---
+
+## Part V — Agents, Gates & Mandates (core delivery discipline)
+
+### Subagents (delegate — see .claude/agents/)
 - backend-engineer       : implement a module to its spec
 - unit-test-engineer     : write unit tests (mock the repository layer); includes async context manager mock patterns, failure-cascade tests for bulk ops, side-effect non-invocation tests, error sanitisation tests
 - functional-test-engineer : standalone per-feature smoke tests against REAL running stack (real DB/Redis/Celery) — catches defects unit mocks hide (session corruption, constraint cascades, auth wiring, bulk partial-failure); MANDATORY pre-commit gate for every new/modified endpoint AND every bug fix; FIRST step is always confirming the live server has loaded the new code (restart if stale — unit tests pass against files on disk, not the running process); reports bugs, does NOT fix them
 - integration-test-engineer : full end-to-end tests, all workflows, all edge cases — runs AFTER functional tests are clean
-- principal-reviewer     : SENIOR review gate — correctness, security, layering, minimalism, perf, reliability → ONE mandate-anchored verdict (opus/high — see "Model tier mandate" below)
+- principal-reviewer     : SENIOR review gate — correctness, security, layering, minimalism, perf, reliability → ONE mandate-anchored verdict (opus/high — see "Model tier & CI independence mandate" below)
 - principal-reliability-engineer : on-demand specialist — failure modes, retries, idempotency, recovery; AWS SRE (failover, backup/DR, SLOs, runbooks) (opus/xhigh)
 - principal-performance-auditor  : on-demand specialist — deep profiling, query plans, indexing, load/scale (opus/xhigh)
 - ux-ui-engineer        : Next.js UI to the UX/UI guardrails — accessible, enterprise-class, minimal-click
+
 Default loop for a module: backend-engineer → unit-test-engineer → **functional-test-engineer** →
 integration-test-engineer → **principal-reviewer** (the single review gate + final sign-off before
 merge is requested), pulling in principal-reliability-engineer / principal-performance-auditor on
@@ -243,7 +307,7 @@ stops the pipeline; integration-test-engineer and principal-reviewer do not run 
 tests are clean.** For UI/frontend work, use ux-ui-engineer (it MUST read
 .claude/rules/ats-ux-ui-guardrails.md first).
 
-## Quality gate & first-time pass rate (binding — 100% standard, zero rework)
+### Quality gate & first-time pass rate (binding — 100% standard, zero rework)
 This section exists because P1 bugs repeatedly escaped to the user after agents declared "done".
 The root causes — testing stopped at enqueue, architecture gaps not analysed at build time,
 spec silences accepted without clarification — are closed here. Every rule below is a hard gate.
@@ -369,7 +433,7 @@ duplicate `SubPlan`/`SeqScan` where an index or single evaluation is expected) i
 replace that check, it moves the same check earlier so a wrong "fixed" report never reaches
 review in the first place.
 
-## Regression prevention gates (binding — Gates 1–4 overridable only via 3-request rule; Gate 5 has NO override)
+### Regression prevention gates (binding — Gates 1–4 overridable only via 3-request rule; Gate 5 has NO override)
 
 These gates exist because regression rework consumed 60–70% of agent cost in multiple sessions
 (root-cause analysis 2026-07-04), and a separate live-testing session (2026-07-08) burned
@@ -428,7 +492,7 @@ skip it, not a "just this once," not a 3-in-a-row override. If a fix's root caus
 already obvious, `cavecrew-investigator` still runs (confirms it cheaply); if a fix is a
 one-line change, `cavecrew-builder` still runs (applies it, hard-refuses scope creep).
 
-## Model tier & CI independence mandate (binding — added 2026-07-24, NO override, same class as Gate 5)
+### Model tier & CI independence mandate (binding — added 2026-07-24, NO override, same class as Gate 5)
 
 This section exists because a status review (2026-07-23/24) found that principal-reviewer took
 3 rounds to close out a single change (a missed 22nd endpoint, then a missed spec-sync update)
@@ -475,7 +539,7 @@ development" below) are enforced under this same no-override class**, not the so
 rule that governs Gates 1–4. They cannot be skipped by any user request, however explicit, in any
 session — only an edit to this file changes them.
 
-## Live-verification & environment-parity mandate (binding — added 2026-08-07, NO override, same class as Gate 5)
+### Live-verification & environment-parity mandate (binding — added 2026-08-07, NO override, same class as Gate 5)
 
 This section exists because the `async-pipeline-durability` change (6 phases, 2026-08-05 through
 2026-08-07, closing a live incident where 48 candidates sat stuck for 4+ hours with zero alert) ran
@@ -535,7 +599,7 @@ step in its pipeline; neither is optional because the other passed.
 This mandate cannot be lifted by any number of user requests, explicit or otherwise, not by the
 3-request override rule, in any session. The only way to change it is to edit this file directly.
 
-## Review-round & script-verification discipline (binding — added 2026-09-02)
+### Review-round & script-verification discipline (binding — added 2026-09-02)
 
 This section exists because G15d (a ~300-line CI-only script) took 6 principal-reviewer
 rounds to close, each finding a real defect the last round missed — proof early rounds tested
@@ -567,7 +631,7 @@ verification that should happen BEFORE an action didn't.
 fix, was the sweep size stated and does it look genuinely exhaustive, not sampled; (b) for any
 DDL-adjacent change, was the target DB explicitly confirmed before execution.
 
-## Debt-escalation & pre-investigation discipline (binding — added 2026-09-03)
+### Debt-escalation & pre-investigation discipline (binding — added 2026-09-03)
 
 This section exists because debt fixed in `fix/main-ci-break` (133 mypy errors, 3 stale-test
 clusters) was already fully documented in `docs/BACKLOG.md` §5 since 2026-08-08, referenced
@@ -598,7 +662,7 @@ class already have a `docs/BACKLOG.md` entry, and if so was it reconciled rather
 duplicated; (d) for any fix resting on a third-party-behavior claim, was that claim's execution
 shown, not just asserted.
 
-## Proactive deviation flagging (binding — added 2026-09-03)
+### Proactive deviation flagging (binding — added 2026-09-03)
 
 The user's overarching, non-negotiable mandate for this platform is Enterprise-class,
 production-grade Quality, Performance, Scalability, Reliability, Security, Observability,
@@ -618,7 +682,7 @@ Threshold: material risk to one of the 10 dimensions, calibrated the same way
 everything, always, is itself a violation of this mandate's own economy: it degrades signal and
 adds cost without adding protection.
 
-## Coverage-gate risk-impact caveat (binding — added 2026-09-03)
+### Coverage-gate risk-impact caveat (binding — added 2026-09-03)
 
 The 80% test-coverage gate (Code quality, above) stays fixed at 80% — it is never lowered,
 scoped down, or relaxed to make a shortfall mergeable. This section governs what happens when
@@ -648,7 +712,11 @@ This is a risk-weighted enforcement of the same fixed 80% number, not a policy e
 file/line list actually identified (not just the aggregate %), and (f) was each item's
 10-dimension impact stated explicitly, not assumed away.
 
-## Token-optimized development (binding — every task)
+---
+
+## Part VI — Token Economics & Verification
+
+### Token-optimized development (binding — every task)
 
 Compute cost is real; discipline keeps it proportionate to value delivered.
 
@@ -671,7 +739,7 @@ Before spawning `backend-engineer` on any module, the main loop explicitly reads
 - `/changelog` — release notes. Skills produce compact, structured output.
 
 **Cost alerts — BEFORE and AFTER every task (binding, no override — added 2026-07-24, enforced
-under the Model tier & CI independence mandate below; this rule applies to every task, not just
+under the Model tier & CI independence mandate above; this rule applies to every task, not just
 "non-trivial" ones):**
 - **Before starting.** State a `[COST ALERT]` estimate for every task, scaled to size — a single-
   file edit gets a one-line estimate ("Est. <$1, 1 file"), a focused-agent task states its $
@@ -701,7 +769,7 @@ dimensions are in scope. Narrow scope costs 50–70% less than a broad sweep. De
 slice unless the user explicitly requests a broad sweep.
 
 **Model + effort pinning (binding — see docs/TOKEN_OPTIMIZATION_PRACTICE.md §D8–D12; model tiers
-themselves are governed by the "Model tier & CI independence mandate" below, which supersedes the
+themselves are governed by the "Model tier & CI independence mandate" above, which supersedes the
 single-tier statement this paragraph used to make):**
 Every named subagent in `.claude/agents/` pins its `model:` explicitly — never omitted/inherited —
 plus an `effort:` default matched to its actual judgment load. As of the 2026-07-24 model-tier
@@ -752,9 +820,8 @@ configured — meaning every further Actions minute this cycle, past that ~9-min
 real per-minute billing, not just quota risk. This mandate closes the gap: some of those 9 pushes
 were genuinely necessary (CI is the only real Linux runtime this repo has — Rule 2 of the
 Live-verification mandate above still stands, do not fake that check locally), but the
-*iterative discovery* pattern — push, read
-failure, fix, push again — is the expensive part, and much of it was avoidable with more
-verification done before the first push, not after.
+*iterative discovery* pattern — push, read failure, fix, push again — is the expensive part, and
+much of it was avoidable with more verification done before the first push, not after.
 1. **Local-verification-first, before ANY push touching code/config/test/CI-workflow files:**
    run the full local equivalent of every CI job — `ruff check .`, `mypy .` (matching CI's exact
    invocation, not a subset that skips the `tests/` exclude and reports false positives), the
@@ -788,7 +855,7 @@ practices. When a new technique is identified, an anti-pattern is discovered, or
 measured: update the playbook in the SAME PR as the triggering change and add a dated Changelog entry.
 Never let the playbook drift from actual practice. This is binding.
 
-## Verification discipline (binding — added 2026-07-14)
+### Verification discipline (binding — added 2026-07-14)
 
 This section exists because a single bug-fix session ran to ~$1K by re-verifying every
 angle inline instead of trusting the gate. Live, exploratory self-verification in the main loop — creating
@@ -822,7 +889,7 @@ than any individual bug. The fix is procedural, not "try harder to be brief":
    because it was merely referenced by a created test application; see
    `memory/tech-debt-issue5-fixture-broken.md`.)
 
-## NFR compliance checklist (binding — every PR, not just NFR-labeled work)
+### NFR compliance checklist (binding — every PR, not just NFR-labeled work)
 
 Every code change — feature, fix, or refactor — carries these consequences whether or not it's
 labeled "performance" or "reliability" work. Confirm each applies (or is explicitly N/A) before
@@ -860,7 +927,11 @@ this section names the outcome each one is actually protecting:
    rework that costs far more than doing it right once. The lean target is fewer *exploratory*
    tokens (Verification discipline above), not fewer *correctness* tokens.
 
-## Agent provenance & review gate (binding)
+---
+
+## Part VII — Provenance, Git & Release
+
+### Agent provenance & review gate (binding)
 Every change records WHO produced it and HOW it was verified, so traceability is durable and
 versioned — not buried in chat. This is enforced in the SAME change, never after:
 - **Commit trailers** on each commit: `Agent: <producing-agent(s)>` and
@@ -871,7 +942,7 @@ versioned — not buried in chat. This is enforced in the SAME change, never aft
 - The **principal-reviewer** verdict is the merge-readiness signal; a feature change reaches "request
   human merge" only at APPROVE / APPROVE-WITH-NITS (nits fixed). The human still approves the merge.
 
-## Git
+### Git
 - Branch per feature: dev/<phase>-<feature>. Conventional commits (feat:, fix:, test:, chore:).
 - PR for every feature; never push directly to main.
 - **Local-dev sync (standing):** After EVERY merge to main — before starting any new feature work —
@@ -879,7 +950,7 @@ versioned — not buried in chat. This is enforced in the SAME change, never aft
   `alembic current` shows `(head)`. Local dev DB and main must always be at the same
   Alembic head.
 
-### Branch-protection process substitute (binding — added 2026-09-03)
+#### Branch-protection process substitute (binding — added 2026-09-03)
 
 GitHub's native branch protection / required-status-checks feature is UNAVAILABLE on this
 repo (private repo, free plan — confirmed via `gh api repos/.../branches/main/protection` →
@@ -900,7 +971,7 @@ at $0:
    reporting-only, cannot gate or affect the jobs it reads. Makes a red PR impossible to miss
    at a glance without opening the Actions tab.
 
-### GitHub Actions minutes — usage check is mandatory, not optional (binding — added 2026-08-02)
+#### GitHub Actions minutes — usage check is mandatory, not optional (binding — added 2026-08-02)
 
 This project ran multiple sessions (2026-07-30 through 2026-08-02) where every PR's CI checks
 instant-failed with `The job was not started because recent account payments have failed or
@@ -929,7 +1000,11 @@ instead of a guess. Flag it to the user proactively when usage looks like it's a
 the allotment — don't wait for the instant-fail signature to be the first sign, the way this
 incident played out.
 
-## External-sharing artifact sync (binding — added 2026-07-30)
+---
+
+## Part VIII — External Sharing & UX/UI
+
+### External-sharing artifact sync (binding — added 2026-07-30)
 
 The public GitHub Pages repo `hareeshstggit/ats-platform-journey` (a separate, standalone
 repo — `isFork: false`, `parent: null`, zero git relationship to this repo) mirrors
@@ -962,6 +1037,6 @@ was tried and rejected — GitHub forces `text/plain`+`nosniff` on all raw gist 
 verified via `curl -I`), and the exact build steps are recorded in the durable memory
 `project_external-sharing-github-pages.md`.
 
-## ATS UX/UI guardrail
+### ATS UX/UI guardrail
 
 Before creating or changing any ATS UX/UI mockup, screen, component, page, route, design artifact, or production UI, follow the project rule in `.claude/rules/ats-ux-ui-guardrails.md` (the binding rules — *what* the UI must satisfy). The end-to-end process for *how* we design, build, and test the UI is `docs/UI_STRATEGY.md` (spec-first → design → build → verify), executed by the `ux-ui-engineer` subagent.
