@@ -20,6 +20,28 @@ narrative, only current state.
 
 ---
 
+## PRIORITY (flagged 2026-09-03 — read before anything else in this file)
+
+1. **`fix/main-ci-break` (not yet a PR) — all 3 tracked code items DONE (2026-09-03); only the
+   coverage-gate policy decision remains before it can merge.** Full detail in §5's "UPDATE
+   2026-09-02/03" block. Branch clears 43 of the original 48 tracked `test`-job failures + all
+   133 `typecheck` errors — the 5 NOT cleared are bucket (b) below (item 3), which was never in
+   this branch's scope.
+2. **Process root-cause + concrete measures (2026-09-03, user-requested) — written into
+   `.claude/CLAUDE.md` the same day** (3 new binding sections + the branch-protection process
+   substitute — see CLAUDE.md directly, not duplicated here). Core finding: the debt in item 1
+   was already fully documented in §5 since 2026-08-08, referenced again 2026-08-18/19/09-01,
+   and re-investigated from scratch anyway on 2026-09-02 — a real, avoidable cost.
+3. **DEBT-ESCALATION CLOCK EXCEEDED — flagging per the new mandate in item 2, not deferring
+   again.** §5's bucket (b), `app/modules/interviews/tests/test_category_rank_regression.py`
+   (5 failures, a fixture FK-violation inserting `interview_levels` against a `position_id`
+   never actually persisted), has been open and documented since 2026-08-08 — 26 days, past
+   the mandate's 14-day clock. It blocks CI for every PR the same way bucket (a)/(c)/(d) did.
+   Needs a scheduling decision: fix now (own Gate-5 pass, root cause already narrowed to a
+   fixture defect, not app logic) or explicitly deferred with a stated reason and a new date.
+
+---
+
 ## 0. Go-Live readiness (tracked closely — 1-week dev freeze from 2026-08-08 pending user's date-planning decisions)
 
 User directive 2026-08-08: stop new development for 1 week (starting once PR #222 merges); use the
@@ -128,7 +150,8 @@ Next up per the user's confirmed execution order: whatever the user selects next
 | G15e | **The full migration chain's DOWNGRADE path is broken at `0028_position_closed_status_ageing.py`, an untouched, genuinely-already-applied migration — found by `principal-reviewer`'s own reversibility test on G15's fix, not part of G15's scope.** `ALTER TABLE positions ALTER COLUMN status TYPE TEXT` fails with `FeatureNotSupportedError: cannot alter type of a column used in a trigger definition — trigger trg_pos_status_change on table positions depends on column "status"`, surfaced only when downgrading a full replayed chain from head past `0028` (rolled back cleanly under transactional DDL — not a live incident, no real DB was harmed). G15b's new CI replay only exercises `upgrade head`, never a full downgrade — same class of "the chain has never actually been exercised end-to-end" gap G15 itself closed for upgrades, now confirmed to also apply to downgrades. | 🔴 | Needs its own fix: drop the trigger before the `ALTER COLUMN TYPE`, recreate it after (matching how other migrations in this chain already handle trigger/column coupling, e.g. G15's own `0010` fix for `candidate_consents.updated_at`'s trigger). Not blocking — full-chain downgrade has no real operational use case today (no environment has ever downgraded past a handful of revisions) — but tracked so a future full-downgrade attempt doesn't rediscover this from scratch. |
 | G16 | **`audit_log` and `interview_status_history` are monthly-partitioned tables with NO automated partition-maintenance mechanism — both `docs/schema.sql` and `docs/ci_schema_snapshot.sql` only define partitions through `2026_08` (August), and zero migration, Celery beat task, or script anywhere in `backend/app/` creates future partitions.** Found live 2026-09-01 (first real CI run after the calendar rolled over to September, triggered by this session's local→origin push once Actions quota reset): `backend-ci.yml`'s `test` job failed at "Seed local test users" with `asyncpg.exceptions.CheckViolationError: no partition of relation "audit_log" found for row` — every `INSERT INTO audit_log` (and, by the same defect, every write to `interview_status_history`) fails the instant the wall clock crosses a month boundary with no partition pre-created for it. This is not a code regression from any recent PR — it is a dormant operational gap that was always going to fire on 2026-09-01 regardless of what shipped, and will fire again on 2026-10-01, 2026-11-01, etc. unless fixed. Confirmed via direct schema read (`docs/schema.sql:927-931` for `audit_log`, `:814-818` for `interview_status_history` — line numbers as of commit `edc5752`, shifted afterward once the fix added more partition DDL) and a repo-wide grep for any partition-creation code outside the 2 migrations that created the *initial* June/July/August partitions — zero hits. | ✅ Closed (local/CI) | **Fixed 2026-09-01**: (1) immediate gap closed by `backend/alembic/versions/0060_audit_log_partitions.py` — adds `audit_log_2026_09` through `audit_log_2027_12` (16 months, mirrors `0030_ivw_hist_partitions`'s horizon); live-verified upgrade/insert-into-Sept-partition/downgrade/re-upgrade round-trip against local Postgres. (2) ongoing automation: new daily Celery beat task `app.shared.partition_maintenance.ensure_partitions` (registered in `celery_app.py`'s `beat_schedule`, `maintenance` queue) tops up BOTH `audit_log` and `interview_status_history` to a rolling 6-month-ahead buffer — this also closes `interview_status_history`'s own latent "breaks again in 2027-12" gap left by `0030`'s one-time fix, not just `audit_log`'s immediate one. Verified live: the task's core logic ran against a synthetic far-future date, created the missing partitions, then a second run created zero (idempotent no-op); the real task ran against today's actual date and logged `partition_maintenance_no_action` for both tables (already covered through 2027-12). **Privilege finding (verified live, not assumed):** the app's normal RLS-restricted role `ats_app` fails with `permission denied for schema public` on this DDL — confirmed by directly running the `CREATE TABLE ... PARTITION OF` statement as `ats_app`; the task instead opens a scoped engine on `DATABASE_ADMIN_URL` (owner role), a new pattern for a Celery task (previously only migrations/scripts used it). `docs/schema.sql` and `docs/ci_schema_snapshot.sql` updated with the new partitions in the same commit (see `docs/SCHEMA_CHANGE.md`). `principal-reviewer` round 1 found the existence-check query itself had a real gap — `relname`-only matching against `pg_class` with no schema/parent scoping, so a same-named decoy relation in an unrelated schema would false-positive as "already covered" and silently skip creating the real partition (proved live: with a decoy present, 6 of 7 required partitions were created and the 7th silently skipped, no error). Fixed to join through `pg_inherits`/`pg_class` scoped to the actual parent table; re-verified live against the exact same decoy scenario (now creates all 7). See G17 for a separately-tracked gap this fix surfaced but does not close: the production deployment prerequisites (Terraform `DATABASE_ADMIN_URL` wiring, RDS default-privilege grants) this task now depends on. |
 | G17 | **`partition_maintenance.py`'s daily beat task (G16's fix) needs `DATABASE_ADMIN_URL` in the WORKER's ECS task definition, and `ALTER DEFAULT PRIVILEGES` applied on any fresh RDS instance — neither is in Terraform today.** Found 2026-09-01 during G16's fix review. `infrastructure/terraform/modules/ecs/main.tf`'s worker task def passes only `CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND`/`PROMETHEUS_MULTIPROC_DIR` — no `DATABASE_URL`, no `DATABASE_ADMIN_URL`, no `secrets` block (this is a **new** hard requirement G16 introduces — every prior Celery task ran under the RLS-scoped `ats_app` session only). Without it, the new task raises `RuntimeError` and dies on every daily tick in the only environment that matters. `beat` itself does NOT need this credential — it only publishes the schedule message; the task body and DB connection run on the worker that consumes it (corrected during review — an earlier draft of this row said "worker AND beat"). Separately, `ats_app`'s write access to auto-created partitions comes from `pg_default_acl` (`ALTER DEFAULT PRIVILEGES ... GRANT ... TO ats_app`), applied today only via `docs/LOCAL_DEV.md` + all 3 CI workflows' manual setup steps — absent from Terraform, so on a fresh RDS instance every partition the maintenance task creates would exist but be unwritable by the app, reproducing the G16 incident in a new shape. Also worth flagging as a deliberate, recorded trade-off rather than a silent widening: handing the DB **owner** credential to the worker container increases blast radius beyond the least-privilege `ats_app` design — accepted because partition DDL structurally requires ownership and no narrower grant exists for `CREATE TABLE ... PARTITION OF`. **Observability gap, same item**: the task has no alarm/metric of its own — a silently-failing daily tick (e.g. from this exact missing-credential gap) would go undetected until the 6-month buffer runs out. `docs/RUNBOOK_ASYNC_PIPELINE.md`'s §4 Escalate has a triage entry for this task's failure signature in the meantime. | 🔴 | Same class of gap as G1 (IAM skeleton)/G10 (API Fargate service missing) — this project's Terraform has never been exercised for the worker service's full runtime config. Needs: (a) add `DATABASE_ADMIN_URL` as a Secrets-Manager-sourced env var on the worker ECS task def only, (b) add an `ALTER DEFAULT PRIVILEGES` step to whatever provisions a fresh RDS instance (a bootstrap SQL script or a `null_resource`/`aws_rds_cluster` provisioner — needs a real decision, not a guess), (c) a metric/alarm for task failure (e.g. a Celery task-failure signal already exists for the other beat jobs per the runbook — extend that same mechanism here rather than inventing a new one). Not blocking local/CI (G16 is fully closed there) — blocking real AWS go-live only. |
-| G18 | **`0027_pos_recruiter_assign.py`'s `downgrade()` fails with `asyncpg.exceptions.FeatureNotSupportedError: cannot alter type of a column used in a trigger definition` — `ALTER TABLE positions ALTER COLUMN status TYPE TEXT` cannot run while `trg_pos_status_change` still depends on `positions.status`.** Found live 2026-09-01 as a side effect of G15's downgrade validation (CLAUDE.md requires validating upgrade AND downgrade before a migration change ships) — NOT caused by and unrelated to any G15 change (0027 predates and is untouched by this fix). Confirmed via isolated single-step `alembic downgrade -1` at the 0028->0027 boundary against a real Postgres 18 DB; every migration from head (`0061`) down through `0028` downgrades cleanly, and `0010`/`0011`/`0012`'s own downgrades (this session's rewrite) round-tripped cleanly in isolation once stamped past this unrelated blocker. Practical impact: nobody can currently downgrade past `0027` on any real DB (would need `DROP TRIGGER` before the `ALTER COLUMN`, then recreate it) — low urgency since this project's actual practice is forward-only migrations, but it does mean G15b's new CI replay step only ever exercises `upgrade()`, never a full downgrade chain (consistent with G15b's own scope — CI replay was never meant to validate downgrades). | 🔴 | Needs its own small fix in `0027_pos_recruiter_assign.py`'s `downgrade()`: `DROP TRIGGER trg_pos_status_change` before the `ALTER COLUMN ... TYPE TEXT`, then recreate it after (mirrors how other migrations in this repo already sequence trigger-drop-before-column-change). Not fixed here — out of scope for G15 (unrelated migration, unrelated module), flagged per the proactive-inconsistency-flagging practice rather than silently left for someone else to rediscover. |
+| G18 | ~~`0027_pos_recruiter_assign.py`'s `downgrade()` fails with `FeatureNotSupportedError`...~~ **DUPLICATE, mis-attributed — corrected 2026-09-02.** The real file is `0028_position_closed_status_ageing.py` (not `0027_pos_recruiter_assign.py` — that filename doesn't exist; the actual `0027` file is `0027_position_recruiter_assignments.py`, confirmed via direct read to have zero `ALTER COLUMN`/`status` references at all, so the original premise was factually wrong, not just mis-cited). This is the exact same bug as **G15e** — same migration, same `ALTER TABLE positions ALTER COLUMN status TYPE TEXT` statement, same `trg_pos_status_change` dependency — found independently by an earlier review round on G15's own fix and logged here under the wrong filename before G15e was opened for the correct one. | ✅ Closed (duplicate of G15e) | No separate fix needed — G15e's fix (drop/restore `trg_pos_status_change` + 2 CHECK constraints + the column's own `DEFAULT`, all live-verified via a full round-trip) already closes this. This row kept only so a future search for the old (wrong) filename lands here and points to G15e instead of re-investigating from scratch. |
+| G19 | **`backend/app/modules/interviews/_calendar_tasks.py`'s calendar-invite Celery task runs a raw SQL query against `interview_panelist_assignments.deleted_at` — a column that does NOT exist in the correct schema.** Confirmed: absent from both `docs/schema.sql`'s `CREATE TABLE interview_panelist_assignments` (no `deleted_at` — only `id`/`interview_id`/`sequence_number`/`panelist_user_id`/`name`/`email`/`mobile_isd`/`mobile_number`/`created_at`) and the `InterviewPanelistAssignment` ORM model (`backend/app/modules/interviews/models.py:75-94`, same column set) — both agree, so this is a genuine application-code defect, not a schema/migration gap. Surfaced 2026-09-01 only because that day's Celery-worker CI fix (`backend-ci.yml`) started actually running Celery tasks in CI for the first time ever, combined with G15's real-replay schema (no phantom `deleted_at` column left over from any historical drift to mask the bad query). Every invocation logs `calendar_invite_task_error: column "deleted_at" does not exist` and silently no-ops (fire-and-forget task, swallows the exception, fails no test, blocks nothing) — meaning calendar invites for interview panelists are very likely silently failing in real production today too, not just in CI. | 🔴 | Needs root-cause + fix via the standard Gate-5 pipeline: find the exact query in `_calendar_tasks.py`, determine what it should filter on instead (this table has no soft-delete column at all — the filter may need to be dropped entirely, or the intent may have been to check the panelist's `users.deleted_at`/`is_active` instead, needs code-history/spec context to decide correctly, not a guess), fix, and add regression coverage exercising the real Celery path (not just an inline call) so this class of "only fails when a worker actually consumes the task" bug doesn't hide again. |
 
 ### 0.2 Scope decisions — need the user's call, not more code
 
@@ -517,6 +540,15 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 5. Tech debt — tests/CI
 
+- 🔴 **`tests/integration/test_candidates_flow.py:160` — `_require_offline_providers` has the
+  same `autouse=True`-module-scope + denylist shape principal-reviewer found and fixed in
+  `test_positions_defects_flow.py` (branch `fix/main-ci-break`, round 4, 2026-09-03).** Its
+  condition only skips on `provider == "anthropic"`, so `gemini`/`bedrock` pass the guard and
+  violate this file's "deterministic offline scorer" premise — same class as the fixed
+  `_require_offline_provider` in the sibling file. Flagged, not fixed (out of scope for that
+  branch's diff, which only touched this file's resume-download rename) — same fix shape when
+  picked up: narrow to an allowlist (`if provider != "local_nlp": skip`) and scope the fixture
+  to only the tests that actually need an offline provider, not `autouse=True` module-wide.
 - 🔴 `offers/tests/test_functional_hiring_uniqueness.py` — 3 of 6 tests fail against the live stack (drives hire-uniqueness via a manual status PATCH to `hired`, which is 422-blocked since BR-054). Needs a rewrite to go through the real `POST /offers/{id}/accept` path.
 - 🔴 **`positions/tests/test_functional_p6_4_closed_lockdown_e2e.py` — stale since 2026-07-31, root-caused during Tier-3 hygiene batch 1's review (2026-08-27).** The module-scoped `closed_fixture` creates an interview via a level that has no `interview_level_panelists` row — `_make_panelist` (line 444, called after the failing assert) inserts into the global `interview_panelists` directory instead, a table the `LEVEL_HAS_NO_PANELISTS` gate (landed `89db1f8`, multi-panelist levels, 2026-07-31) doesn't read. Test written 2026-07-23, never updated for the gate that shipped 8 days later — reproduces deterministically in isolation (`1 failed, 24 errors`), NOT a rate-limit/throughput artifact. Fix: seed `interview_level_panelists` for the created level inside `_create_position`, before interview-create.
 - 🔴 **`positions/tests/test_functional_p24_position_status.py` + `test_functional_p23b_position_status.py` — stale since 2026-07-04, same review.** Both assert that open→closed with no reason auto-sets `portco_deferred` — that behavior was deliberately removed 2026-07-04 (`d1d003e`, "enforce user reason on open→closed"; `positions/validation.py:85` now raises `CLOSE_REASON_REQUIRED`). Tests last touched 2026-07-28 without updating this assertion. Deterministic, reproduces in isolation. Fix: update both to expect `CLOSE_REASON_REQUIRED` instead of the auto-set behavior.
@@ -604,6 +636,83 @@ tracked baseline (verified via full failed-test-name diff against the pre-worker
 delta from `546ac3b` is the 2 `test_interview_kit_candidate_aware_flow.py` names now absent).
 **This whole saga (Celery-worker CI fix → new race exposed → race fixed) is closed, net -2
 failures, zero new regressions, confirmed end-to-end on real CI, not just locally.**
+
+**UPDATE 2026-09-02/03 (branch `fix/main-ci-break`, NOT YET a PR, NOT YET merged) — the
+typecheck 133-error debt and 43 of the 48 tracked `test`-job failures above are now fixed.**
+This branch was built WITHOUT first re-reading this exact section — the org_name rule, the
+resume-download 302→200 change, and the mypy 133-error breakdown were independently
+re-investigated from scratch (full `cavecrew-investigator` dispatches) despite already being
+documented here in full, in the (a)-(d) breakdown above, since 2026-08-08. That rediscovery
+cost is itself a named root-cause finding, discussed with the user 2026-09-03 (see
+`memory/resume-pointer.md` and the chat record for the full analysis).
+- **typecheck: 133 → 0 mypy errors, repo-wide** (all 3 files: `0054_pipeline_retry_count.py`,
+  `seed_legal_transaction_demo.py`, `seed_uat_recruitment_funnel.py`) — added type hints
+  throughout, fixed a `psycopg2.connect(dict)` overload mismatch and a possibly-`None`
+  `fetchone()` index. Confirmed long-standing debt (git history), not a regression.
+- **(a) org_name cluster (27+5 = 32 failures) — FIXED.** Confirmed via git history (not just
+  re-derived): the rule flip is commit `e420363` (2026-06-20, PO-confirmed) — internal
+  panelists now require caller-supplied `org_name` (422 if blank), external always gets
+  `org_name="External"` regardless of caller input. Updated `test_interview_panelists.py` +
+  `test_interview_levels_panelist.py`'s setup/expectations to match; app code untouched
+  (confirmed correct as shipped).
+- **(d) resume-download (1 failure) — FIXED.** Confirmed via git history: commit `32e62b7`
+  (2026-06-29) changed `GET /candidates/{id}/resume` from 302 redirect to 200 JSON `{"url":...}`
+  intentionally (frontend now does authenticated fetch, avoiding JWT-in-`<a href>` leakage);
+  the UNIT test was updated in that same commit, this INTEGRATION test was not. Renamed +
+  fixed to match the unit test's already-correct shape.
+- **(c) — ALL 10 of 10 now FIXED, across 4 sub-clusters (counts sum to exactly 10, do not
+  add them to any other bullet in this list — bucket (c) is fully closed by these 4 items
+  alone):**
+  1. **Money-precision (4 of 10** — 1 in `test_positions_flow.py`, 3 in
+     `test_positions_defects_flow.py`)**.** A "fix" for
+     `test_budget_computed_on_create_with_eur_base` initially changed `BudgetPanel`'s schema
+     fields from `float` to `Decimal` — `principal-reviewer` caught this was a REGRESSION of a
+     deliberate prior fix (PR #46: `float` specifically because Pydantic v2 serializes
+     `Decimal` as a JSON STRING, breaking the frontend's `typeof v === "number"` guards).
+     Reverted; real fix applied instead: wrapped 22 test assertions in `Decimal(str(x))` (the
+     actual bug was `Decimal(json_decoded_float)` exposing the IEEE-754 binary expansion — a
+     test-harness artifact). Added a wire-type-pinning test + a `spec.md` BR-039 line so this
+     specific contract can't flip a 3rd time.
+  2. **Mandatory-Org-L1/L2 (2 of 10**, both in `test_positions_flow.py`**).** Commit `8e67469`
+     (2026-07-22, PO-confirmed sequencing model) requires every `set_levels` call to include
+     Organization Level-1 AND Level-2 — predates `test_interview_levels_panelist.py`'s
+     `_set_levels` helper (only ever sent 1 `stg_labs` level) and 2 tests in
+     `test_positions_flow.py`. Fixed the helper + both tests' response-shape/DB-query
+     assertions (now 3 levels per position, not 1). Also fixed a real latent bug this
+     unmasked: `lp_cleanup`'s FK-delete order was missing `interview_level_panelists` before
+     `interview_levels` — invisible until these tests started actually creating rows instead
+     of erroring out first.
+  3. **Idempotency-replay `approved_at` (1 of 10**, `test_positions_flow.py`**).** Same class
+     as (2) — a hand-built POST body predating a required field, not a new latent bug as an
+     earlier commit on this branch briefly mischaracterized it.
+  4. **Status-transition + JD-extraction (3 of 10** — 2 in `test_positions_flow.py`, 1 in
+     `test_positions_defects_flow.py`**), fixed 2026-09-03 (commit `7878614`).** Gate 3 spec
+     pre-read done first (`openspec/specs/positions/spec.md` §8A.1):
+  `open→in_progress` is trigger=`AUTO` ONLY (BR-NEW-001, fires exclusively via
+  `ApplicationService.create_application()` on first application) — never a valid MANUAL
+  PATCH, so `test_status_limited_to_three_settable_values` and
+  `test_history_aggregates_all_change_types_newest_first` (both PATCHed it directly) were
+  stale tests, not app bugs; retargeted onto legal MANUAL paths
+  (`open→on_hold→in_progress→on_hold`). The JD-extraction mismatch was root-caused via git
+  history, not "may not be covered by the Celery-worker fix" as this entry previously
+  speculated: commit `9d0dc0a` (2026-07-28, "perf(nfr-2b): move local_nlp JD extraction off
+  request path") deliberately made extraction ALWAYS enqueue via Celery for every provider —
+  this is an ENQUEUE-path test, not an inline-path test, and was simply never updated after
+  that change. Renamed `test_jd_extraction_completes_inline_and_persists_skills` →
+  `test_jd_extraction_persists_skills_after_async_extraction`; fixed the upload assertion to
+  expect `202`/`"processing"` and added a poll-to-terminal-status loop before the
+  skill-persistence checks (which are this test's actual, still-valid scope). Zero app code
+  touched in either fix.
+- **Coverage gate (was 65.86% vs 80% required) — NOT re-measured after this branch's fixes,
+  policy decision still pending** (raise/lower/scope the threshold vs. find genuinely-missing
+  coverage — a large chunk of the gap is structural: skipped/environment-gated tests and test
+  files themselves count in the denominator).
+Net: this branch clears **43 of the original 48** `test`-job failures + all 133 `typecheck`
+errors — NOT all 48: bucket (b)'s 5 failures in
+`app/modules/interviews/tests/test_category_rank_regression.py` (a fixture FK-violation
+inserting `interview_levels` against a `position_id` never actually persisted — a separate,
+unrelated defect) were never in scope for this branch and remain untouched. Not yet a PR, not
+yet merged — that bucket + the coverage policy question are the only items still open.
 
 - 🟡 **Latent inline-vs-real-Celery-worker race, 2 items flagged for future investigation
   (2026-09-01, found while fixing the `test_candidates_flow.py` regression above — explicitly

@@ -7,56 +7,56 @@ hash. If you (an agent) find yourself unable to restore context and this file is
 missing/stale, that is itself the bug to report — see "Restore-reliability incident"
 below before doing anything else.
 
-## RESUME HERE FIRST (queued for 2026-09-02 resumption — 4 tasks, in this order)
+## RESUME HERE FIRST (2026-09-03 — PR #231 merged to main; G15d/G15e/G19 still open pending
+## rebase; bucket (b) + coverage-gate policy still awaiting user's call)
 
-**0. Confirm the ScheduleWakeup dynamic-loop scheduler is NOT firing again unprompted.**
-2026-09-01 evening: it kept re-delivering the same "check on principal-reviewer agent
-a3cb6fe412903279f" prompt repeatedly because `ScheduleWakeup({stop: true})` was never called
-after the last real background task resolved — each wakeup fired, the work was already done,
-and no new schedule/stop was issued, so the runtime kept re-delivering the last pending one.
-Fixed for that instance by calling `ScheduleWakeup({stop: true})` (confirmed: "Loop stopped").
-**On resumption, verify it stayed stopped** — check whether any wakeup fires unprompted early
-in the session. If it recurs, the permanent fix is discipline, not a config toggle: call
-`ScheduleWakeup({stop: true})` immediately once a background task's result has been fully
-acted on and no further check-in is needed — never leave a wakeup "dangling" after its
-purpose is served. Also re-confirmed no `CronList` jobs and no lingering `ListAgents` entries
-were the cause (both checked clean 2026-09-01).
+**`fix/main-ci-break` → PR #231 → MERGED to `main` (commit `97c18d78`, 2026-09-03).** Clears
+43 of `main`'s original 48 tracked `test`-job failures + all 133 `typecheck` errors. Went
+through 4 `principal-reviewer` rounds (1: APPROVE-WITH-NITS on the mypy+3-stale-test-cluster
+work; a separate round caught and corrected a real near-regression — see below; rounds on the
+final 2 items: CHANGES-REQUESTED → CHANGES-REQUESTED [a real bug the fix itself introduced,
+an `autouse=True` fixture scope error that would have silently skipped 10 unrelated tests,
+caught by the reviewer executing the file, not reading it] → APPROVE-WITH-NITS). Local dev
+synced (`git pull` + `alembic upgrade head`, confirmed at `0061` head — no schema change in
+this PR). External docs mirror (`ats-platform-journey`) re-synced same batch.
 
-**1. Fix G15d** (docs/BACKLOG.md — search "G15d"): the G15b real-replay CI gate matches
-existence guards on object NAME only, not full DEFINITION — proven exploitable by the very
-CHECK-constraint duplicate G15's own fix found and closed. Add a CI step that `pg_dump`s the
-freshly-replayed DB and diffs its object definitions (not just names) against the committed
-`docs/ci_schema_snapshot.sql`, flagging any migration whose guard matched on name but left a
-differently-defined object behind.
+**Near-miss during this cycle, corrected before merge**: a "fix" for a money-precision test
+briefly changed `BudgetPanel`'s schema fields `float`→`Decimal` — `principal-reviewer` caught
+this was reverting a deliberate prior fix (Pydantic v2 serializes `Decimal` as a JSON STRING,
+not a number, which would break the frontend's `typeof v === "number"` guards — confirmed by
+executing the actual serialization myself, not trusting the investigation's claim). Reverted;
+real fix applied instead (wrap test assertions in `Decimal(str(x))` — the actual bug was
+`Decimal(json_decoded_float)` exposing the IEEE-754 binary expansion, a test-harness artifact).
+Added a wire-type-pinning test + a spec note so this can't flip a 3rd time. **This exact
+near-miss is why the "orchestrator-level live-verification of third-party claims" mandate
+(below) now exists.**
 
-**2. Fix G15e** (docs/BACKLOG.md — search "G15e"): full-chain migration DOWNGRADE breaks at
-`0028_position_closed_status_ageing.py` — `ALTER TABLE positions ALTER COLUMN status TYPE TEXT`
-fails because `trg_pos_status_change` depends on that column. Fix: drop the trigger before the
-`ALTER COLUMN TYPE`, recreate after (same pattern G15's own fix used for
-`candidate_consents.updated_at`'s trigger). Pre-existing, unrelated to G15's own diff, found by
-`principal-reviewer`'s reversibility test on G15.
+**Still open, both the user's call, neither a code fix:**
+1. **Bucket (b)**: 5 failures in `app/modules/interviews/tests/test_category_rank_regression.py`
+   (a fixture FK-violation inserting `interview_levels` against a `position_id` never actually
+   persisted — separate root cause, never in `fix/main-ci-break`'s scope). Open since
+   2026-08-08 — past the new 14-day debt-escalation clock (see `docs/BACKLOG.md`'s PRIORITY
+   section). Needs a scheduling decision.
+2. **Coverage gate** (was 65.86% vs 80% required; not re-measured post-merge). Policy decision
+   — raise/lower/scope the threshold vs. chase genuinely-missing coverage; a large chunk of the
+   gap is structural (skipped/environment-gated tests + test files themselves count in the
+   denominator).
 
-**3. Recreate the local dev DB from the reconciled replay path.** `atsplatform` (the shared
-local Postgres DB) is drifted from what G15's fix now produces as the authoritative shape —
-missing `offer_details`/`ck_csd_referral`/`ck_csd_vendor`/`idx_csd_referrer_email_hash`
-(schema.sql-owned), and carrying 8 stale `candidate_source_enum` values the app never uses.
-Not a defect (app code is consistent with schema.sql, not the drifted local DB), but CI is now
-authoritative post-G15 and local↔CI divergence will only widen from here. Rebuild via:
-`psql < docs/schema.sql` → `alembic stamp 0001_baseline` → `alembic upgrade head` against a
-fresh local DB (same recipe G15's fix itself used and CI now runs), then reseed via
-`app.scripts.seed_dev`.
+**PRs #228 (G15d), #229 (G15e), #230 (G19)** — still open, unmerged, code-complete and
+review-approved from 2026-09-02. Their first CI runs were red only because they inherited
+`main`'s pre-fix break; now that `main` has the fix, they likely need a rebase (or will
+auto-resolve once re-run against the new `main` — check on resume, don't assume).
 
-**4. Log and fix the pre-existing production bug found while verifying G15 on real CI.**
-`backend/app/modules/interviews/_calendar_tasks.py` has a raw SQL query referencing
-`interview_panelist_assignments.deleted_at` — a column that does NOT exist in the correct
-schema (confirmed: absent from both `docs/schema.sql` and the `InterviewPanelistAssignment`
-ORM model, which agree with each other). Surfaced 2026-09-01 only because that day's earlier
-Celery-worker CI fix started actually running Celery tasks in CI for the first time ever,
-combined with G15's real-replay schema (no phantom column to mask it). It's a fire-and-forget
-task (logs a warning, fails no test, blocks nothing) — but it means calendar invites for
-interview panelists are likely silently failing in real production too. Log as a new BACKLOG
-item first (Gate 5 applies — this is a bug fix), then route through
-`cavecrew-investigator` → fix → `principal-reviewer` per the standing pipeline.
+**Process root-cause + concrete measures (2026-09-03) — DONE, written into `.claude/CLAUDE.md`
+the same day** (not still pending, unlike this file's stale prior entry claimed): 3 new binding
+sections (review-round & script-verification discipline; debt-escalation & pre-investigation
+discipline; proactive deviation flagging) + a 4th (branch-protection process substitute: no
+plan upgrade, so a `pr-status-summary` CI job posts a merge-readiness comment per PR — already
+live-verified on PR #231's own real run — plus a process rule that a merge instruction is
+never treated as authorization while a required check is red without the user being shown
+exactly what's red first). `Documents/CLAUDE.md` (the near-duplicate parent-directory copy)
+deduplicated to a one-line pointer at `.claude/CLAUDE.md` — confirmed zero unique content lost
+before stubbing it.
 
 ## RESUME HERE (2026-09-01 ~18:24 IST, backend-ci Celery-worker saga CLOSED end-to-end,
 ## merged AND PUSHED to origin/main, real-CI-confirmed clean — no follow-up needed)

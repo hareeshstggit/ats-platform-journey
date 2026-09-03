@@ -900,6 +900,10 @@ BR-038  max_salary_inr ≥ min_salary_inr (400 INVALID_SALARY_RANGE).
 BR-039  All derived values are computed server-side (never client-supplied),
         persisted with the rate snapshot used, and recomputed when inputs/rates
         change. Money is NUMERIC(18,2); rounding is half-up, documented.
+        BudgetPanel's money/rate fields serialize as JSON numbers (not strings)
+        on the wire -- the frontend's typeof-based guards require this; do not
+        change these fields to a Decimal-typed Pydantic field without also
+        updating every frontend consumer.
 BR-040  One-time cost is computed at offer; exactly one sourcing fee applies,
         keyed off candidate.source; vendor_fee_base = 8.33% × offered_annual_ctc_base.
 BR-041  Constants (configurable in tenant_settings): G&A load = USD 5,000;
