@@ -535,6 +535,89 @@ step in its pipeline; neither is optional because the other passed.
 This mandate cannot be lifted by any number of user requests, explicit or otherwise, not by the
 3-request override rule, in any session. The only way to change it is to edit this file directly.
 
+## Review-round & script-verification discipline (binding — added 2026-09-02)
+
+This section exists because G15d (a ~300-line CI-only script) took 6 principal-reviewer
+rounds to close, each finding a real defect the last round missed — proof early rounds tested
+only the reported shape instead of sweeping real data. A same-night near-miss (an env-var
+override silently losing to `.env`'s `DATABASE_ADMIN_URL`, briefly running `alembic upgrade`
+against the real local dev DB, no damage — single-transaction rollback) is the same class:
+verification that should happen BEFORE an action didn't.
+
+1. **Sweep-test from round 1.** Any function normalizing/comparing/parsing real DB- or
+   production-observed strings must have its first test pass built from ALL current real
+   instances + adversarial mutations, never hand-picked fixtures. State the sweep size in the
+   PR/commit ("swept N real instances") — its absence is the tell that this was skipped.
+2. **APPROVE-WITH-NITS → fix inline + self-verify.** No `principal-reviewer` re-dispatch unless
+   the nit fix itself surfaces a new Major/Critical.
+3. **3-round cap on CI/tooling scripts** (`backend/app/scripts/`, CI workflow files): after 3
+   consecutive CHANGES-REQUESTED on the same file, STOP and ask the user to continue or
+   ship-with-tracked-debt. Never self-authorize a 4th round.
+4. **Confirm the DDL target before running it.** Before any `alembic stamp`/`upgrade` or raw
+   DDL command against any DSN, state the resolved target DB name as its own line immediately
+   before running it. A DDL command with no stated target line preceding it is non-compliant
+   on sight.
+5. **Fail loud on missing config.** A standalone script reading DSN/config from env vars must
+   raise a clear "set X" error on missing config — never silently substitute a
+   wrong-but-plausible fallback.
+6. **Scope-chain checkpoint.** One BACKLOG item spawning ≥2 downstream items → state a
+   scope+cost checkpoint to the user before continuing into the next one, not a silent chain.
+
+`principal-reviewer`'s standing checklist additionally confirms: (a) for any normalize/compare
+fix, was the sweep size stated and does it look genuinely exhaustive, not sampled; (b) for any
+DDL-adjacent change, was the target DB explicitly confirmed before execution.
+
+## Debt-escalation & pre-investigation discipline (binding — added 2026-09-03)
+
+This section exists because debt fixed in `fix/main-ci-break` (133 mypy errors, 3 stale-test
+clusters) was already fully documented in `docs/BACKLOG.md` §5 since 2026-08-08, referenced
+again 2026-08-18/19 and 2026-09-01 — never newly discovered — yet sat unfixed a month because
+every PR correctly deferred it as "not this PR's job," with nothing ever owning it. It was then
+re-investigated from scratch on 2026-09-02 without re-reading the section that already had the
+answer. A related near-miss: a fix was dispatched on an investigator's UNVERIFIED claim about
+Pydantic v2's serialization behavior — wrong, and caught only because `principal-reviewer`
+executed the claim independently before approving.
+
+1. **BACKLOG-pre-read before any investigation dispatch.** Grep `docs/BACKLOG.md` for the
+   symptom/file/test name first; state the result ("BACKLOG grep: no match, fresh
+   investigation" or "BACKLOG grep: matched §N, reconciling"). Fresh investigation only starts
+   on "no match."
+2. **Debt-escalation clock.** Any `docs/BACKLOG.md` item tagged as blocking CI for ALL PRs gets
+   a 14-day clock from first logged. Past 14 days unfixed, surface it to the user explicitly as
+   needing a scheduling decision — never silently re-defer again. Extends Gate 2's
+   "user-visible failure fixed next session" to explicitly include "CI red on main for every
+   PR."
+3. **Orchestrator-level live-verification of third-party claims.** Any investigation claim
+   about a third-party library's runtime behavior that will justify writing NEW APPLICATION
+   code must be executed by the main loop itself BEFORE the fix is dispatched — state the
+   executed result as its own line. Not deferred to the fixing agent's own pre-completion
+   check, not left to be caught by review after the fact.
+
+`principal-reviewer`'s standing checklist additionally confirms: (c) does this change's failure
+class already have a `docs/BACKLOG.md` entry, and if so was it reconciled rather than
+duplicated; (d) for any fix resting on a third-party-behavior claim, was that claim's execution
+shown, not just asserted.
+
+## Proactive deviation flagging (binding — added 2026-09-03)
+
+The user's overarching, non-negotiable mandate for this platform is Enterprise-class,
+production-grade Quality, Performance, Scalability, Reliability, Security, Observability,
+Modularity, Maintainability, and optimized/extensible Code, Design, and Architecture. This
+section makes flagging risk to that mandate a standing duty, not a courtesy.
+
+Whenever, during any task — not only at completion, and even if tangential to what was asked —
+a material risk to any of those 10 dimensions is noticed in code already built, being built, or
+about to be built, it is surfaced explicitly, by name, the moment it's noticed. Never assumed
+already seen, never folded silently into other output where it could be missed, never deferred
+to an end-of-session summary. Every flag is paired with a concrete, ECONOMICAL remediation
+option — the cheapest sound fix, not the most thorough one — so the user is choosing between a
+real option and "do nothing," never left with only a warning.
+
+Threshold: material risk to one of the 10 dimensions, calibrated the same way
+`principal-reviewer`'s Critical/Major/Minor/Nit tiers work — not stylistic nitpicks. Flagging
+everything, always, is itself a violation of this mandate's own economy: it degrades signal and
+adds cost without adding protection.
+
 ## Token-optimized development (binding — every task)
 
 Compute cost is real; discipline keeps it proportionate to value delivered.
