@@ -56,33 +56,40 @@ below before doing anything else.
 
 </details>
 
-## RESUME HERE FIRST (2026-09-04 — PR #235 merged, item 1 of the code-optimization queue closed)
+## RESUME HERE FIRST (2026-09-04 — PR #236 merged, items 1+2 of the code-optimization queue closed)
 
-**PR #235 merged to `main`** (`fe9d40e`), branch deleted. Closes BACKLOG.md §9:
-`level_kit_agent.py`'s Anthropic/Bedrock paths now route through the shared `llm_gateway`
-(async conversion, `schema` kwarg added for Anthropic's `output_config` json_schema
-constraint). Full Gate 5 pipeline: backend-engineer → unit-test-engineer (19 broken tests
-fixed + new Anthropic coverage) → functional-test-engineer (`[CLEAR FOR INTEGRATION]`, live
-Celery/DB) → principal-reviewer (CHANGES-REQUESTED round 1, all 6 findings fixed inline +
-self-verified, no re-dispatch needed) → 1 follow-up commit closing a real coverage gap the
-CI run itself surfaced (`llm_gateway_providers.py` 57%→88% direct coverage). Local dev
-synced (`git pull` + `alembic upgrade head`, confirmed `0061` head — no schema change).
-External mirror re-synced (`docs/BACKLOG.md` was the only touched mirrored file).
+**PR #236 merged to `main`** (`0c8ad0d`), branch deleted. Closes the D8 cross-process
+circuit-breaker item: `llm_gateway.py`'s breaker moved from an in-memory module dict (each
+Celery prefork child had its own copy) to Redis-backed state (`llm_breaker:{provider}:
+fail_count`/`:tripped` keys), reusing the existing `app.core.redis.redis_client` singleton.
+Full Gate 5 pipeline: backend-engineer → functional-test-engineer (genuine 2-separate-OS-
+process live proof against real Redis, `[CLEAR FOR INTEGRATION]`) → principal-reviewer
+(CHANGES-REQUESTED round 1 — 1 real regression caught: the fail_count TTL was set only on
+the first failure and never refreshed, so it silently expired mid-retry-chain on a slow/
+hanging provider, reproducing the exact hung-task-no-alert symptom this breaker exists to
+catch; fixed inline + self-verified, no re-dispatch needed). Merged under the same Coverage-
+gate risk-impact caveat as PR #235 (aggregate 67%<80%, 0 test failures, this PR's own code
+at 92% coverage) — caveat reasoning posted as a PR comment before merge, per this session's
+practice of keeping that trail on the PR itself, not just in chat. Local dev synced
+(`0061` head, no schema change). External mirror re-synced (`docs/BACKLOG.md` only).
 
-**`docs/BACKLOG.md` §5 items to keep an eye on from this PR** (tracked, not fixed — correctly
-out of scope): stale `test_functional_level_kit.py` fixture IDs (pre-existing, unrelated
-local-DB-recreate debt); the schema-constrained-Anthropic-happy-path-never-live-verified gap
-(needs a real `ANTHROPIC_API_KEY`, tracked for pre-Bedrock-go-live); Gemini's path in
-`level_kit_agent.py` still blocks the event loop (now reached through `run()`'s async
-dispatch, is the currently-configured local provider — needs its own pass).
+**`docs/BACKLOG.md` items to keep an eye on from PR #236** (tracked, not fixed — correctly
+out of scope): `wrap_bedrock_error` classifies `NoCredentialsError` as
+`TransientProviderError` (pre-existing, predates this branch — a missing AWS credential
+burns the retry budget and trips the breaker instead of failing immediately as a permanent
+config error).
+
+**Still open from PR #235** (unchanged): stale `test_functional_level_kit.py` fixture IDs;
+the schema-constrained-Anthropic-happy-path-never-live-verified gap (needs a real
+`ANTHROPIC_API_KEY`); Gemini's path in `level_kit_agent.py` still blocks the event loop.
 
 **Next up — resume the "critical code optimization backlog, no real prod-infra dependency"
-queue** (user's own framing, item 1 = PR #235, now done): item 2 D8 cross-process circuit
-breaker (Redis-backed); item 3 `_pipeline_progress_all_levels_sql.py` query-cost items
-(regex status match, computed-CASE join filter); item 4 load-testing harness (Phase 2c);
-item 5 the 2 oversized-file/function code-hygiene items (`level_kit_agent.py` 431 lines,
-`_extraction_tasks.py::_do_extract` 138-line function); item 6 the 3 zero-import
-dependency cleanups (`sentry-sdk`, `prometheus-client`, `openpyxl`).
+queue** (user's own framing; items 1-2 done): item 3
+`_pipeline_progress_all_levels_sql.py` query-cost items (regex status match, computed-CASE
+join filter); item 4 load-testing harness (Phase 2c); item 5 the 2 oversized-file/function
+code-hygiene items (`level_kit_agent.py` 431 lines, `_extraction_tasks.py::_do_extract`
+138-line function); item 6 the 3 zero-import dependency cleanups (`sentry-sdk`,
+`prometheus-client`, `openpyxl`).
 
 **Local dev stack:** uvicorn + Celery worker from 2026-09-03 were still running this
 morning (survived overnight, no reboot) — confirm still healthy before relying on them;
