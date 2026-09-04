@@ -1289,14 +1289,32 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
   `llm_gateway` gained an optional `schema=` kwarg (anthropic-only) to preserve the
   structured-JSON output constraint. Gemini's native path is unchanged (interim, out of
   scope). See `openspec/specs/interviews/spec.md` changelog, 2026-09-03 entry.
-- 🔴 **D8's circuit breaker is per-process, not cross-process (async-pipeline-durability, flagged
-  Phase 4 by principal-reviewer round 1, Major-2).** `docker-compose.yml`'s worker runs prefork
-  with no `--concurrency` set (CPU-count child processes), each holding its own in-memory
-  `_breaker_state` dict — a single hung task's Celery-level retries can be redelivered to a
-  different child process each attempt, so one task's retry chain may never accumulate to
-  `LLM_CIRCUIT_BREAKER_THRESHOLD` in any single process. A cross-process (Redis-backed) breaker
-  would close this gap; correctly documented as a known limitation in `core/constants.py` and
-  `llm_gateway.py` rather than fixed, since building one is a bigger scope decision than D8's.
+- ✅ **D8's circuit breaker is per-process, not cross-process** (async-pipeline-durability,
+  flagged Phase 4 by principal-reviewer round 1, Major-2) — closed 2026-09-04,
+  `dev/llm-circuit-breaker-redis`. `_breaker_is_open`/`_breaker_record_result` in
+  `llm_gateway.py` now read/write Redis (`llm_breaker:{provider}:fail_count` /
+  `:tripped` keys, via the existing `app.core.redis.redis_client` singleton) instead of a
+  module-level dict, so all `docker-compose.yml` prefork worker child processes share one
+  view of the breaker state. Redis's own key TTL replaces the old monotonic-timestamp
+  compare; a Redis outage fails OPEN (logs a warning, proceeds with the real provider
+  call) rather than blocking dispatch. Tests rewritten onto `fakeredis` in
+  `test_llm_circuit_breaker.py`. **Round-1 review caught a real regression before merge**
+  (Major-1): the fail_count key's cleanup TTL was set only on the FIRST failure and never
+  refreshed — since a real provider retry chain runs ~240-280s (longer than the fixed
+  cleanup window), the count would silently expire before reaching threshold on exactly
+  the slow/hanging-provider scenario this file exists to catch. Fixed: TTL now refreshes
+  on every failure (a genuine sliding window), with a new test proving failures spaced
+  across real time still trip the breaker.
+- 🔴 **`wrap_bedrock_error` classifies `NoCredentialsError` as `TransientProviderError`**
+  (found 2026-09-04, functional-test-engineer + principal-reviewer, reviewing
+  `dev/llm-circuit-breaker-redis` — confirmed pre-existing via `git log`, last touched PR
+  #217, not introduced or worsened by that branch). `NoCredentialsError` is caught by
+  `wrap_bedrock_error`'s `BotoCoreError` catch-all branch (not the `ClientError` branch),
+  so a missing/misconfigured AWS credential — a permanent config error, retrying will
+  never fix it — burns the full retry budget AND counts toward/trips the circuit breaker,
+  masking the real problem as a transient provider outage and delaying diagnosis. Needs
+  its own scoped fix: classify `NoCredentialsError` (and similarly non-retryable boto3
+  config errors) as `PermanentProviderError` instead.
 - 🔴 **`LLM_PROVIDER_TIMEOUT_SECONDS=60.0` is a judgment call, not a measured figure
   (async-pipeline-durability, flagged Phase 4 by principal-reviewer round 1, Major-4).** No
   measured Anthropic/Bedrock completion-latency figure exists anywhere in this repo (the only
