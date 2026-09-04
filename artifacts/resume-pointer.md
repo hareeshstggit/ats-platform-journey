@@ -52,9 +52,44 @@ below before doing anything else.
 - — Backlog & tech debt — see docs/BACKLOG.md
 - 2026-07-21 — Restore-reliability incident — why this file exists
 
+- 2026-09-03 — G15/G15b/G15c-G19 series + main-CI-break + bucket (b) ALL closed; 7 PRs merged (#228-#234)
+
 </details>
 
-## RESUME HERE FIRST (2026-09-03 — G15/G15b/G15c-G19 series + main-CI-break + bucket (b) ALL
+## RESUME HERE FIRST (2026-09-04 — PR #235 merged, item 1 of the code-optimization queue closed)
+
+**PR #235 merged to `main`** (`fe9d40e`), branch deleted. Closes BACKLOG.md §9:
+`level_kit_agent.py`'s Anthropic/Bedrock paths now route through the shared `llm_gateway`
+(async conversion, `schema` kwarg added for Anthropic's `output_config` json_schema
+constraint). Full Gate 5 pipeline: backend-engineer → unit-test-engineer (19 broken tests
+fixed + new Anthropic coverage) → functional-test-engineer (`[CLEAR FOR INTEGRATION]`, live
+Celery/DB) → principal-reviewer (CHANGES-REQUESTED round 1, all 6 findings fixed inline +
+self-verified, no re-dispatch needed) → 1 follow-up commit closing a real coverage gap the
+CI run itself surfaced (`llm_gateway_providers.py` 57%→88% direct coverage). Local dev
+synced (`git pull` + `alembic upgrade head`, confirmed `0061` head — no schema change).
+External mirror re-synced (`docs/BACKLOG.md` was the only touched mirrored file).
+
+**`docs/BACKLOG.md` §5 items to keep an eye on from this PR** (tracked, not fixed — correctly
+out of scope): stale `test_functional_level_kit.py` fixture IDs (pre-existing, unrelated
+local-DB-recreate debt); the schema-constrained-Anthropic-happy-path-never-live-verified gap
+(needs a real `ANTHROPIC_API_KEY`, tracked for pre-Bedrock-go-live); Gemini's path in
+`level_kit_agent.py` still blocks the event loop (now reached through `run()`'s async
+dispatch, is the currently-configured local provider — needs its own pass).
+
+**Next up — resume the "critical code optimization backlog, no real prod-infra dependency"
+queue** (user's own framing, item 1 = PR #235, now done): item 2 D8 cross-process circuit
+breaker (Redis-backed); item 3 `_pipeline_progress_all_levels_sql.py` query-cost items
+(regex status match, computed-CASE join filter); item 4 load-testing harness (Phase 2c);
+item 5 the 2 oversized-file/function code-hygiene items (`level_kit_agent.py` 431 lines,
+`_extraction_tasks.py::_do_extract` 138-line function); item 6 the 3 zero-import
+dependency cleanups (`sentry-sdk`, `prometheus-client`, `openpyxl`).
+
+**Local dev stack:** uvicorn + Celery worker from 2026-09-03 were still running this
+morning (survived overnight, no reboot) — confirm still healthy before relying on them;
+BACKLOG already tracks that stray/duplicate worker processes can accumulate across
+restarts on this machine.
+
+## RESUME HERE (2026-09-03 — G15/G15b/G15c-G19 series + main-CI-break + bucket (b) ALL
 ## closed; 5 PRs merged; only the coverage-gate itself (mergeable per the new caveat) is open)
 
 **7 PRs merged to `main` today, in order: #231 (`fix/main-ci-break`, `97c18d78`), #228 (G15d),
