@@ -56,40 +56,58 @@ below before doing anything else.
 
 </details>
 
-## RESUME HERE FIRST (2026-09-04 — PR #236 merged, items 1+2 of the code-optimization queue closed)
+## RESUME HERE FIRST (2026-09-04 night, PAUSED — PR #237 merged, item 3 of the code-optimization queue closed)
 
-**PR #236 merged to `main`** (`0c8ad0d`), branch deleted. Closes the D8 cross-process
-circuit-breaker item: `llm_gateway.py`'s breaker moved from an in-memory module dict (each
-Celery prefork child had its own copy) to Redis-backed state (`llm_breaker:{provider}:
-fail_count`/`:tripped` keys), reusing the existing `app.core.redis.redis_client` singleton.
-Full Gate 5 pipeline: backend-engineer → functional-test-engineer (genuine 2-separate-OS-
-process live proof against real Redis, `[CLEAR FOR INTEGRATION]`) → principal-reviewer
-(CHANGES-REQUESTED round 1 — 1 real regression caught: the fail_count TTL was set only on
-the first failure and never refreshed, so it silently expired mid-retry-chain on a slow/
-hanging provider, reproducing the exact hung-task-no-alert symptom this breaker exists to
-catch; fixed inline + self-verified, no re-dispatch needed). Merged under the same Coverage-
-gate risk-impact caveat as PR #235 (aggregate 67%<80%, 0 test failures, this PR's own code
-at 92% coverage) — caveat reasoning posted as a PR comment before merge, per this session's
-practice of keeping that trail on the PR itself, not just in chat. Local dev synced
-(`0061` head, no schema change). External mirror re-synced (`docs/BACKLOG.md` only).
+**FIRST TASK NEXT SESSION (explicit user request, do this before resuming the queue):**
+investigate root cause of the two CI failure classes seen across PRs #235/#236/#237 —
+(1) the backend aggregate-coverage-gate shortfall (66-67% vs 80% fail-under, driven by
+0%-covered standalone scripts — `seed_uat_recruitment_funnel.py` 484 stmts,
+`seed_uat_dataset.py` 176, `seed_legal_transaction_demo.py`, etc. — confirm whether these
+scripts are genuinely inert/excludable or need real coverage, and why they were never
+excluded from the aggregate in the first place); (2) `frontend-ci.yml`'s `component-test`
+job — 15 failures across 6 files (`nav-items.test.ts`, `position-schema.test.ts`,
+`positions-list.test.tsx`, `position-form-drawer.test.tsx`, `status-change-dialog.test.tsx`,
+`interview-org-labels.test.tsx`), confirmed identically red on `main` itself since at least
+2026-09-01, tracked in `docs/BACKLOG.md` since 2026-08-27/28 but never actually fixed
+despite being re-confirmed multiple times. Both have been merged-around under the
+Coverage-gate risk-impact caveat / "pre-existing, unrelated" reasoning for 3 PRs running —
+per the Debt-escalation clock (CLAUDE.md), this is exactly the "CI red on main for every
+PR" class that needs a scheduling decision, not another silent re-defer.
 
-**`docs/BACKLOG.md` items to keep an eye on from PR #236** (tracked, not fixed — correctly
-out of scope): `wrap_bedrock_error` classifies `NoCredentialsError` as
-`TransientProviderError` (pre-existing, predates this branch — a missing AWS credential
-burns the retry budget and trips the breaker instead of failing immediately as a permanent
-config error).
+**PR #237 merged to `main`** (`c17743c`), branch deleted. Closes the pipeline-progress-group
+join-perf item: `_pipeline_progress_group_sql.py`'s `events` CTE (`build_level_group_rows_sql`
+only) is now `AS MATERIALIZED`, fixing an O(size^2) rescan diagnosed via live EXPLAIN by
+principal-performance-auditor against a schema-cloned probe DB before any code was written.
+Paired with a `router.py` size cap (100→25). Full pipeline: backend-engineer →
+principal-reviewer (CHANGES-REQUESTED round 1 — 1 real regression caught: the new test's
+primary assertion checked something `MATERIALIZED` doesn't guarantee, failed 20/20 on
+correct code; fixed by asserting only the invariant the fix actually makes — `events`
+evaluated exactly once — independently confirmed stable 20/20 after) → a 2nd real CI
+failure caught and fixed post-review (the new test hardcoded a local-dev DSN password that
+doesn't match CI's credentials for `RUN_DB_TESTS`-gated tests; fixed by deriving the DSN
+from `settings.DATABASE_ADMIN_URL`, matching an existing project pattern). Merged under the
+same Coverage-gate caveat as #235/#236 plus the pre-existing frontend-ci.yml debt class —
+caveat + both failure classes documented as a PR comment before merge. Local dev synced
+(`0061` head, no schema change). External mirror re-synced (`docs/BACKLOG.md` only —
+`openspec/specs/reporting/spec.md` and `frontend/src/lib/api/reporting.ts` aren't on the
+18-file mirror list).
+
+**`docs/BACKLOG.md` items to keep an eye on from PR #237** (tracked, not fixed — correctly
+out of scope): a redundant `positions p` join in the same file's `position_sub_dims` CTE,
+needs `principal-reviewer` sign-off on an RLS-isolation argument before anyone touches it.
+
+**Still open from PR #236** (unchanged): `wrap_bedrock_error` classifies `NoCredentialsError`
+as `TransientProviderError` (pre-existing).
 
 **Still open from PR #235** (unchanged): stale `test_functional_level_kit.py` fixture IDs;
 the schema-constrained-Anthropic-happy-path-never-live-verified gap (needs a real
 `ANTHROPIC_API_KEY`); Gemini's path in `level_kit_agent.py` still blocks the event loop.
 
-**Next up — resume the "critical code optimization backlog, no real prod-infra dependency"
-queue** (user's own framing; items 1-2 done): item 3
-`_pipeline_progress_all_levels_sql.py` query-cost items (regex status match, computed-CASE
-join filter); item 4 load-testing harness (Phase 2c); item 5 the 2 oversized-file/function
-code-hygiene items (`level_kit_agent.py` 431 lines, `_extraction_tasks.py::_do_extract`
-138-line function); item 6 the 3 zero-import dependency cleanups (`sentry-sdk`,
-`prometheus-client`, `openpyxl`).
+**Then resume the "critical code optimization backlog, no real prod-infra dependency"
+queue** (user's own framing; items 1-3 done): item 4 load-testing harness (Phase 2c);
+item 5 the 2 oversized-file/function code-hygiene items (`level_kit_agent.py` 431 lines,
+`_extraction_tasks.py::_do_extract` 138-line function); item 6 the 3 zero-import dependency
+cleanups (`sentry-sdk`, `prometheus-client`, `openpyxl`).
 
 **Local dev stack:** uvicorn + Celery worker from 2026-09-03 were still running this
 morning (survived overnight, no reboot) — confirm still healthy before relying on them;
