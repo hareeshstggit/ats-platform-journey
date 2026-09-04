@@ -1265,7 +1265,44 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
       round-tripped cleanly against local Postgres.
 - ⏸️ Phase 2c — load-testing harness + 200-250 concurrent-user capacity validation. Auditor's own view: numbers would be meaningless until P0/P2 land (now done) — still nothing built, tool choice (Locust/k6/custom) an open decision for the user.
 - ✅ Watch-item resolved 2026-07-28 (see P4 above): `_pipeline_progress_sql.py`'s event CTEs now join only against the current page's positions, not the full matched-position set.
-- ❓ Watch-item (new, pipeline-progress-all-levels, 2026-07-31/08-02): the single-level fix above does NOT extend to `_pipeline_progress_all_levels_sql.py` — its event CTEs still compute over the FULL matched-position set before pagination (1 LATERAL CTE for on_hold becomes up to 5 for the 4 new cross-cutting measures, and the row grain multiplies by each position's active-level count instead of one row per position). Partially mitigated by measure-scoped SQL generation (`build_all_levels_rows_sql`, principal-reviewer finding 9) which only builds CTEs for requested measures, but the full-matched-set-before-pagination shape itself is unchanged. Two more confirmed-via-live-EXPLAIN cost items, neither addressed by the finding-9 mitigation: (a) the 4 direct-event CTEs (scheduled/selected/rejected/pending) filter on `ash.new_status::text ~ '_selected$'`-style regex instead of an indexable enum equality; (b) the event-CTE-to-`matching_positions` join is a `Join Filter` evaluated on a computed `CASE` expression (deriving `level_key` from `pending_reason`), not an equijoin on an indexable column. Measured at dev scale: 128-151ms for all 9 measures, worst single grain row fans out to 375 join rows. Feeds into Phase 2c when it happens. The `category_rank` double-SubPlan issue (round 1 finding) is fixed — `RANK() OVER (...)` replaced the correlated `COUNT(*)+1` subquery; live EXPLAIN against real populated data (77 positions/809 levels) confirms 0 `SubPlan`s, 1 `WindowAgg`.
+- ✅ Watch-item (originally logged 2026-07-31/08-02 against the now-deleted
+  `_pipeline_progress_all_levels_sql.py`, superseded by PR #209's status-groups redesign;
+  corrected + re-diagnosed + fixed 2026-09-04 against the CURRENT file,
+  `_pipeline_progress_group_sql.py`, `dev/pipeline-progress-group-join-perf`). Concern (a)
+  [regex vs indexable enum equality on `ash.new_status`] — CONFIRMED NON-ISSUE: live-measured
+  switching it to an enum-equality changed nothing (829ms vs 845ms) — no index exists on
+  `new_status` to exploit, the planner already picks the equivalent path either way. Concern
+  (b) [event-CTE-to-outer join evaluated on a computed `CASE` expression, not an indexable
+  equijoin] — ✅ FIXED: `build_level_group_rows_sql`'s `events` CTE (~line 137) is now
+  `AS MATERIALIZED`, forcing one-time computation instead of Postgres inlining it into a
+  plan that re-executed the events subplan once per outer grid row (O(size^2) — measured
+  440ms at the router's max page size 100 pre-fix). `MATERIALIZED` guarantees only that
+  `events` is evaluated exactly once (a distinct `CTE events` node, `Actual Loops == 1`) —
+  NOT any particular outer-join node type, which is cost-model-dependent and can legitimately
+  be a Nested Loop at small scale even on a correct, fixed plan (round-1 principal-reviewer
+  finding, Major-1: an earlier version of `test_perf_pipeline_progress_group_join.py`
+  asserted the outer join was never a Nested Loop — a stronger claim than the fix makes —
+  and failed on correct code; corrected to assert only the single-evaluation invariant,
+  which holds at any seed scale). Live-EXPLAIN independently re-confirmed at probe scale
+  (500 positions): 237.5ms -> 22.3ms. Paired with a size cap (`router.py`'s `size` param:
+  max 100 -> 25) as a defense-in-depth bound. `build_status_group_rows_sql`'s own separate
+  `events` CTE (~line 190) was checked and left untouched — `MATERIALIZED` measured zero
+  difference there (it already gets a good plan unaided).
+  NEW tracked item (secondary finding from the same diagnostic, NOT fixed by this PR): a
+  redundant `positions p` join inside `position_sub_dims` in the same file —
+  `p.id IN (SELECT id FROM page_positions)` could read `il.position_id IN (...)` directly
+  since the two sets are already equal via the join condition. Cheap change, but touches an
+  RLS-relevant predicate (positions carries an RLS policy) — needs `principal-reviewer`'s
+  explicit sign-off on the isolation argument before anyone touches it, not a drive-by edit.
+  Round-2 CI failure (real, fixed same PR): the new test initially hardcoded a local-dev DSN
+  password (matching 3 other pre-existing `RUN_FUNCTIONAL_TESTS`-gated functional-test files'
+  convention) — but this test is `RUN_DB_TESTS`-gated, which CI actually sets and runs
+  (unlike `RUN_FUNCTIONAL_TESTS`), so it broke on CI's different Postgres credentials. Fixed
+  by deriving the DSN from `settings.DATABASE_ADMIN_URL` instead (matching `app/scripts/
+  check_schema_definition_drift.py`'s established pattern), fail-loud if unset. The 3
+  other files' hardcoded-password convention remains untouched, pre-existing debt — noted
+  so it isn't "discovered" again later, but those never run in CI so they don't share this
+  specific failure mode.
 
 ## 9. Feature backlog (not started / deferred)
 
