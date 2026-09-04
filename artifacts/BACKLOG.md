@@ -596,6 +596,40 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   files — pre-existing, unrelated to this UUID class, flagging here so it isn't "discovered"
   again later. Needs its own scoped pass — same fix shape as bucket (b): resolve
   each position dynamically instead of hardcoding.
+- 🔴 **`test_functional_level_kit.py` confirmed as one of the 8 files carrying dead
+  `c180a718-...` (`POSITION_ID`)** (found 2026-09-03, functional-test-engineer, `dev/level-kit-
+  agent-llm-gateway`) — 11/14 cases in this file error at fixture setup with
+  `ForeignKeyViolation: candidates_created_by_fkey`. Same local-DB-recreate root cause as the
+  dead-UUID class above, but a DIFFERENT variable/entity: `RECRUITER_USER_ID =
+  "4a678325-bdf5-408f-82f0-2ee9bb7152ad"` is also stale (real `recruiter@ats.test` id is now
+  `bdee609b-9cee-4ee2-8136-2ae85f6fff18`) — a hardcoded user id, not a position id, so it's
+  outside the position-UUID class's own scoped-pass fix shape. Pre-existing, unrelated to the
+  llm_gateway migration this branch actually ships — reported, not fixed, per functional-test-
+  engineer's mandate. Needs its own fix: re-derive both IDs dynamically or from a live query.
+- ❓ **Schema-constrained happy path for `level_kit_agent`'s Anthropic call (`schema=_OUTPUT_SCHEMA`
+  passed to `llm_gateway.complete()`) never exercised against a real 200 response** (found
+  2026-09-03, functional-test-engineer, `dev/level-kit-agent-llm-gateway`) — this local
+  environment has no `ANTHROPIC_API_KEY`/Bedrock AWS credentials, and the real `GEMINI_API_KEY`
+  is quota-exhausted (20 req/day free tier). All 3 providers' graceful-degradation/retry/circuit-
+  breaker paths were verified live against the real async Celery/DB stack (no defects), but the
+  actual point of this fix — Anthropic returning schema-conforming JSON via `output_config` —
+  has zero live confirmation. Not a merge blocker (the code path degrades correctly either way;
+  this is an environment-credential gap, not a code defect), but flagged so it isn't silently
+  assumed verified: re-check with a real `ANTHROPIC_API_KEY` smoke call before/at AWS Bedrock
+  go-live, same class as the already-tracked NFR go-live-gated items.
+- 🔴 **Gemini's path in `level_kit_agent.py` still blocks the Celery worker's event loop**
+  (found 2026-09-03, principal-reviewer round 1, `dev/level-kit-agent-llm-gateway`, M5) —
+  `_gemini()`/`_call_gemini()`/`_invoke_gemini()` are still fully synchronous (`time.sleep`
+  retries, blocking `google-genai` SDK call), explicitly out of scope for that change (only
+  Anthropic/Bedrock were converted to async + routed through `llm_gateway`). Gemini is now
+  reached through `run()`'s newly-`async` dispatch and is the CURRENTLY-CONFIGURED local
+  provider (`INTERVIEW_KIT_PROVIDER=gemini`) — so this is the live path, not a dormant one.
+  Needs its own pass: convert `_gemini`/`_call_gemini`/`_invoke_gemini` to async
+  (`asyncio.sleep` for retries, `run_in_executor` for the blocking SDK call, matching the
+  pattern `llm_gateway_providers.py`'s bedrock/gemini functions already use), or route
+  Gemini through `llm_gateway` too (`llm_gateway_providers.py`'s `call_gemini` already
+  exists and is already bounded/async — the remaining work is entirely in
+  `level_kit_agent.py`'s dispatch, not the gateway).
 - 🔴 **`app/modules/offers/tasks.py` — 0% test coverage, 89 statements** (found 2026-09-03
   during the coverage-gate risk-impact assessment, PRIORITY item 4). A Celery task file with
   zero automated coverage — touches Reliability/Observability per the 10-dimension mandate,
@@ -815,7 +849,7 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
     already-separately-split recruiter delegation wrappers, neither named by the plan doc for
     further extraction. Revisit only if a future pass specifically re-scopes this file.
 - ✅ (resolved, confirmed 2026-08-27 during Tier 3 frontend batch 1 scoping) `frontend/src/components/reports/interview-pipeline-progress-report.tsx` — this entry's "366 lines, needs its own decomposition pass" is now stale: two later, unrelated fixes (`ea69919`/`b05a9d8`, the render-time page-clamp regression-test fix and the viewport-responsive page-size fix) already moved the report's spec-commentary block to `openspec/specs/reporting/spec.md` §3 and trimmed the component itself, bringing it to 299 lines (under the 300-line cap) with its own dedicated `interview-pipeline-progress-report.test.tsx`. No further split scheduled — re-flag only if it grows back over cap.
-- 🔴 `backend/app/modules/interviews/agents/level_kit_agent.py` — 425 lines, over the 300-line cap. Flagged in CR#2 principal-reviewer round 3 (M3): pre-existing/systemic, part of the same 21-files-over-cap project-wide gap this section already tracks; not blocking CR#2, tracked here only.
+- 🔴 `backend/app/modules/interviews/agents/level_kit_agent.py` — 431 lines (was 425; +6 from `dev/level-kit-agent-llm-gateway`'s async/llm_gateway conversion, 2026-09-03), over the 300-line cap. Flagged in CR#2 principal-reviewer round 3 (M3): pre-existing/systemic, part of the same 21-files-over-cap project-wide gap this section already tracks; not blocking CR#2 or this change, tracked here only.
 - ✅ **Tier 5 backend catch-up (2026-08-31, branch `dev/hygiene-tier5-backend-catchup`)** — a
   fresh re-audit found 3 backend files still/newly over the 300-line cap after the 48-file sweep
   closed. `candidates/agents/job_matcher.py` (**G14, file-cap half DONE, function-cap half still
@@ -1248,16 +1282,13 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
 - ⏸️ **UAT recruitment-funnel data — 500 candidates / 50 positions full scale.** Script built + verified at 120-candidate proof scale (`dev/seed-uat-recruitment-funnel`, §2). Full run explicitly deferred by user (month-end budget) — resume by restoring the 2 dropped categories (Professional Services, Product/Platform Consultants) for the full 14-category run; budget ~4x the candidates at similar per-unit cost.
 - ✅ (closed — moot, 2026-08-18) `reconcile_screenings` beat-scheduling precondition. The task (and the rest of `candidates/screening/tasks.py`) was deleted entirely by `candidate-ai-match-screen-consolidation`'s retirement of that module's match-decision write path — matching is now a single on-demand "AI Job Match" trigger (`job_matcher.py`), not a fan-out needing reconciliation. No scheduling preconditions remain to track.
 - 🔴 **DPDP retention enforcement + reporting materialized-view refresh — placeholder task bodies, no owner (async-pipeline-durability, deferred from Phase 2 by principal-reviewer round 1, C3).** Both beat-schedule-worthy jobs were REMOVED from `celery_app.py`'s `beat_schedule` this phase (not added, as an earlier draft of this change incorrectly claimed) because their task bodies are still placeholders: `data_privacy.enforce_data_retention` (`app/modules/data_privacy/tasks.py`) is an empty no-op, `reporting.refresh_reporting_views` (`app/modules/reporting/tasks.py`) raises `NotImplementedError`. The DPDP one is the higher-priority gap — `proposal.md` itself calls it "a live compliance exposure" (specced as a daily storage-limitation sweep, nothing currently anonymises anything). Needs: implement the real task body for each (querying `candidates.retention_expires_at` for the DPDP one; refreshing whichever materialized views `reporting/spec.md` names for the other), THEN add both back to `beat_schedule` (`enforce-dpdp-retention` daily, `refresh-reporting-materialized-views` every 10 min — cadences already decided, just needs real bodies to schedule against).
-- 🔴 **`level_kit_agent.py`'s `_invoke_anthropic`/`_invoke_bedrock` bypass `llm_gateway` entirely
-  (async-pipeline-durability, flagged Phase 4 by principal-reviewer round 1, Major-6).** Both
-  build their own raw, unbounded, unconfigured clients (`anthropic.Anthropic(...)`,
-  `boto3.client("bedrock-runtime", ...)` with no `Config`/timeout) — this is the LEAST-bounded
-  LLM path in the system, on the exact Celery queue (`interviews`/kit generation) Phases 2/3
-  explicitly hardened for retry/redelivery safety. Out of D8's scope to fix (D8 only bounds
-  `llm_gateway`'s own Anthropic/Bedrock/Gemini clients) — needs its own change to either route
-  through `llm_gateway.complete()` (the existing architectural-inconsistency note in
-  `interviews/spec.md`'s changelog already flags this agent as not using the shared gateway) or
-  get its own module-scope timeout-bound clients mirroring `llm_gateway_providers.py`'s pattern.
+- ✅ **`level_kit_agent.py`'s `_invoke_anthropic`/`_invoke_bedrock` now route through the
+  shared `llm_gateway`** — `dev/level-kit-agent-llm-gateway`, 2026-09-03. Both paths now call
+  `llm_gateway.complete()` (timeout-bound clients, circuit breaker, normalized provider
+  errors) instead of building raw `anthropic.Anthropic(...)`/`boto3.client(...)` clients;
+  `llm_gateway` gained an optional `schema=` kwarg (anthropic-only) to preserve the
+  structured-JSON output constraint. Gemini's native path is unchanged (interim, out of
+  scope). See `openspec/specs/interviews/spec.md` changelog, 2026-09-03 entry.
 - 🔴 **D8's circuit breaker is per-process, not cross-process (async-pipeline-durability, flagged
   Phase 4 by principal-reviewer round 1, Major-2).** `docker-compose.yml`'s worker runs prefork
   with no `--concurrency` set (CPU-count child processes), each holding its own in-memory
