@@ -17,7 +17,7 @@ Version history in the [Changelog](#changelog) at the bottom.
   — 1.1 Working agreement file · 1.2 Specialized agent definitions · 1.3 Skills for
   mechanical work · 1.4 Cavecrew agents · 1.5 Prose compression · 1.6 Memory & progress
   capture · 1.7 Pre-code setup checklist
-- Part 2: During development — the disciplines (D1–D15)
+- Part 2: During development — the disciplines (D1–D16)
 - Part 3: Cost benchmarks (living)
 - Part 4: Anti-patterns (living)
 - Part 5: How this playbook evolves
@@ -474,6 +474,43 @@ self-check, meant the 4 real findings it caught (a duplicate D-number, a contrad
 missing playbook entry, a sequential-step regression) were caught by the SAME mechanism this
 mandate exists to strengthen — not a parallel, redundant verification pass.
 
+### D16. Superpowers skills as the decision layer, Cavecrew as the execution layer (binding, added 2026-09-05)
+
+**Why this exists:** Superpowers' own meta-rule ("if there's even a 1% chance a skill applies,
+invoke it") is a discipline for deciding WHAT to do, not a cost optimization by itself —
+invoked indiscriminately it adds a skill-load tax to every turn. Paired correctly with Cavecrew,
+the two solve the two complementary halves of the problem this playbook already targets (see
+"The core insight" above): wrong-agent selection, and rework cycles. Superpowers' process skills
+(`systematic-debugging`, `brainstorming`) exist to lock down scope and root cause BEFORE any paid
+dispatch — closing the same failure modes CLAUDE.md's RCA-completeness mandate and D10 above
+already target ("RCA presented before the fix was executed," "ambiguity discovered across 3
+round-trips instead of 1"). Cavecrew's 3 agents are the cheap execution layer that scope should
+route to once Superpowers has narrowed it — not Explore, not `general-purpose`, not a full
+`backend-engineer` dispatch on work that's still exploratory.
+
+**Rule — the layering, in order:**
+| Step | Layer | Tool | Purpose |
+|---|---|---|---|
+| 1. Decide scope / root cause | Superpowers | `systematic-debugging`, `brainstorming` skills | Lock down WHAT before spending on execution |
+| 2. Locate code | Cavecrew | `cavecrew-investigator` | Cheap read-only lookup, ~60% fewer tokens than Explore (D1) |
+| 3. Make bounded edit | Cavecrew | `cavecrew-builder` | ≤2-file mechanical edit once scope is locked |
+| 4. First-pass diff check | Cavecrew | `cavecrew-reviewer` | Cheap severity-tagged pass before the expensive gate |
+| 5. Merge-readiness gate | Named roster | `principal-reviewer` | Full mandate-anchored verdict — never skipped, but reached last |
+
+**Never:** invoke a Superpowers process skill AFTER already dispatching an expensive agent on
+ambiguous scope — the skill's value is front-loading; invoked post-hoc it's pure overhead with no
+rework avoided. **Never:** skip step 1 and go straight to Cavecrew/`backend-engineer` on a
+genuinely ambiguous task just because Cavecrew is cheap — a cheap agent given the wrong scope
+still produces a wrong result, and the CHANGES-REQUESTED cycle that follows costs more than the
+skill invocation would have.
+
+**Calibration (avoids the indiscriminate-invocation tax):** only invoke a Superpowers process
+skill when its output will concretely narrow scope before a paid dispatch — a task that's already
+unambiguous (a named file, a named line, a stated fix) skips straight to Cavecrew/the named
+roster. Applying `brainstorming` to an already-scoped task is the same class of waste as running
+a broad audit with no defined scope (D5): process invoked for its own sake, not because it avoids
+rework.
+
 ---
 
 ## Part 3: Cost benchmarks (living — update with each project's data)
@@ -515,6 +552,8 @@ when available — label it as "measured" vs. "estimated."
 | **Bug fixes done entirely in the main loop during live testing** | **High — no cavecrew-investigator/builder, no principal-reviewer gate; cost escalates with zero auditability** | **CLAUDE.md Gate 5 (binding, no override): every bug fix routes through cavecrew-investigator → cavecrew-builder/ux-ui-engineer/backend-engineer → principal-reviewer, regardless of size** |
 | **Data-matching fix based on "field looks right" instead of tracing to the authoritative source** | **Very high — each wrong layer costs a full principal-reviewer round (~$15–20); PR #159 needed 3 rounds for one bug** | **D14 (binding, mandatory): trace the value to the code that produces it before writing match logic, not after a reviewer flags the mismatch** |
 | **New column backfills to NULL with no check whether existing rows had the value via another source** | **High — shipped feature appears broken on real user-tested data post-merge, forcing an emergency root-cause + backfill-script cycle (~$15–20) discovered by the user, not caught pre-merge** | **CLAUDE.md schema-evolution item 5 (binding): backfill from the authoritative source in the same PR, or explicitly justify why none is possible — "no rows affected" is not sufficient on its own** |
+| **Dispatching Cavecrew/`backend-engineer` on ambiguous scope instead of running a Superpowers process skill first** | **High — a cheap agent given the wrong scope still produces a wrong result; the CHANGES-REQUESTED cycle that follows costs more than the skill would have** | **D16 (binding): `systematic-debugging`/`brainstorming` decide WHAT before Cavecrew executes it — decision layer before execution layer, never the reverse** |
+| **Invoking a Superpowers skill on an already-unambiguous, already-scoped task** | **Medium — skill-load tax with no rework avoided, same waste class as an unscoped audit (D5)** | **D16 calibration: skip straight to Cavecrew/the named roster when scope is already a named file/line/fix** |
 
 ---
 
@@ -557,3 +596,4 @@ keep it accurate.
 | 2026-07-08 | 1.5 | Added D13 (binding, mandatory): trace data-matching/derivation bugs to the code that authoritatively produces the value before writing match logic — don't fix on "field looks right" and let review find the next layer. PR #159's Issue 1 needed 3 principal-reviewer rounds (`level_label` → `level_number` → `category_rank`) for one bug because the pre-fix investigation stopped at the first plausible field instead of reading the code that constructs `pending_reason`. Added matching anti-pattern row to Part 4. | PR #159 5-round review cycle post-mortem |
 | 2026-07-10 | 1.6 | Added CLAUDE.md schema-evolution item 5 (binding backfill mandate): a new column that starts persisting a value existing rows implicitly already had via another authoritative source must backfill from it in the same PR, or explicitly justify why not — "no rows affected" alone is insufficient. Migration `0047_feedback_outcome_col` shipped with that exact insufficient justification; a real pre-existing row's decided outcome was already in `application_status_history` but never backfilled, surfacing as a shipped feature (BR-SYNC-006) looking broken on user-tested data after merge — found by the user, not caught in review. Fixed via `backfill_legacy_feedback_outcome.py`. Added matching anti-pattern row to Part 4. | Live BR-SYNC-006 incident, user-reported post-merge |
 | 2026-08-19 | 1.7 | Added CLAUDE.md's "CI-cost-under-real-billing mandate" (binding, no override): local-verification-first before any code/config/test/CI-workflow push (full `ruff`/`mypy`/`pytest`+`RUN_DB_TESTS=1`/`tsc`/`eslint`/`vitest`, plus a local Playwright run for new e2e coverage); review the diff before the push it belongs to, not after a CI failure surfaces what review would have caught; consolidate to the minimum CI-triggering pushes a change needs; state real dollar cost (not just minutes) in cost alerts once over the included allotment. CR#1's build session pushed 9 times to one branch (2 rounds discovering CI-only-visible defects a local Windows run structurally couldn't catch — a Windows-only venv path, a missing Celery worker in `frontend-ci.yml` — plus 3 review-driven fix rounds each re-triggering full CI) and took the account from ~1,381 to 1,991 of the 2,000-minute August allotment with no spending limit configured, meaning further usage is now real per-minute billing, not just quota risk. | CR#1 (`candidate-ai-match-screen-consolidation`) build session CI-usage review, 2026-08-19, ahead of CR#2 |
+| 2026-09-05 | 1.8 | Added D16 (binding): Superpowers process skills (`systematic-debugging`, `brainstorming`) as the decision layer that locks scope/root-cause before any paid dispatch; Cavecrew's 3 agents as the cheap execution layer that scope routes to once narrowed — never the reverse, and never invoke a Superpowers skill on an already-unambiguous task (indiscriminate-invocation tax). Added 2 matching anti-pattern rows to Part 4. | User request to persist the Superpowers+Cavecrew pairing as a standing practice, 2026-09-05 |
