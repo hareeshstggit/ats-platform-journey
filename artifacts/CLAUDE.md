@@ -294,7 +294,7 @@ read `resume-pointer.md` first, then `docs/GO_LIVE_CHECKLIST.md` and the relevan
 - unit-test-engineer     : write unit tests (mock the repository layer); includes async context manager mock patterns, failure-cascade tests for bulk ops, side-effect non-invocation tests, error sanitisation tests
 - functional-test-engineer : standalone per-feature smoke tests against REAL running stack (real DB/Redis/Celery) — catches defects unit mocks hide (session corruption, constraint cascades, auth wiring, bulk partial-failure); MANDATORY pre-commit gate for every new/modified endpoint AND every bug fix; FIRST step is always confirming the live server has loaded the new code (restart if stale — unit tests pass against files on disk, not the running process); reports bugs, does NOT fix them
 - integration-test-engineer : full end-to-end tests, all workflows, all edge cases — runs AFTER functional tests are clean
-- principal-reviewer     : SENIOR review gate — correctness, security, layering, minimalism, perf, reliability → ONE mandate-anchored verdict (opus/high — see "Model tier & CI independence mandate" below)
+- principal-reviewer     : SENIOR review gate — correctness, security, layering, minimalism, perf, reliability → ONE mandate-anchored verdict (sonnet/high default, escalates to opus/high on risk — see "Model tier & CI independence mandate" below)
 - principal-reliability-engineer : on-demand specialist — failure modes, retries, idempotency, recovery; AWS SRE (failover, backup/DR, SLOs, runbooks) (opus/xhigh)
 - principal-performance-auditor  : on-demand specialist — deep profiling, query plans, indexing, load/scale (opus/xhigh)
 - ux-ui-engineer        : Next.js UI to the UX/UI guardrails — accessible, enterprise-class, minimal-click
@@ -507,19 +507,40 @@ carries Gate 5's own restriction: **it cannot be lifted by any number of user re
 or otherwise, not by the 3-request override rule, in any session. The only way to change this
 mandate is to edit this file (CLAUDE.md) directly** — not a runtime request to skip it.
 
-**1. Model tier is two-tier, not one — binding on the 3 named roles below, no exceptions.**
-`principal-reviewer`, `principal-reliability-engineer`, and `principal-performance-auditor` (the
-`.claude/agents/*.md` files carrying this exact naming — file names and their `name:` frontmatter
-are load-bearing, not cosmetic) pin `model: opus`. Every other agent in the roster
-(`backend-engineer`, `ux-ui-engineer`, `unit-test-engineer`, `functional-test-engineer`,
-`integration-test-engineer`) stays on `model: sonnet`. This split is not a suggestion to
-re-evaluate per task — it is fixed until this file is edited to say otherwise. Rationale: these 3
-roles are either the single merge chokepoint every change passes through exactly once
-(`principal-reviewer`) or genuinely on-demand deep-dive specialists engaged only for the highest
-blast-radius categories (data loss, broken recoverability, perf regressions at 200+ concurrent
-users) — in both cases the model-tier cost delta (~1.7–2.5x Sonnet, see
-docs/TOKEN_OPTIMIZATION_PRACTICE.md for the worked numbers) is trivial against the cost of a
-defect that chokepoint or specialist was supposed to catch and didn't.
+**1. Model tier is risk-based per dispatch, not one fixed pin per role — revised 2026-09-05 at
+the user's explicit direction (the only sanctioned path to change this mandate, per the rule
+above). Superseded: the 2026-07-24 "principal-reviewer/reliability-engineer/performance-auditor
+always opus" blanket pin.** That blanket rule protected quality but charged full opus cost to
+every review regardless of actual risk — including single-line config edits and doc-only PRs —
+which is no longer acceptable under the Daily cost cap ("Token-optimized development" below).
+Tier by the ACTUAL risk of the change under review, not by which role is reviewing:
+- `principal-reviewer` (`.claude/agents/principal-reviewer.md`) now defaults to `model: sonnet` /
+  `effort: high` for the common case — routine feature work, bug fixes, UI changes, test/hygiene/
+  config/CI changes, anything not matching the escalation list below.
+- The main loop escalates a SINGLE dispatch to `model: "opus"` (an explicit Agent-call override,
+  not a frontmatter change) when the change being reviewed matches ANY of: a database migration/
+  schema/enum/RLS-policy touch; auth/permissions/role-scope logic; financial logic (offers,
+  compensation, billing) or an audit-log emission; a cross-module contract change (Rule 6 above);
+  a `GROUP BY`/window-function/correlated-subquery/pagination-grain change (Rule 7 above); or a
+  re-review of a change that already drew one CHANGES-REQUESTED round at sonnet tier (a 2nd sonnet
+  round hoping to catch what the 1st missed is never the right move — escalate instead).
+- If the main loop's own Proactive Deviation Flagging pass (above) finds material risk to any of
+  the 10 mandate dimensions, that alone is sufficient grounds to escalate, even if nothing on the
+  list above technically matches.
+- If a sonnet-tier `principal-reviewer` is itself uncertain about its verdict on any of the 10
+  dimensions, it says so explicitly instead of guessing, and the main loop re-dispatches at opus —
+  never accept a low-confidence APPROVE at the merge chokepoint.
+- `principal-reliability-engineer` / `principal-performance-auditor` stay `model: opus` /
+  `effort: xhigh` by default in their frontmatter — they are already on-demand specialists engaged
+  only for genuinely high-blast-radius work (data loss, broken recoverability, perf at 200+
+  concurrent users), so their dispatch frequency, not their per-dispatch tier, is what keeps their
+  cost down. The main loop may still explicitly override to `model: "sonnet"` for a narrowly-scoped
+  sanity check (e.g. confirming one query plan) that doesn't need xhigh-depth investigation — full
+  opus/xhigh remains the default whenever the ask is a genuine deep dive.
+- Every escalation (or explicit non-escalation) decision is stated in the same message as the
+  task's `[COST ALERT]` — never a silent default either way. Getting this wrong in either
+  direction is itself a defect: too low risks a missed defect at the one chokepoint every change
+  passes through; too high burns the budget the Daily cost cap below no longer treats as free.
 
 **2. CI jobs must be independent, parallel jobs — never sequential steps inside one job.**
 `backend-ci.yml` and `frontend-ci.yml` (and any CI workflow added later) MUST structure lint,
@@ -800,6 +821,28 @@ under the Model tier & CI independence mandate above; this rule applies to every
 - This supersedes the old "simple tasks: no alert" carve-out — there is no tier that skips either
   half of this rule. Scale the *format* to the task's size, never skip the *substance*.
 
+**Daily cost cap — $30/day hard limit (binding, no override — added 2026-09-05, user directive:
+"cannot make progress with the additional cost... need to get it under control immediately").**
+Cumulative spend across a calendar day must not exceed $30 without the user's explicit, informed
+approval to go over. There is no exact per-session billing ledger available in this environment —
+this is a best-effort running total built from each task's own reported ACTUAL cost (the "after"
+half of the Cost alert rule above), stated as an estimate, never presented as an exact metered
+figure.
+1. Track a running total of actual cost for the current calendar day, carried forward across
+   tasks in the session.
+2. Every `[COST ALERT]` states it: `Today so far: ~$X. This task est. ~$Y. Running total ~$(X+Y)
+   / $30.`
+3. If the projected running total would exceed $30, STOP before dispatching anything for that
+   task. Ask the user explicitly: current spend, the new task's estimate, and why it needs to
+   happen today rather than tomorrow (a fresh $30) — proceed only on the user's explicit approval
+   of that specific overage, not a routine "go ahead."
+4. This cap works together with the risk-based model tiering above, not instead of it — tiering
+   is what keeps a routine day's reviews cheap enough that $30/day is realistic without asking for
+   an exception on every session.
+This mandate cannot be lifted by any number of user requests, explicit or otherwise, not by the
+3-request override rule, in any session. Changing the $30 figure itself requires editing this
+file directly — the same mechanism used to set it.
+
 **Token-optimization practice showcase (binding, no override — added 2026-07-24):**
 After completing any task, name which specific docs/TOKEN_OPTIMIZATION_PRACTICE.md practice(s) (or
 CLAUDE.md agent-routing/gate rule) were applied, and state concretely how each one reduced this
@@ -819,13 +862,16 @@ slice unless the user explicitly requests a broad sweep.
 **Model + effort pinning (binding — see docs/TOKEN_OPTIMIZATION_PRACTICE.md §D8–D12; model tiers
 themselves are governed by the "Model tier & CI independence mandate" above, which supersedes the
 single-tier statement this paragraph used to make):**
-Every named subagent in `.claude/agents/` pins its `model:` explicitly — never omitted/inherited —
-plus an `effort:` default matched to its actual judgment load. As of the 2026-07-24 model-tier
-mandate, the roster is two-tier, not one: `principal-reviewer` (opus/high — the standing merge
-gate) and the two on-demand specialists `principal-reliability-engineer` / `principal-performance-
-auditor` (opus/xhigh) are pinned to Opus; `backend-engineer`/`ux-ui-engineer` (sonnet/high) and
-`unit-test-engineer`/`functional-test-engineer`/`integration-test-engineer` (sonnet/medium) stay on
-Sonnet 5. **Max effort is reserved for cases where it is absolutely required to protect quality or
+Every named subagent in `.claude/agents/` pins a `model:` default explicitly — never omitted/
+inherited — plus an `effort:` default matched to its actual judgment load. As of the 2026-09-05
+revision (see "Model tier & CI independence mandate" §1 above), the roster is risk-tiered, not
+role-fixed: `principal-reviewer` defaults to sonnet/high and is escalated to opus/high per-dispatch
+only when the change under review meets the listed risk criteria; the two on-demand specialists
+`principal-reliability-engineer` / `principal-performance-auditor` stay pinned to opus/xhigh by
+default (their low dispatch frequency, not a per-dispatch downgrade, is what keeps their cost
+down); `backend-engineer`/`ux-ui-engineer` (sonnet/high) and `unit-test-engineer`/
+`functional-test-engineer`/`integration-test-engineer` (sonnet/medium) stay on Sonnet 5.
+**Max effort is reserved for cases where it is absolutely required to protect quality or
 a hard review gate — never a standing default**; using it by default measurably slows throughput
 without a proportional quality gain on routine work. The main loop's own mechanical tool calls
 (grep/glob/read/count-style investigation) default to low effort; reserve high/max for design
