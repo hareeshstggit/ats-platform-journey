@@ -66,9 +66,9 @@ narrative, only current state.
    anything from `app/scripts/` — these scripts are never on any request path in any
    environment. Per-dimension assessment: **no impact on any of the 10 dimensions** — inert
    against Quality/Performance/Scalability/Reliability/Security/Observability/Modularity/
-   Maintainability/Code-Design/Architecture-Extensibility. Awaiting the user's decision on
-   whether this closes the coverage-gate question or whether they want it handled differently
-   (e.g. `--cov-report`'s own `omit=` config excluding `app/scripts/*` from the denominator).
+   Maintainability/Code-Design/Architecture-Extensibility. **User decision (2026-09-05):
+   leave as-is** — no `omit=` config change; keep applying the Coverage-gate risk-impact
+   caveat per-PR as already practiced (PRs #235/#236/#237). Closed.
    **Separately flagged, NOT part of the gate math but a real gap**: `app/modules/offers/
    tasks.py` is 0% covered (89 statements) — a Celery task file, genuinely untested, touching
    Reliability/Observability. Tracked in §5 below, not blocking, needs its own pass.
