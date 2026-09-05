@@ -36,6 +36,7 @@ Claude Code reads this before EVERY task. All generated code complies.
 - Proactive deviation flagging
 - Coverage-gate risk-impact caveat
 - RCA-completeness & fix-scope dependency mapping
+- Agent-dispatch cost discipline
 
 **Part VI — Token Economics & Verification**
 - Token-optimized development
@@ -780,6 +781,45 @@ claims about external libraries.
 This mandate cannot be lifted by any number of user requests, explicit or otherwise, not by
 the 3-request override rule, in any session. The only way to change it is to edit this file
 directly.
+
+### Agent-dispatch cost discipline (binding — added 2026-09-05, NO override, same class as Gate 5)
+
+This section exists because a single day's session (2026-09-05) produced five concrete,
+avoidable cost drivers, surfaced when the user flagged escalating cost as unsustainable: a
+dispatched agent that self-chained its own review/test rounds and opened its own PR unasked
+(PR #238, ~$30-50 alone); a coverage-gate RCA presented as complete before its fix was executed,
+forcing a 2-3x redo (the incident behind the RCA-completeness mandate above); multiple backlog
+items chained back-to-back with no cost checkpoint between them; two on-demand opus/xhigh
+specialists reached for before cheaper direct checks were tried; and review rounds allowed to
+run to a 3rd pass instead of stopping the moment scope exceeded the original estimate. Each is
+now a standing rule, not a one-off fix:
+
+1. **Zero self-chaining, every dispatch, no exceptions.** Every Agent-tool dispatch brief's
+   literal first line states: "Do not self-dispatch principal-reviewer or any test agent. Do not
+   create a PR. Report back only." The main loop independently verifies the agent's actual
+   git/diff state after every dispatch regardless of what the agent's own report claims — never
+   trust a self-reported "done" without checking `git status`/`git log`/the actual diff.
+2. **Verify cheaply before dispatching or asking the user to decide.** Before presenting any RCA,
+   diagnosis, or fix as ready — and before spending on any paid agent dispatch — run the cheapest
+   direct check (Bash/Grep/Read) that could contradict the claim. This is the RCA-completeness
+   mandate above, restated here as a cost rule: an unexecuted diagnosis that turns out wrong costs
+   2-3x what the executed check would have cost up front.
+3. **One backlog item, one stop.** Finish one item, report its actual cost, stop. The next item
+   starts only on the user's explicit go-ahead for THAT item — never a silent "continuing to the
+   next item" default, even mid-session, even when a multi-item queue was pre-approved as a set.
+4. **Reserve `principal-reliability-engineer` / `principal-performance-auditor` for genuinely
+   high-blast-radius work only.** Before dispatching either, confirm the question can't be
+   answered more cheaply with a direct Bash/Grep check or a scoped `EXPLAIN` in the main loop.
+   These two stay opus/xhigh (Model tier mandate above) precisely because dispatch frequency is
+   the cost control — a routine question dispatched to them defeats that control.
+5. **Stop the instant scope exceeds the stated estimate — never quietly absorb a 3rd round.** The
+   existing Verification Discipline "cost checkpoint" rule (Part VI) is restated here as a hard
+   trigger: the moment a review/fix cycle is about to enter a 3rd round, or actual cost is
+   trending past ~2x the original `[COST ALERT]` estimate, stop and surface it explicitly instead
+   of continuing on the assumption that finishing is cheaper than pausing.
+
+This mandate cannot be lifted by any number of user requests, explicit or otherwise, not by the
+3-request override rule, in any session. The only way to change it is to edit this file directly.
 
 ---
 
