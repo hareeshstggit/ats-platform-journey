@@ -854,7 +854,35 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
     already-separately-split recruiter delegation wrappers, neither named by the plan doc for
     further extraction. Revisit only if a future pass specifically re-scopes this file.
 - ✅ (resolved, confirmed 2026-08-27 during Tier 3 frontend batch 1 scoping) `frontend/src/components/reports/interview-pipeline-progress-report.tsx` — this entry's "366 lines, needs its own decomposition pass" is now stale: two later, unrelated fixes (`ea69919`/`b05a9d8`, the render-time page-clamp regression-test fix and the viewport-responsive page-size fix) already moved the report's spec-commentary block to `openspec/specs/reporting/spec.md` §3 and trimmed the component itself, bringing it to 299 lines (under the 300-line cap) with its own dedicated `interview-pipeline-progress-report.test.tsx`. No further split scheduled — re-flag only if it grows back over cap.
-- 🔴 `backend/app/modules/interviews/agents/level_kit_agent.py` — 431 lines (was 425; +6 from `dev/level-kit-agent-llm-gateway`'s async/llm_gateway conversion, 2026-09-03), over the 300-line cap. Flagged in CR#2 principal-reviewer round 3 (M3): pre-existing/systemic, part of the same 21-files-over-cap project-wide gap this section already tracks; not blocking CR#2 or this change, tracked here only.
+- ✅ `backend/app/modules/interviews/agents/level_kit_agent.py` — **resolved 2026-09-05,
+  branch `dev/code-hygiene-level-kit-extraction`:** 431→286 lines, genuinely under the
+  300-line cap. Three zero-logic extractions, same pattern each time: (1) the pure
+  prompt/schema constants (`_SYSTEM`, `_USER_TEMPLATE`, `_OUTPUT_SCHEMA`,
+  `_LEVEL_DEPTH_HINTS`, `_LEVEL_DEPTH_HINT_DEFAULT`) moved to a new sibling
+  `_level_kit_prompts.py` (91 lines), re-imported back (`_SYSTEM`/`_OUTPUT_SCHEMA` via
+  an explicit `as`-reexport since `test_level_kit_agent.py` imports both directly from
+  `level_kit_agent`, one of them via an inline import inside a test method — caught
+  only by actually running the suite, not by the top-of-file import grep); (2) the
+  Gemini provider's retry-loop/request-building bodies moved to
+  `_level_kit_gemini.py` (84 lines, `_call_gemini_impl`/`_invoke_gemini_impl`); (3) the
+  Anthropic/Bedrock provider's retry-loop/request-building bodies moved to a new
+  sibling `_level_kit_anthropic_bedrock.py` (141 lines, `_call_anthropic_impl`/
+  `_invoke_anthropic_impl`/`_call_bedrock_impl`/`_invoke_bedrock_impl`) — the
+  `llm_gateway.complete`/`asyncio.sleep` references (module-attribute mock.patch
+  targets, same mechanism as `_genai`/`time.sleep` in (2)) stay resolved in
+  `level_kit_agent.py`'s delegators and are passed into the free functions as
+  already-resolved callables. `LevelKitAgent._call_anthropic`/`_invoke_anthropic`/
+  `_bedrock`/`_invoke_bedrock`/`_call_gemini`/`_invoke_gemini` all kept as thin
+  delegator methods with identical names/signatures. Every helper function in all 3
+  new files is also ≤40 lines (confirmed via AST, docstrings tightened to fit where
+  needed). Zero behavior change: `LevelKitAgent`'s public method names/signatures
+  confirmed identical via `inspect`; `test_level_kit_agent.py` and `test_level_kit.py`
+  — 350 passed/109 skipped before and after (same counts, same 1 pre-existing
+  unrelated warning); `ruff` and `mypy --strict` clean on all 4 files. Same branch
+  also closed `_extraction_tasks.py::_do_extract` via the identical pattern — see
+  that file's own entry below. `principal-reviewer` round 1 (covering both files
+  together): APPROVE-WITH-NITS, no Major/Critical — findings + fixes noted on the
+  `_do_extract` entry below rather than duplicated here.
 - ✅ **Tier 5 backend catch-up (2026-08-31, branch `dev/hygiene-tier5-backend-catchup`)** — a
   fresh re-audit found 3 backend files still/newly over the 300-line cap after the 48-file sweep
   closed. `candidates/agents/job_matcher.py` (**G14, file-cap half DONE, function-cap half still
@@ -992,13 +1020,61 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
   affected test files — 11/11 passed (2 + 7 + 2); `tsc --noEmit` clean repo-wide; `eslint` clean
   on all 8 touched/created files. Local-only per user instruction (GitHub Actions billing-blocked
   until 2026-09-01) — not pushed, no PR.
-- 🔴 `backend/app/modules/candidates/_extraction_tasks.py::_do_extract` — 138 lines, over the
-  40-line function cap. Flagged 2026-08-25 (principal-reviewer review of
-  `dev/tech-debt-batch2-data-query`, Major 3) as pre-existing, not caused by this batch's changes
-  (the file's own line-count fix that batch made was extracting `_build_update_from_profile` to
-  `_extraction_mapping.py`, not touching `_do_extract` itself) — needs its own decomposition pass
-  (same class as the `interviews/service.py`/`applications/service.py` oversized-function backlog
-  above), not attempted here to keep this batch's scope surgical.
+- ✅ `backend/app/modules/candidates/_extraction_tasks.py::_do_extract` — **fully resolved
+  2026-09-05, branch `dev/code-hygiene-level-kit-extraction`:** both the function cap
+  (`_do_extract` was 138 lines) and the file cap (this fix's own function-level split had
+  regressed the file to 347 lines) are now genuinely met. `_do_extract` split within the
+  file first into 6 named async helpers — `_load_and_claim`, `_load_file_bytes`,
+  `_run_agent` (re-raises `TransientProviderError`/`SoftTimeLimitExceeded` uncaught exactly
+  as before — confirmed by reading how Celery's `autoretry_for` on the task decorator
+  consumes the propagated exception, not just assumed), `_persist_extraction` +
+  `_persist_duplicate` (split into two, not the one originally planned, because the single
+  version landed at 48 lines), plus the pre-existing `_find_identity_duplicate`/
+  `_persist_checked`/`_set_failed` — then ALL 8 of those helpers moved wholesale to a new
+  sibling `_extraction_helpers.py` (259 lines), matching the `_extraction_mapping.py`
+  precedent in the same directory; `_do_extract`/`_run_extraction` stay in
+  `_extraction_tasks.py` (now 120 lines), importing the helpers back. **Judgment call:**
+  `storage.read_object` and `extract_profile` are passed into `_load_file_bytes`/
+  `_run_agent` as explicit parameters rather than imported directly by
+  `_extraction_helpers.py`, because `test_tasks.py` mock.patches them as plain names on
+  `_extraction_tasks` itself (`_extraction_tasks.storage.read_object`,
+  `_extraction_tasks.extract_profile`) — a plain-name patch only rebinds the attribute in
+  `_extraction_tasks`'s own module dict, so a separate import in the new file would have
+  silently run the REAL `extract_profile`/`storage.read_object` instead of the test's mock
+  — identified by tracing the patch-resolution mechanism before moving the code (same class
+  of gap as the `_genai`/`time.sleep` constraint already solved for `level_kit_agent.py`
+  above), then confirmed correct by the full suite passing after the move. Every helper in
+  both files is ≤40 lines (AST-confirmed); every incident-history comment (BUG-003, D2/D3/D7,
+  principal-reviewer round-1 M5) preserved verbatim. Zero behavior change:
+  `_do_extract(session, candidate_id) -> str` signature confirmed byte-identical via
+  `inspect`; `test_tasks.py` + the rest of `candidates/tests/` — 350 passed/109 skipped
+  before and after (same counts, same 1 pre-existing unrelated warning); `ruff` and
+  `mypy --strict` clean on both files. `principal-reviewer` round 1: APPROVE-WITH-NITS
+  (no Major/Critical) — 2 stale "below"/"above" doc-position references in
+  `_extraction_tasks.py`'s module docstring pointing at code that had moved (fixed —
+  now name the actual function); 3 new lines exceeding this project's declared
+  100-char line-length in `_extraction_tasks.py`/`_extraction_helpers.py` (fixed by
+  wrapping — flagged separately below that `ruff` structurally cannot catch these,
+  since `[tool.ruff.lint]` never `select`s E501); and a docstring rationale in both
+  `_extraction_helpers.py` and `_level_kit_anthropic_bedrock.py` that conflated two
+  different `mock.patch` mechanisms as if they were the same constraint (Gemini's
+  `_genai`/`time.sleep` and `extract_profile` are true name bindings that must stay
+  where they're patched; `storage.read_object`/`llm_gateway.complete`/`asyncio.sleep`
+  are module attributes that would resolve correctly either way, passed in for
+  call-site uniformity only, not because it was required) — all fixed inline, re-
+  verified (350 passed/109 skipped unchanged, ruff/mypy clean, all 6 files across
+  both entries still under 300 lines).
+- 🔴 **`pyproject.toml`'s `[tool.ruff.lint]` declares `line-length = 100` but never
+  `select`s anything that enforces it** (found 2026-09-05, `principal-reviewer`,
+  reviewing `dev/code-hygiene-level-kit-extraction`) — ruff's default rule set
+  (`E4`/`E7`/`E9`/`F`) does not include `E501`, so no line-length violation anywhere
+  in this repo has ever been caught by CI; a "ruff clean" claim on any past or future
+  PR is silently uninformative about the project's own stated 100-char limit.
+  Confirmed several pre-existing lines already exceed 100 chars on `main` (left
+  untouched by the PR above — only its own 3 new violations were fixed). Cheapest
+  sound remediation: add `E501` to `[tool.ruff.lint] select` in its own dedicated
+  pass — NOT a same-PR fix, since turning it on now would light up files far outside
+  any single change's scope; needs its own scoped cleanup pass first.
 - **Tier 4 (backend, highest-risk) — `applications/service.py` + `applications/_service_helpers.py`
   executed 2026-08-27, branch `dev/hygiene-tier4-applications-service`:** per the user's own
   explicit decision on the plan doc's one open design question (update all test `mock.patch`
