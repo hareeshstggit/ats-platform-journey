@@ -74,7 +74,13 @@ blanket omit would have silently dropped `check_schema_definition_drift.py` (87.
 covered) from coverage protection — a LIVE CI security gate detecting RLS-policy drift
 on every PR. Fixed to the named-list form; verified 88.58%, `1872 passed, 659 skipped,
 0 failed`. `docs/BACKLOG.md`'s item 4 updated to reflect this supersedes its own
-"leave as-is" note from earlier today.
+"leave as-is" note from earlier today. **PR #240 merged to `main`** (`dcf4bbe`), branch
+deleted — real CI confirmed green (`test` job passes for the first time across this
+whole PR series, 0 test failures, gate genuinely met). Local dev synced (`0061` head,
+no schema change). External mirror re-synced (`docs/BACKLOG.md` + this file).
+Also fixed along the way: 2 integration-test failures hit mid-investigation were a
+stale/stuck Celery worker process (pre-existing environmental debt, unrelated to this
+PR) — killed and restarted cleanly, confirmed passing.
 
 ## RESUME HERE (2026-09-05 — CI-debt review CLOSED; PR #238 merged; frontend component-test green for the first time in weeks; superseded by the block above for the coverage-gate item specifically)
 
