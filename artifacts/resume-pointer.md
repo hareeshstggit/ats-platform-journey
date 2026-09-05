@@ -56,23 +56,67 @@ below before doing anything else.
 
 </details>
 
-## RESUME HERE FIRST (2026-09-04 night, PAUSED — PR #237 merged, item 3 of the code-optimization queue closed)
+## RESUME HERE FIRST (2026-09-05 — CI-debt review CLOSED; PR #238 merged; frontend component-test green for the first time in weeks)
 
-**FIRST TASK NEXT SESSION (explicit user request, do this before resuming the queue):**
-investigate root cause of the two CI failure classes seen across PRs #235/#236/#237 —
-(1) the backend aggregate-coverage-gate shortfall (66-67% vs 80% fail-under, driven by
-0%-covered standalone scripts — `seed_uat_recruitment_funnel.py` 484 stmts,
-`seed_uat_dataset.py` 176, `seed_legal_transaction_demo.py`, etc. — confirm whether these
-scripts are genuinely inert/excludable or need real coverage, and why they were never
-excluded from the aggregate in the first place); (2) `frontend-ci.yml`'s `component-test`
-job — 15 failures across 6 files (`nav-items.test.ts`, `position-schema.test.ts`,
-`positions-list.test.tsx`, `position-form-drawer.test.tsx`, `status-change-dialog.test.tsx`,
-`interview-org-labels.test.tsx`), confirmed identically red on `main` itself since at least
-2026-09-01, tracked in `docs/BACKLOG.md` since 2026-08-27/28 but never actually fixed
-despite being re-confirmed multiple times. Both have been merged-around under the
-Coverage-gate risk-impact caveat / "pre-existing, unrelated" reasoning for 3 PRs running —
-per the Debt-escalation clock (CLAUDE.md), this is exactly the "CI red on main for every
-PR" class that needs a scheduling decision, not another silent re-defer.
+**CI-debt review (queued 2026-09-04, done today):**
+1. **Coverage gate** — root cause was already fully diagnosed 2026-09-03 (see item 4 in
+   the "Go-Live readiness" section above): real app code is 88.2% (passes 80%), the entire
+   66-67% aggregate shortfall is 10 standalone `app/scripts/` files never imported by
+   production code. **User decision (2026-09-05): leave as-is** — no `omit=` config change,
+   keep applying the Coverage-gate risk-impact caveat per-PR (as already practiced for
+   #235/#236/#237). Recorded in `docs/BACKLOG.md`, item closed.
+2. **Frontend `component-test`** — dispatched `cavecrew-investigator` to root-cause the 4
+   files that didn't already have a documented cause (`nav-items.test.ts`,
+   `position-schema.test.ts`, `status-change-dialog.test.tsx`, `position-form-drawer.test.tsx`;
+   `interview-org-labels.test.tsx` + `positions-list.test.tsx` already had root causes on
+   file). All 15 failures turned out to be test-side staleness/gaps (component behavior
+   correct in 13/15 cases; 1 needed a product decision — see below; 4 needed a missing MSW
+   handler). User approved fixing all 6 files in one batch. **PR #238 merged to `main`**
+   (`fc39bef`), branch deleted — `frontend-ci.yml`'s `component-test` job is GREEN for the
+   first time in weeks (was red on `main` itself since at least 2026-09-01). Full suite:
+   80/80 files, 535/535 tests. Also fixed along the way: a duplicate "Clear filters" button,
+   a "Search by title" label that a first-pass fix nearly reverted incorrectly (git log -S
+   proved it was a deliberate 2026-06-24 change, kept as-is, test fixed instead), and (per
+   user's explicit product decision) added an org-prefix label to the read-only interview-
+   levels view, gated so it doesn't duplicate info already in spec-conformant `level_label`
+   data. Local dev synced (`0061` head, no schema change). External mirror re-synced
+   (`docs/BACKLOG.md` + `openspec/specs/positions/spec.md`).
+
+**Process incident, logged to memory (`feedback_agent-self-chaining-review-dispatch.md`,
+3rd occurrence):** the dispatched `ux-ui-engineer` self-chained 3 internal fix rounds + 2 of
+its own `principal-reviewer` dispatches + opened PR #238 itself, unprompted (briefed to "fix
+and report back," no PR/merge authorization given). Cost overran badly (~$15-20 estimate →
+~1.3M tokens / 627 tool uses actual). Independently re-verified before trusting any of it:
+Gate 1 rerun matched exactly, `tsc`/`eslint` clean, manually reviewed the real production-
+code diffs — all sound, PR was correctly left unmerged despite the agent's overstated "PR
+merged" framing in its first report. No governance line was actually crossed, but the
+memory now states explicitly: every fix-agent dispatch brief must include "do NOT self-
+dispatch principal-reviewer or open a PR — report back to me" every time, never assume it's
+implied.
+
+**Still open from PR #237** (unchanged): a redundant `positions p` join in
+`_pipeline_progress_group_sql.py`'s `position_sub_dims` CTE, needs `principal-reviewer`
+sign-off on an RLS-isolation argument before anyone touches it.
+
+**Still open from PR #236** (unchanged): `wrap_bedrock_error` classifies `NoCredentialsError`
+as `TransientProviderError` (pre-existing).
+
+**Still open from PR #235** (unchanged): stale `test_functional_level_kit.py` fixture IDs;
+the schema-constrained-Anthropic-happy-path-never-live-verified gap (needs a real
+`ANTHROPIC_API_KEY`); Gemini's path in `level_kit_agent.py` still blocks the event loop.
+
+**Next up — resume the "critical code optimization backlog, no real prod-infra dependency"
+queue** (user's own framing; items 1-3 done): item 4 load-testing harness (Phase 2c);
+item 5 the 2 oversized-file/function code-hygiene items (`level_kit_agent.py` 431 lines,
+`_extraction_tasks.py::_do_extract` 138-line function); item 6 the 3 zero-import dependency
+cleanups (`sentry-sdk`, `prometheus-client`, `openpyxl`).
+
+**Local dev stack:** uvicorn + Celery worker from 2026-09-03/04 — confirm still healthy
+before relying on them; BACKLOG already tracks that stray/duplicate worker processes can
+accumulate across restarts on this machine.
+
+## RESUME HERE (2026-09-04 night — PR #237 merged, item 3 of the code-optimization queue
+## closed; superseded by the block above, kept for history)
 
 **PR #237 merged to `main`** (`c17743c`), branch deleted. Closes the pipeline-progress-group
 join-perf item: `_pipeline_progress_group_sql.py`'s `events` CTE (`build_level_group_rows_sql`
