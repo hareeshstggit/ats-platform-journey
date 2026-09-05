@@ -323,7 +323,7 @@ Request :
     {
       "level_type"     : "stg_labs | organization",
       "level_number"   : "integer (1-6)",
-      "level_label"    : "string — e.g. 'STG Labs Level-1', 'Infosys Level-2'",
+      "level_label"    : "string — e.g. 'STG Labs Level 1', 'Infosys Level 2'",
       "level_category" : "stg_labs | organization (REQUIRED — P27)",
       "sequence_order" : "integer (1 = first in pipeline)",
       "panelist_ids"   : "array of uuid, 1-3 items, optional (level may be created with zero panelists and have them added later in Positions edit mode) (CR-002)"
