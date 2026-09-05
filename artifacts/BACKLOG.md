@@ -58,17 +58,34 @@ narrative, only current state.
    against real Postgres. `principal-reviewer` round 1: CHANGES-REQUESTED (BACKLOG not updated
    in the same change — this entry; a few cheap nits) — fixed same session, round 2 pending.
 4. **Coverage-gate risk-impact assessment — DONE (2026-09-03), per item 2's new caveat; the
-   80% gate itself is confirmed NOT lowered.** Live-measured via a full `--cov-report=json` run:
-   real application code (`app/modules/`, `app/shared/`, `app/workers/`) is at **88.2%**,
-   already above the gate. The entire aggregate shortfall (66%) is structural — 10 standalone
-   `app/scripts/` files (seed/backfill/demo/cleanup tools, 1,543 statements, 15.7% covered)
-   dragging the denominator down. Confirmed via repo-wide grep: zero production code imports
-   anything from `app/scripts/` — these scripts are never on any request path in any
-   environment. Per-dimension assessment: **no impact on any of the 10 dimensions** — inert
-   against Quality/Performance/Scalability/Reliability/Security/Observability/Modularity/
-   Maintainability/Code-Design/Architecture-Extensibility. **User decision (2026-09-05):
-   leave as-is** — no `omit=` config change; keep applying the Coverage-gate risk-impact
-   caveat per-PR as already practiced (PRs #235/#236/#237). Closed.
+   80% gate itself is confirmed NOT lowered. SUPERSEDED 2026-09-05 — the gate config is now
+   fixed, see below, not left as-is.** Original 2026-09-03 finding: real application code
+   (`app/modules/`, `app/shared/`, `app/workers/`) is at **88.2%**, already above the gate;
+   the aggregate shortfall (66%) is structural — 10 standalone `app/scripts/` files
+   (seed/backfill/demo/cleanup tools, 1,543 statements, 15.7% covered) dragging the
+   denominator down; zero production code imports anything from `app/scripts/`.
+   **First user decision (2026-09-05, morning): leave as-is, keep applying the caveat
+   per-PR.** After this recurred identically across PRs #235/#236/#237/#239 (all merged
+   under the caveat), a full RCA (requested by the user) found the shortfall was NOT
+   regression-driven (statement count grew, missed-statement count fell slightly across
+   those 4 PRs) but WAS bigger than the 2026-09-03 diagnosis captured: `app/scripts/`
+   alone only moves the aggregate to ~68-69%, still failing — the larger remaining piece
+   is `[tool.coverage.run]`'s `source = ["app"]` sweeping in every module's co-located
+   `tests/` subdirectory, measuring 208 test files' own internal branch coverage (61.5%,
+   a meaningless metric for test code) as if it were application code.
+   **Second user decision (2026-09-05, same day, after the RCA): fix the config.**
+   `backend/pyproject.toml`'s `[tool.coverage.run].omit` now excludes `*/tests/*`
+   (verified: all 208 files enumerated, every one is `test_*.py`/`conftest.py`/an
+   `__init__.py` except one picklable multiprocess test helper with zero production
+   importers) plus a NAMED list of 10 confirmed-inert `app/scripts/*` files — NOT a
+   blanket `app/scripts/*` omit, per `principal-reviewer`'s round-1 catch: a blanket
+   omit would have silently dropped `check_schema_definition_drift.py` (87.9% covered)
+   from coverage protection, a LIVE CI security gate that detects RLS-policy drift on
+   every PR (see G15d below) — that file, `bootstrap.py`, `seed_dev.py`, and
+   `backfill_legacy_feedback_outcome.py` stay measured. Verified: 88.58% with both
+   fixes applied, `1872 passed, 659 skipped, 0 failed`. Gate genuinely passes now;
+   PR #235/#236/#237/#239's coverage-gate caveat merges should be the LAST ones needed
+   for this specific recurring cause.
    **Separately flagged, NOT part of the gate math but a real gap**: `app/modules/offers/
    tasks.py` is 0% covered (89 statements) — a Celery task file, genuinely untested, touching
    Reliability/Observability. Tracked in §5 below, not blocking, needs its own pass.

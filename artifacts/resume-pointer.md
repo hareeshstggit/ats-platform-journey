@@ -56,15 +56,36 @@ below before doing anything else.
 
 </details>
 
-## RESUME HERE FIRST (2026-09-05 — CI-debt review CLOSED; PR #238 merged; frontend component-test green for the first time in weeks)
+## RESUME HERE FIRST (2026-09-05 later — coverage gate genuinely FIXED, superseding the "leave as-is" decision below)
+
+**PR #239's caveat-merge triggered a user-requested RCA into why the coverage gate kept
+recurring across #235/#236/#237/#239.** Verified NOT a regression (statement count grew,
+missed-statement count fell slightly across those 4 PRs). Found the earlier same-day
+"leave as-is" decision (block below) was based on an incomplete diagnosis: `app/scripts/`
+alone only moves the aggregate to ~68-69%, still failing — the bigger remaining piece was
+`source = ["app"]` sweeping every module's co-located `tests/` subdirectory into the
+measurement (208 test files' own branch coverage, 61.5%, a meaningless metric for test
+code, counted as "application code"). User's response: **fix it now.**
+`backend/pyproject.toml`'s `[tool.coverage.run].omit` now excludes `*/tests/*` (all 208
+files individually verified — every one is test code, one exception traced to zero
+production importers) plus a NAMED list of 10 confirmed-inert `app/scripts/*` files —
+**not** a blanket `app/scripts/*` omit: `principal-reviewer` round 1 caught that a
+blanket omit would have silently dropped `check_schema_definition_drift.py` (87.9%
+covered) from coverage protection — a LIVE CI security gate detecting RLS-policy drift
+on every PR. Fixed to the named-list form; verified 88.58%, `1872 passed, 659 skipped,
+0 failed`. `docs/BACKLOG.md`'s item 4 updated to reflect this supersedes its own
+"leave as-is" note from earlier today.
+
+## RESUME HERE (2026-09-05 — CI-debt review CLOSED; PR #238 merged; frontend component-test green for the first time in weeks; superseded by the block above for the coverage-gate item specifically)
 
 **CI-debt review (queued 2026-09-04, done today):**
 1. **Coverage gate** — root cause was already fully diagnosed 2026-09-03 (see item 4 in
    the "Go-Live readiness" section above): real app code is 88.2% (passes 80%), the entire
    66-67% aggregate shortfall is 10 standalone `app/scripts/` files never imported by
-   production code. **User decision (2026-09-05): leave as-is** — no `omit=` config change,
-   keep applying the Coverage-gate risk-impact caveat per-PR (as already practiced for
-   #235/#236/#237). Recorded in `docs/BACKLOG.md`, item closed.
+   production code. **User decision (2026-09-05, morning): leave as-is** — no `omit=`
+   config change, keep applying the Coverage-gate risk-impact caveat per-PR (as already
+   practiced for #235/#236/#237). **Superseded same day, see the block above — the
+   diagnosis behind this decision was incomplete, and the gate is now genuinely fixed.**
 2. **Frontend `component-test`** — dispatched `cavecrew-investigator` to root-cause the 4
    files that didn't already have a documented cause (`nav-items.test.ts`,
    `position-schema.test.ts`, `status-change-dialog.test.tsx`, `position-form-drawer.test.tsx`;
