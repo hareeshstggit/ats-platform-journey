@@ -53,8 +53,45 @@ below before doing anything else.
 - 2026-07-21 — Restore-reliability incident — why this file exists
 
 - 2026-09-03 — G15/G15b/G15c-G19 series + main-CI-break + bucket (b) ALL closed; 7 PRs merged (#228-#234)
+- 2026-09-05 evening — cost-control mandates (RCA-completeness, risk-tiered reviewer + $30/day cap, agent-dispatch discipline, D16) added; paused, item 6 + found scope queued for tomorrow
 
 </details>
+
+## RESUME HERE FIRST (2026-09-05 evening — paused; item 6 + its found scope queued for tomorrow)
+
+**Cost-control mandates added today, ALL live on `main` + public mirror** (no code changes,
+docs/agent-frontmatter only, `[skip ci]` each):
+1. RCA-completeness & fix-scope dependency mapping (`.claude/CLAUDE.md` Part V, commit `f874dd2`).
+2. Risk-tiered `principal-reviewer` model (opus blanket → sonnet/high default, escalates to
+   opus per-dispatch on schema/RLS/auth/financial/cross-module/query-plan changes or a repeat
+   CHANGES-REQUESTED round) + binding $30/day cost cap (`.claude/CLAUDE.md` Part V/VI, commit
+   `a267ad9`; `.claude/agents/principal-reviewer.md` frontmatter flipped to `model: sonnet`).
+3. Agent-dispatch cost discipline (`.claude/CLAUDE.md` new Part V section, commit `bd0aab7`):
+   zero self-chaining (verify agent git-state independently, never trust self-report), verify
+   cheaply before dispatch/decision, one-item-one-stop between backlog items, reserve
+   opus/xhigh specialists for genuine deep-dives only, hard-stop at 3rd review round / ~2x
+   estimate.
+4. D16 added to `docs/TOKEN_OPTIMIZATION_PRACTICE.md` (commit `1b960cf`): Superpowers process
+   skills (`systematic-debugging`/`brainstorming`) as the decision layer that locks scope/root
+   cause before any paid dispatch; Cavecrew (`investigator`/`builder`/`reviewer`) as the cheap
+   execution layer scope routes to once narrowed; `principal-reviewer` last as the merge gate.
+All 4 synced to the public mirror (`hareeshstggit/ats-platform-journey`).
+
+**Item 6 queued for tomorrow, NOT started — user explicit hold.** Scope (verified via direct
+grep, not assumed): remove `sentry-sdk` + `openpyxl` from `backend/pyproject.toml`'s
+`dependencies` + DEP002 ignore list, and from `backend/requirements.txt` (both confirmed
+genuinely zero-import in `backend/app`, not just deptry-ignored). `prometheus-client` is OUT
+of scope — already actively imported by `shared/metrics.py`, do not touch.
+**Additional scope found while verifying (flagged, not yet actioned):**
+`backend/requirements.txt:20` still pins `prometheus-client>=0.20`, but `pyproject.toml`
+requires `>=0.25` specifically because `<0.25` can crash the worker at import (documented
+incident, same file's own comment). `requirements.txt` is the file `backend/Dockerfile`
+actually installs from (not `pyproject.toml`) — so this is a live Reliability-dimension risk
+in the real production build path, independent of item 6's original scope. User to decide
+tomorrow: bundle the 1-line bump into item 6's PR (same file touched anyway), or track
+separately in `docs/BACKLOG.md`. Estimated cost for item 6 (+ bump if bundled): ~$5-10,
+~30-45 min, `cavecrew-builder` (Gate 4, ≤2 files) → `principal-reviewer` (sonnet/high default,
+no opus-escalation trigger present).
 
 ## RESUME HERE FIRST (2026-09-05 later — coverage gate genuinely FIXED, superseding the "leave as-is" decision below)
 
