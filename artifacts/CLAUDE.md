@@ -35,6 +35,7 @@ Claude Code reads this before EVERY task. All generated code complies.
 - Debt-escalation & pre-investigation discipline
 - Proactive deviation flagging
 - Coverage-gate risk-impact caveat
+- RCA-completeness & fix-scope dependency mapping
 
 **Part VI — Token Economics & Verification**
 - Token-optimized development
@@ -711,6 +712,53 @@ This is a risk-weighted enforcement of the same fixed 80% number, not a policy e
 `principal-reviewer`'s standing checklist additionally confirms: (e) was the coverage delta's
 file/line list actually identified (not just the aggregate %), and (f) was each item's
 10-dimension impact stated explicitly, not assumed away.
+
+### RCA-completeness & fix-scope dependency mapping (binding — added 2026-09-05, NO override, same class as Gate 5)
+
+This section exists because the coverage-gate fix directly above (item 4's own history)
+got the same failure mode wrong TWICE in one task, the second time after already being
+caught once. (1) An RCA was presented as complete — "root cause: `app/scripts/`" — and a
+decision was requested from the user on that basis, without first executing the proposed
+fix to confirm it actually closed the gap. It didn't: applying only that omission still
+left the gate at 69%, not 80%+; the real second cause (test files being swept into the
+coverage denominator) was only found because the user pushed back and asked for the fix to
+actually be applied and verified, not just diagnosed. (2) The corrected fix then proposed a
+**blanket** `app/scripts/*` exclusion without checking each file individually — `principal-
+reviewer`, not the main loop, caught that this would have silently dropped
+`check_schema_definition_drift.py` (a live CI check that detects RLS-policy drift/tenant-
+isolation regressions on every PR) from coverage protection entirely. Two dependency-mapping
+failures, same task, one already flagged by the user before the second occurred. This is the
+same structural gap Rule 6 (dependency/integration-point mapping, above) already closes for
+changes to an EXISTING SHIPPED FEATURE's contract — this section closes it for the broader,
+more common case: any RCA, diagnosis, or fix that reduces/narrows/excludes what a check,
+gate, or test measures.
+
+**1. An RCA is not "complete" and a root cause is not "found" until the proposed fix has
+been EXECUTED and its outcome measured — never presented as ready for a user decision on
+the strength of a plausible-sounding cause alone.** If a fix cannot be executed before
+asking the user to decide (e.g. it depends on an approval this section itself is
+requesting), state explicitly that the outcome is UNVERIFIED and by how much the diagnosis
+could be wrong — never imply completeness that hasn't been checked.
+
+**2. Before proposing any change that reduces, narrows, or excludes what a check/gate/test
+measures — a coverage `omit=`, a disabled lint rule, a skipped test, a file/directory
+exclusion from any CI job — enumerate every file or item being excluded INDIVIDUALLY (not
+as a blanket glob/pattern accepted on faith) and state, per item, whether it is load-bearing
+for any of the 10 dimensions (Quality/Performance/Scalability/Reliability/Security/
+Observability/Modularity/Maintainability/Code-Design/Architecture-Extensibility) before
+presenting the exclusion as ready. A pattern that happens to match the right files today is
+not the same as having checked what it matches — `git blame`/read every matched file's own
+purpose and current coverage/test status first.**
+
+**3. This applies with equal force to config/CI/tooling fixes as it does to application
+code** — the Live-verification & environment-parity mandate (above) already requires
+executing third-party-library claims before trusting them; this section is the same
+discipline applied to the main loop's OWN diagnostic claims about its own fixes, not just
+claims about external libraries.
+
+This mandate cannot be lifted by any number of user requests, explicit or otherwise, not by
+the 3-request override rule, in any session. The only way to change it is to edit this file
+directly.
 
 ---
 
