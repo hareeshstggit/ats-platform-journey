@@ -54,10 +54,38 @@ below before doing anything else.
 
 - 2026-09-03 — G15/G15b/G15c-G19 series + main-CI-break + bucket (b) ALL closed; 7 PRs merged (#228-#234)
 - 2026-09-05 evening — cost-control mandates (RCA-completeness, risk-tiered reviewer + $30/day cap, agent-dispatch discipline, D16) added; paused, item 6 + found scope queued for tomorrow
+- 2026-09-06 — item 6 CLOSED (PR #241 merged); caught + fixed a 1-day unpushed-mandate-commits gap on local main during the merge
 
 </details>
 
-## RESUME HERE FIRST (2026-09-05 evening — paused; item 6 + its found scope queued for tomorrow)
+## RESUME HERE FIRST (2026-09-06 — item 6 CLOSED, PR #241 merged; unpushed-mandate-commits gap caught + fixed)
+
+**Item 6 done.** PR #241 merged to `main` (squash `d5dee34`) — removed `sentry-sdk`/`openpyxl`
+(confirmed zero-import), fixed `requirements.txt`'s stale `prometheus-client>=0.20` floor, and
+`principal-reviewer` round 1 (CHANGES-REQUESTED) caught a real gap the same audit missed:
+`botocore`/`google-genai`/`reportlab` were entirely absent from `requirements.txt` (the file
+`Dockerfile` actually installs from) despite being real, actively-imported `pyproject.toml`
+deps — invisible to CI (installs via `pyproject.toml`), would only surface as
+`ModuleNotFoundError` in a real container. Fixed inline, round 2 APPROVE. CI hit one flaky
+`test_concurrent_audit_writers_one_entity_form_linear_chain` failure (hash-chain-order
+assertion) — confirmed via 1 local run + a clean CI rerun that it's a pre-existing
+concurrency-ordering flake, unrelated to a dependency-manifest-only change; logged to
+`docs/BACKLOG.md` §5, not fixed here (scope discipline).
+
+**Process gap found + fixed during the merge itself:** yesterday's 4 CLAUDE.md/playbook
+mandate commits (`a267ad9`, `bd0aab7`, `1b960cf`, `cf5466a`) were committed to local `main`
+but **never pushed** — `git commit` was run each time, `git push` never was, for an entire
+session. This surfaced only when `gh pr merge 241` tried to fast-forward local `main` and
+failed (diverged history). No data was lost — PR #241 itself merged cleanly on GitHub
+(`d5dee34` landed on `origin/main` independent of local state) — but local and origin `main`
+sat silently diverged for ~1 day. Fixed via `git fetch` + `git merge origin/main` (clean,
+no conflicts — zero file overlap between the 4 mandate-doc commits and #241's
+`pyproject.toml`/`requirements.txt`/`BACKLOG.md` changes), merge commit `bb6caae`, pushed.
+**Lesson: `git commit` on `main` is not the same as landing the change — always confirm
+`git push` succeeded and `origin/main`'s log actually shows the commit, not just the local
+one, before reporting a docs-only mandate change as "live on main."**
+
+## RESUME HERE FIRST (2026-09-05 evening — superseded by the block above, kept for history)
 
 **Cost-control mandates added today, ALL live on `main` + public mirror** (no code changes,
 docs/agent-frontmatter only, `[skip ci]` each):
