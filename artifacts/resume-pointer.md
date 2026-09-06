@@ -55,10 +55,51 @@ below before doing anything else.
 - 2026-09-03 — G15/G15b/G15c-G19 series + main-CI-break + bucket (b) ALL closed; 7 PRs merged (#228-#234)
 - 2026-09-05 evening — cost-control mandates (RCA-completeness, risk-tiered reviewer + $30/day cap, agent-dispatch discipline, D16) added; paused, item 6 + found scope queued for tomorrow
 - 2026-09-06 — item 6 CLOSED (PR #241 merged); caught + fixed a 1-day unpushed-mandate-commits gap on local main during the merge
+- 2026-09-06 evening — full non-infra BACKLOG scan (22 items, top-5 ranked); paused before starting any, resume tomorrow
 
 </details>
 
-## RESUME HERE FIRST (2026-09-06 — item 6 CLOSED, PR #241 merged; unpushed-mandate-commits gap caught + fixed)
+## RESUME HERE FIRST (2026-09-06 evening — paused; non-infra critical BACKLOG list queued for tomorrow, NOT started)
+
+**Full scan done today** (`cavecrew-investigator` for §0-5 + direct grep/read for §6-9) of every
+open (🔴) `docs/BACKLOG.md` item, filtered to exclude anything needing real AWS/Terraform/
+registry access. 22 non-infra items identified, ranked by actual severity (not list order):
+
+**Top 5, ranked (start here tomorrow, pending user go-ahead per-item):**
+1. **`positions/_service_writes.py`** (`BACKLOG.md:320`) — create-position write path passes
+   caller-supplied `org_id` straight to `set_org_scope` instead of deriving it server-side.
+   Potential cross-tenant RLS bypass in a multi-tenant ATS — highest severity, security dimension.
+2. **Alembic migration `0011_candidate_matches_source_details.py` unreplayable** (`:434`) —
+   breaks this project's own binding "every migration reversible" mandate; no rollback path if
+   ever needed in an incident.
+3. **CR-002 multi-panelist-per-level: panelists 2-3 don't auto-assign** (`:423`) — real shipped-
+   feature bug, live today, silently incomplete interview panels.
+4. **Offers missing org-rejection-ban check at offer-create time** (`:311`) — a banned org can
+   still receive an offer; compliance-relevant business-rule gap.
+5. **Gemini path in `level_kit_agent.py` blocks the Celery worker's event loop** (`:637`) —
+   availability risk on the interim LLM path actually in use now (pre-Bedrock); one slow Gemini
+   call stalls every other queued task on that worker.
+
+**Remaining 17, lower urgency (full detail already in `docs/BACKLOG.md`, not re-copied here):**
+security/correctness — `docs/schema.sql` drift on migration `0057` (`:344`). Functional bugs —
+screening reverting shortlisted doesn't cascade-invalidate interviews (`:312`), feedback outcome
+submittable with no `scheduled_at` (`:314`), kit regeneration on reschedule lacks idempotency
+(`:315`), BR-SYNC-005 auto-sync fire-and-forget no retry/logging (`:316`), pagination
+past-end-page returns `total=0` (`:672`), `wrap_bedrock_error` misclassifies `NoCredentialsError`
+as transient (`:1445`, latent until real Bedrock go-live). CI/quality-gate debt — mypy 133
+pre-existing errors/3 files (`:579`), ruff never enforces `E501` (`:1085`), `offers/tasks.py` 0%
+coverage (`:650`), `offers` hiring-uniqueness test 3/6 fail (`:665`), 3 pre-existing `positions`
+test failures (`:673`), flaky `test_concurrent_audit_writers_...` found this session (`:852`),
+no frontend component test for `positions-ageing-report.tsx` (`:674`), a11y color-contrast
+violations quarantined (`:691`). Spec/docs — Organizations/Departments DELETE endpoints
+documented, never built (`:403`), project-wide OpenSpec format migration (`:1567`, large,
+already explicitly deferred).
+
+**Nothing started yet** — user paused right after the ranking was given, before approving #1
+or any item. Next session: confirm scope on #1 (the security item) first, per this project's
+own "clarify before hours-long fixes" practice, then run full Gate 5 pipeline per usual.
+
+## RESUME HERE FIRST (2026-09-06 — superseded by the block above; item 6 CLOSED, PR #241 merged; unpushed-mandate-commits gap caught + fixed)
 
 **Item 6 done.** PR #241 merged to `main` (squash `d5dee34`) — removed `sentry-sdk`/`openpyxl`
 (confirmed zero-import), fixed `requirements.txt`'s stale `prometheus-client>=0.20` floor, and
