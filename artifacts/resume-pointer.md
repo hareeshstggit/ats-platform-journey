@@ -56,10 +56,37 @@ below before doing anything else.
 - 2026-09-05 evening — cost-control mandates (RCA-completeness, risk-tiered reviewer + $30/day cap, agent-dispatch discipline, D16) added; paused, item 6 + found scope queued for tomorrow
 - 2026-09-06 — item 6 CLOSED (PR #241 merged); caught + fixed a 1-day unpushed-mandate-commits gap on local main during the merge
 - 2026-09-06 evening — full non-infra BACKLOG scan (22 items, top-5 ranked); paused before starting any, resume tomorrow
+- 2026-09-08 — top-5 item 1 (positions actor-org isolation, PR #242) + a recurring flaky-CI-test root-cause fix (PR #243) both merged
 
 </details>
 
-## RESUME HERE FIRST (2026-09-06 evening — paused; non-infra critical BACKLOG list queued for tomorrow, NOT started)
+## RESUME HERE FIRST (2026-09-08 — top-5 item 1 CLOSED + a recurring flaky-CI-test root-caused and fixed; items 2-5 still queued)
+
+**Item 1 CLOSED.** PR #242 merged to `main` (squash `f7e63fc`) — closes BACKLOG §4's positions
+actor-org-isolation gap (`ActorContext` threaded through all 6 org-scoped `PositionService`
+methods; `actor` now required, no fail-open default; shared primitives live in `app/core/rls.py`
+so the tracked `departments/service.py` follow-up won't need a cross-module private import).
+Went 2 rounds with `principal-reviewer` (opus, auth-logic escalation) — round 1
+CHANGES-REQUESTED (5 Majors: BACKLOG not closed, spec overclaim, spec §12 stale, router
+coverage gap on the actual authz wiring, fail-open default with no production consumer), round 2
+APPROVE-WITH-NITS (5 minors/4 nits — shared-module placement, redundant field, log-event naming,
+extending the coverage guard, docstring/telemetry) — all fixed inline, self-verified (full
+backend suite 1622 passed/657 skipped/0 failed each time). `departments/service.py`'s identical
+pattern is a new tracked BACKLOG §4 entry, deliberately left out of scope.
+
+**Recurring flaky-CI-test CLOSED, separate PR #243 (merged first, `bddad9d`).**
+`test_concurrent_audit_writers_one_entity_form_linear_chain` had failed CI 3 times across 2
+unrelated PRs (#241 once, #242 twice) — root-caused via `cavecrew-investigator` rather than
+kept re-running blind: the test verified hash-chain order via `ORDER BY created_at`, which ties
+(non-deterministically) when 2 concurrent inserts land in the same microsecond on fast CI
+runners — **confirmed NOT a production bug**, the actual audit hash chain is correctly
+serialized by `write_audit_log`'s `pg_advisory_xact_lock`; only the test's wall-clock-based
+verification method was flaky. Fixed to check the `previous_hash`/`record_hash` pointer
+relationship directly (order-independent). Verified 20/20 in a local repeat loop + real CI green
+on first try after merging into #242's branch — this specific recurring failure is resolved, not
+just papered over with a rerun.
+
+Items 2-5 from the 2026-09-06 scan below are still queued, not started.
 
 **Full scan done today** (`cavecrew-investigator` for §0-5 + direct grep/read for §6-9) of every
 open (🔴) `docs/BACKLOG.md` item, filtered to exclude anything needing real AWS/Terraform/

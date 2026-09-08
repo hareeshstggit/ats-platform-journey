@@ -159,6 +159,41 @@ reconstructs tranches from `approved_at` + the position_history count rows.
 
 ## 3. API Endpoints
 
+**Actor-org isolation (added 2026-09-06, corrected 2026-09-08, dev/positions-actor-org-isolation):**
+RLS scoping (`app.current_org`) is set to the org the OPERATION TARGETS (caller-supplied on
+create, or the loaded position's own org on read/update/status-change/subresources/
+ageing-summary) — it unlocks visibility into that org's rows, it does not by itself confine
+the actor. The real invariant: an endpoint is safe either because (a) it explicitly checks the
+actor's own org against the target before scoping, or (b) it never calls `set_org_scope` at
+all (so RLS is never widened beyond the caller's own default scope). Calling `set_org_scope`
+WITHOUT a preceding `actor_can_access_org`/`assert_actor_owns_position` check is the defect
+this change closes — it does not affect an endpoint that never calls `set_org_scope`.
+
+Exactly 6 endpoints fall into category (a) and explicitly check the actor's own org:
+- `POST /positions` (create) — checks `payload.organization_id` before any parent validation.
+- `GET /positions/{position_id}` (get) — checks the loaded position's org.
+- `PATCH /positions/{position_id}` (update) — checks the loaded position's org.
+- `PATCH /positions/{position_id}/status` (change_status) — checks the loaded position's org.
+- The `/{position_id}/jd*`, `/{position_id}/interview-levels`, `/{position_id}/history`
+  subresource endpoints (all route through `PositionService.subresources`/
+  `subresources_write`) — check the loaded position's org.
+- `GET /positions/ageing-summary` — checks the optional `organization_id` query param, when given.
+
+`GET /positions` (list), `GET /positions/recruiter-options`, and
+`PATCH /positions/{position_id}/recruiters` fall into category (b): none of them call
+`set_org_scope`, so they are safe by construction (never widening RLS), not by an explicit
+actor-org check — they were never part of this defect class and needed no change.
+
+For the 6 checked endpoints: an internal actor (`organization_id IS NULL` — today's only user
+type, e.g. STG-internal recruiters/hr_admins) is unrestricted and may operate across any org,
+unchanged from prior behavior. A non-internal actor (has an `organization_id`) may only operate
+on their own org; on a mismatch, `create` raises `ORGANIZATION_NOT_FOUND` (404 — the same code
+`POST` already returns for a genuinely unknown org, so a non-owning actor learns nothing about
+whether the org exists) and every other checked endpoint raises `POSITION_NOT_FOUND` (404 — the
+same code already used for an unknown/soft-deleted/RLS-invisible position). No distinct 403 is
+used, so cross-org existence is never revealed. Latent today (single-tenant, every user is
+internal); enforced now so the gap is closed before a non-internal user type exists.
+
 ### POST /api/v1/positions
 Auth    : Bearer — roles: hr_admin, recruiter
 Request :
@@ -1051,13 +1086,20 @@ per ageing bucket, in a single aggregation query.
 }
 ```
 
+**Response 404:** `POSITION_NOT_FOUND` — `organization_id` given but doesn't match a
+non-internal actor's own org (actor-org isolation, added 2026-09-08, BR-SUM-005). Reuses the
+position-detail 404 code (no distinct exception class), consistent with every other
+actor-org-mismatch response in this module — no distinct 403, no cross-org existence leak.
+
 **Business rules:**
 - BR-SUM-001: Only positions where `deleted_at IS NULL AND status != 'closed' AND approved_at IS NOT NULL` are counted. Positions with `approved_at IS NULL` (unapproved) are excluded from all buckets.
 - BR-SUM-002: Bucket ranges match `_AGEING_BUCKET_SQL` in `list_helpers.py` exactly (same INTERVAL boundaries, inclusive start, exclusive end).
-- BR-SUM-003: If `organization_id` provided, filter to that org and set RLS scope. If absent, no org filter (caller's RLS context from token applies).
+- BR-SUM-003: If `organization_id` provided, checks it against a non-internal actor's own org first (BR-SUM-005); on a match (or an internal actor), filters to that org and sets RLS scope. If absent, no org filter (caller's RLS context from token applies) and no actor-org check runs.
 - BR-SUM-004: A position that falls in no bucket (e.g. approved_at IS NULL) is never counted; bucket counts always sum to total active positions with approved_at.
+- BR-SUM-005: A non-internal actor supplying an `organization_id` other than their own gets `POSITION_NOT_FOUND` (404) before any query runs — same actor-org isolation invariant as §3's other endpoints (added 2026-09-08).
 
 **Acceptance criteria:**
 - AC-SUM-001: GET with no org_id → 200 with 7 integer counts.
 - AC-SUM-002: GET with valid org_id → 200 with counts scoped to that org.
 - AC-SUM-003: Unauthenticated → 401.
+- AC-SUM-004: GET with a non-internal actor's `organization_id` query param set to another org → 404 `POSITION_NOT_FOUND`, no query executed (BR-SUM-005).
