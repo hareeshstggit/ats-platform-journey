@@ -60,7 +60,24 @@ below before doing anything else.
 
 </details>
 
-## DETOUR IN PROGRESS (2026-09-08 — open-source LLM feasibility pilot, paused mid-run; items 2-5 below untouched, resume THOSE first unless continuing this detour)
+## DETOUR: LLM failover-chain spec proposed, NOT YET APPLIED (2026-09-08 — items 2-5 below still untouched, resume THOSE first unless continuing this detour)
+
+**Outcome of the open-source-LLM detour:** pilot succeeded (Qwen2.5-14B via Ollama, exact
+10x5 schema-compliant output on the hardest feature; laptop hardware was the only real
+constraint — 3.6hr on a 4GB-VRAM GPU, confirmed CPU-bound). On-prem server spec researched
+(single NVIDIA L40S 48GB, ~$17-25K BOM). User then asked for an ordered AUTOMATIC FAILOVER
+CHAIN (local LLM -> Gemini -> Bedrock -> Anthropic, user-visible on failover) across all 5
+AI features rather than a manual per-feature provider pick — this is a genuine architecture
+change (new orchestration in the shared `llm_gateway.py`), not a config flip, so it's now a
+proper OpenSpec change: **`openspec/changes/llm-provider-failover-chain/`** (commit `d6f96cb`,
+proposal+design+specs+tasks all complete, 4/4). **NOT applied — no code written yet.**
+`tasks.md` §1 has 4 open design questions needing explicit user sign-off before `/opsx:apply`
+starts (env-var opt-out semantics, chain-order fixed-vs-configurable, slow-not-failing-local-
+LLM circuit-breaker trigger, and explicit sign-off on shortening per-hop retries 3->1 since
+that changes existing Gemini-primary features' resilience today). Read `design.md` first on
+resume — it documents the real risk (chain-wide latency budget against the shared Celery
+`task_soft_time_limit=270s`, provisionally 150s, needs per-feature re-validation) before
+anyone runs `/opsx:apply`.
 
 **Context:** user asked about open-source LLMs to cut per-profile screening cost (100s of
 profiles per position) vs the current Gemini-interim/Bedrock-eventual setup. Verified (not
