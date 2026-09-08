@@ -60,6 +60,48 @@ below before doing anything else.
 
 </details>
 
+## DETOUR IN PROGRESS (2026-09-08 — open-source LLM feasibility pilot, paused mid-run; items 2-5 below untouched, resume THOSE first unless continuing this detour)
+
+**Context:** user asked about open-source LLMs to cut per-profile screening cost (100s of
+profiles per position) vs the current Gemini-interim/Bedrock-eventual setup. Verified (not
+assumed) that all 5 AI features (candidate extraction, JD extraction, matching, screening
+questions, interview-kit generation) are cleanly decoupled — each agent module
+(`profile_extractor.py`/`jd_extractor.py`/`job_matcher.py`/`_ai_providers.py`/
+`level_kit_agent.py`) takes plain Python in/out with zero ORM/SQLAlchemy imports, calling
+`llm_gateway.complete()` directly — confirmed by reading all 5 files directly, not inferred.
+Adding a local-LLM 4th provider to `llm_gateway.py` is a clean 5-file, gateway-only change
+per that same reading.
+
+**Laptop specs confirmed** (`nvidia-smi`, not just WMI): RTX 3050 Ti Laptop, **4096 MiB VRAM**
+(3965 free), 32GB RAM, i7-12700H (14C/20T), 754GB free disk.
+
+**Pilot in progress, chosen approach: option 1 (test via raw Ollama API first, no ATS code
+changes yet)** — pulled `qwen2.5:14b-instruct-q4_K_M` (9.0GB) via Ollama, built the EXACT
+feature-5 prompt/schema from `_level_kit_prompts.py` (position="Backend Engineer", level
+sequence 1, candidate band "mid-level (4-6 years)"), sent it to Ollama's OpenAI-compatible
+endpoint (`localhost:11434/v1/chat/completions`) with the real JSON schema as
+`response_format`. **Confirmed CPU-bound as predicted**: `llama-server` process ~8GB RAM,
+GPU utilization 0%, ~2.3GB VRAM held but idle (not computing) — the 4GB VRAM ceiling means
+this laptop cannot meaningfully GPU-accelerate a 14B model; it's a real but slow pilot, not
+a production-latency test.
+
+**Test artifacts (scratchpad, session-specific — path: `e01f9bd9-803a-407b-b53f-e0257be115d1`):**
+- `scratchpad/level_kit_test_payload.json` — the exact request sent (reusable for a re-run)
+- `scratchpad/level_kit_response.json` — the model's response (check this first on resume —
+  may already be complete since the background command kept running past the pause)
+- `scratchpad/curl_meta.txt` — HTTP code + total wall-clock time for the generation
+- `scratchpad/gpu_monitor.log` — 3-second GPU utilization/VRAM samples across the whole run
+- `scratchpad/start_time.txt` — unix timestamps (before/after) for wall-clock duration
+
+**Resume steps:** (1) check `level_kit_response.json` for a completed response — if present,
+evaluate it against the schema (10 focus areas, 5 questions each, 1 simple/2 medium/2 complex
+per area) and read `curl_meta.txt` + `gpu_monitor.log` for timing/resource data; (2) if the
+background process was killed by the session ending, just re-run the same `curl` command
+against the payload file — the model is already pulled, no need to re-download; (3) once
+quality/timing is assessed, decide whether to also try a smaller model (8B-class) for a
+speed comparison, then decide whether to proceed with the actual gateway integration
+(option 2 from the original discussion) or stop at the informational pilot.
+
 ## RESUME HERE FIRST (2026-09-08 — top-5 item 1 CLOSED + a recurring flaky-CI-test root-caused and fixed; items 2-5 still queued)
 
 **Item 1 CLOSED.** PR #242 merged to `main` (squash `f7e63fc`) — closes BACKLOG §4's positions
