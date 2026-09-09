@@ -60,6 +60,62 @@ below before doing anything else.
 
 </details>
 
+## RESUME HERE FIRST (2026-09-09 — item 2 CLOSED (stale, already fixed); item 3 (CR-002) decision confirmed, build NOT started, ready to fire; items 4-5 untouched)
+
+**Item 2 (migration 0011 unreplayable) CLOSED, no code change needed** — already fixed by
+earlier commit `f5d6a47` (G15/G15b); BACKLOG entry was just stale, corrected in commit
+`4f63896`. Confirmed via `git log`, re-reading the current file, and every green CI run
+this session already replaying the full migration chain.
+
+**Item 3 (CR-002 panelist auto-assign) — investigated, product decision CONFIRMED with user,
+build not yet dispatched (session paused at user's requested 5pm IST cutoff before a
+full Gate-5 build could safely complete).**
+
+Investigation found (`cavecrew-investigator`, file:line references):
+- Auto-assign (slot-1-only today): `backend/app/modules/interviews/_service_creation.py:99-110`
+- Panelist slots 1-3 config + dual-write: `backend/app/modules/positions/levels_service.py:161-168`
+- `add_panelist`'s current cap: `backend/app/modules/interviews/schemas.py:122` —
+  `sequence_number: Annotated[int, Field(ge=1, le=2)]` (hard cap at 2, not category-aware)
+- BR-064 cap (max 3/level, any category): `backend/app/modules/positions/levels_service.py:42,189-190`
+- Manual workaround endpoint: `backend/app/modules/interviews/_router_panelists_feedback.py:34-58`
+
+**Confirmed decision (user, 2026-09-09): "Uniform 3 slots for all categories"** — NOT the
+category-aware option. This means BR-004's STG-specific 2-panelist cap is being retired, not
+preserved. Required changes:
+1. `interviews/schemas.py:122` — raise `add_panelist`'s `sequence_number` cap from `le=2` to
+   `le=3`.
+2. `interviews/_service_creation.py:99-110` — replace the single `level.panelist_id`-based
+   slot-1-only branch with a loop over `level.panelists` (the `interview_level_panelists`
+   relationship, already populated 1-3 deep by `levels_service.py`), auto-assigning every
+   configured slot.
+3. **Spec update required (Spec-implementation sync mandate — this changes a business rule,
+   not just adds capability)**: `openspec/specs/interviews/spec.md` and
+   `openspec/specs/positions/spec.md` both reference BR-004/BR-064 — read both, update BR-004's
+   text to reflect the cap is retired (or superseded by BR-064 uniformly), in the same change
+   as the code.
+4. **19 files reference `BR-004`/`BR-064`/the `le=2` cap** (grepped, not yet individually read):
+   `positions/subresource_service.py`, `positions/tests/test_subresource_service.py`,
+   `interviews/tests/test_service.py`, `interviews/service.py`, `interviews/_service_scheduling.py`,
+   `interviews/_service_creation.py`, `interviews/_create_validators.py`,
+   `positions/tests/test_functional_cr002_multi_panelist.py`, `positions/levels_service.py`,
+   `interviews/router.py`, `interviews/schemas.py`, `positions/exceptions.py`,
+   `offers/tests/test_unit_offers.py`, `interviews/exceptions.py`,
+   `alembic/versions/0053_ivw_level_panelists.py`, `offers/exceptions.py`,
+   `interviews/tests/test_functional_audit_2026_06_29.py`,
+   `interviews/tests/test_functional_19b_status.py`,
+   `applications/tests/test_functional_p20_screening.py`. Several are almost certainly false
+   positives (offers module unlikely related) — the real dependency-mapping pass (read each,
+   per this project's own Rule 6) is the FIRST thing to do on resume, before dispatching
+   backend-engineer, since some of these likely assert the OLD `le=2`/slot-1-only behavior and
+   will need updating as part of this same change, not discovered mid-build.
+
+**Next session: run Rule 6's dependency mapping on those 19 files first (cheap, main-loop
+reads), THEN dispatch backend-engineer with the confirmed decision + the 3 required-changes
+list above, then full Gate 5 (unit-test-engineer → functional-test-engineer →
+principal-reviewer).** Not started today specifically because a full build+test+review cycle
+realistically needs more than the ~25 minutes that were left before the user's requested 5pm
+IST pause — starting it risked leaving a business-rule change mid-flight at a hard cutoff.
+
 ## DETOUR: LLM failover-chain spec proposed, NOT YET APPLIED (2026-09-08 — items 2-5 below still untouched, resume THOSE first unless continuing this detour)
 
 **Outcome of the open-source-LLM detour:** pilot succeeded (Qwen2.5-14B via Ollama, exact
