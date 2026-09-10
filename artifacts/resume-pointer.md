@@ -57,18 +57,34 @@ below before doing anything else.
 - 2026-09-06 — item 6 CLOSED (PR #241 merged); caught + fixed a 1-day unpushed-mandate-commits gap on local main during the merge
 - 2026-09-06 evening — full non-infra BACKLOG scan (22 items, top-5 ranked); paused before starting any, resume tomorrow
 - 2026-09-08 — top-5 item 1 (positions actor-org isolation, PR #242) + a recurring flaky-CI-test root-cause fix (PR #243) both merged
-- 2026-09-10 — CR-002 panelist auto-assign flat-cap-3 fix, PR #244 open, merge-ready (3 review rounds)
+- 2026-09-10 — CR-002 panelist auto-assign flat-cap-3 fix MERGED (PR #244)
+- 2026-09-10 — Item 4: offers org-ban parity fix (BR-017), branch `fix/offers-org-ban-parity`, APPROVE-WITH-NITS round 2, nits fixed inline, awaiting merge approval
 
 </details>
 
-## RESUME HERE FIRST (2026-09-10 — CR-002 panelist auto-assign MERGE-READY, PR #244 open; items 4-5 untouched)
+## RESUME HERE FIRST (2026-09-10 — CR-002 MERGED; item 4 merge-ready; item 5 untouched)
 
 **Item 2 (migration 0011 unreplayable) CLOSED, no code change needed** — already fixed by
 earlier commit `f5d6a47` (G15/G15b); BACKLOG entry was just stale, corrected in commit
 `4f63896`.
 
-**Item 3 (CR-002 panelist auto-assign) — DONE, PR #244 open (`dev/cr002-panelist-auto-assign`,
-3 commits, CI green), awaiting the user's explicit merge approval.**
+**Item 3 (CR-002 panelist auto-assign) — MERGED to `main`** (PR #244, commit `9307420`).
+`dev/cr002-panelist-auto-assign` branch deleted.
+
+**Item 4 (offers missing org-rejection-ban check at offer-create) — merge-ready, branch
+`fix/offers-org-ban-parity`, 3 commits, awaiting the user's explicit merge approval.**
+BACKLOG grep confirmed a real gap: BR-014 (applications/spec.md) blocked new applications
+against an org that rejected the candidate within 6 months, but offer creation had no
+equivalent — a candidate could still get an offer via an already-existing shortlisted
+application. Fixed as offers/spec.md's own **BR-017** (not BR-014 — that number was already
+taken in offers/spec.md for an unrelated rule; every cross-reference to the applications-side
+rule is written as "applications/spec.md's BR-014", never bare, per the CR-002 lesson above).
+Shared 182-day window + rejection-label logic hoisted to `backend/app/shared/org_ban.py`
+(principal-reviewer round-1 catch: the fix initially duplicated this constant/helper instead
+of reusing it). Check runs LAST among `do_create`'s preconditions (candidate-wide state,
+adjacent to BR-013) so an already-existing offer still surfaces its own clearer 409, not a
+misleading 422. `principal-reviewer` (opus) round 2: APPROVE-WITH-NITS, all nits fixed inline
+same session (stale docstrings, a missing ordering-lock unit test, living-doc header updates).
 
 The panelist ceiling is a **flat cap of 3, any category** — 1 mandatory, 2nd/3rd optional —
 identical to the pre-existing BR-064 (configured-roster rule). `positions/spec.md`'s BR-004/
