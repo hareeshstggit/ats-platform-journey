@@ -58,11 +58,12 @@ below before doing anything else.
 - 2026-09-06 evening — full non-infra BACKLOG scan (22 items, top-5 ranked); paused before starting any, resume tomorrow
 - 2026-09-08 — top-5 item 1 (positions actor-org isolation, PR #242) + a recurring flaky-CI-test root-cause fix (PR #243) both merged
 - 2026-09-10 — CR-002 panelist auto-assign flat-cap-3 fix MERGED (PR #244)
-- 2026-09-10 — Item 4: offers org-ban parity fix (BR-017), branch `fix/offers-org-ban-parity`, APPROVE-WITH-NITS round 2, nits fixed inline, awaiting merge approval
+- 2026-09-10 — Item 4: offers org-ban parity fix (BR-017) MERGED (PR #245)
+- 2026-09-10 evening — Item 5 (Gemini blocks Celery event loop) investigated, paused before build at 11pm IST cutoff
 
 </details>
 
-## RESUME HERE FIRST (2026-09-10 — CR-002 MERGED; item 4 merge-ready; item 5 untouched)
+## PAUSED 2026-09-10 ~11pm IST (resume here first) — item 5 investigated, build NOT started
 
 **Item 2 (migration 0011 unreplayable) CLOSED, no code change needed** — already fixed by
 earlier commit `f5d6a47` (G15/G15b); BACKLOG entry was just stale, corrected in commit
@@ -70,6 +71,69 @@ earlier commit `f5d6a47` (G15/G15b); BACKLOG entry was just stale, corrected in 
 
 **Item 3 (CR-002 panelist auto-assign) — MERGED to `main`** (PR #244, commit `9307420`).
 `dev/cr002-panelist-auto-assign` branch deleted.
+
+**Item 4 (offers org-ban parity) — MERGED to `main`** (PR #245, commit `45abe4a`).
+`fix/offers-org-ban-parity` branch deleted.
+
+**Item 5 (Gemini's path in level_kit_agent blocks the Celery worker's event loop) —
+investigated (`cavecrew-investigator`), build NOT started (session paused at user's
+requested 11pm IST cutoff, ~1h36m runway wasn't enough to safely complete a full Gate 5
+build+test+review cycle tonight — used the window for investigation only, per the same
+discipline as the earlier CR-002 5pm-IST pause).**
+
+Confirmed file:line (module was reorganized 2026-09-05 since the original BACKLOG entry
+was written — layout below is CURRENT, not the stale one in docs/BACKLOG.md §4):
+- `backend/app/modules/interviews/agents/_level_kit_gemini.py:22` — `_call_gemini_impl`:
+  retry loop using `time.sleep` (blocking).
+- `backend/app/modules/interviews/agents/_level_kit_gemini.py:58,74` — `_invoke_gemini_impl`:
+  synchronous `client.models.generate_content()` call (blocking SDK call).
+- `backend/app/modules/interviews/agents/level_kit_agent.py:119` — `async def run()` calls
+  `self._gemini(ctx)` at line 131 **without `await`** — a fully synchronous call chain
+  reached from an async entry point.
+- `level_kit_agent.py:174,190,202` — `_gemini()`/`_call_gemini()` (both NOT async),
+  `sleep=time.sleep` passed into the retry loop.
+- `docs/LOCAL_DEV.md:140` — Celery worker runs `--pool=solo` on Windows (documented,
+  intentional) — single-threaded, so this blocking call genuinely stalls EVERY other
+  queued task, not just risks contention. Confirmed live this session: the actual running
+  worker process command line has `--pool=solo`.
+
+**Gemini is the LIVE, currently-configured path, NOT dormant — verify this claim yourself
+before trusting any restated summary of it (including agent-generated ones):** `.env:50` sets
+`INTERVIEW_KIT_PROVIDER=gemini`, overriding `app/core/config.py:93`'s `"local_kit"` default.
+An initial investigation pass claimed this was dormant (missed the `.env` override, only
+checked the code default) — caught and corrected via a direct 2-command grep before writing
+it down here. Lesson: this exact class of near-miss (trusting an investigator's claim about
+what's "live" vs. "dormant" without directly checking the actual runtime config) is worth a
+beat of suspicion every time, not just this once.
+
+**Fix options, both already scoped, pick one tomorrow (not yet decided which):**
+1. Convert `_call_gemini_impl`/`_invoke_gemini_impl` (`_level_kit_gemini.py`) to genuinely
+   async: `asyncio.sleep` for retries, `run_in_executor` for the blocking SDK call — same
+   pattern `llm_gateway_providers.py`'s own Gemini function already uses (see option 2).
+2. **Likely cheaper**: route `level_kit_agent.py` through the already-existing, already-async,
+   already-correct `backend/app/shared/llm_gateway_providers.py:226` `call_gemini()` (and
+   `:249` `call_gemini_with_tokens()`) instead of maintaining a second, separate raw
+   `google-genai` implementation — that function already wraps
+   `client.models.generate_content()` in `loop.run_in_executor()`, already has circuit
+   breaker + timeout bounds (D8-verified), and other modules already call it successfully.
+   Signature: `call_gemini(prompt, *, model_id, max_tokens, system, schema=None) -> str` —
+   params differ slightly from `level_kit_agent.py`'s current call shape, needs mapping,
+   not a blind swap.
+3. Either option requires updating `backend/app/modules/interviews/tests/
+   test_level_kit_agent.py`'s `TestLevelKitAgentGeminiInvocation` class (lines 314-486, 9
+   tests) — they currently mock `_genai.Client` at the module path directly; option 2 would
+   shift the mock target to `llm_gateway_providers.call_gemini` instead, a bigger test
+   rewrite than option 1's smaller async-conversion diff. Weigh this against option 2's
+   de-duplication benefit before deciding.
+
+**Resume by:** decide option 1 vs 2 (or ask the user if it's a real toss-up), then full
+Gate 5 (`cavecrew-investigator`'s work above already done, skip straight to
+backend-engineer → functional-test-engineer → principal-reviewer). This is a Celery-task
+reliability fix — check whether it also warrants a `principal-reliability-engineer` deep-dive
+per the Model tier mandate's on-demand-specialist criteria (failure modes/recovery), or
+whether the standard Gate 5 pipeline alone is sufficient for a fix this scoped.
+
+## SUPERSEDED (kept for the file:line detail only; see the corrected PAUSED entry above for the current, accurate summary)
 
 **Item 4 (offers missing org-rejection-ban check at offer-create) — merge-ready, branch
 `fix/offers-org-ban-parity`, 3 commits, awaiting the user's explicit merge approval.**
