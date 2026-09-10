@@ -48,6 +48,149 @@ append-only (corrections are added as new entries that reference the prior one).
 
 ## Changelog
 
+<details>
+<summary><strong>Dated index — click to expand (newest first, jump to any entry)</strong></summary>
+
+- [2026-09-09] Widen interview_panelist_assignments.sequence_number CHECK 1-2 → 1-3 (BR-064 flat cap, any category) — 0062_ivw_panelist_max3
+- [2026-09-01] G15 full migration-replay reconciliation — 0010/0011/0012 rewritten + 0047/0048/0061 guarded
+- [2026-09-01] position_history pagination index — 0061_pos_hist_id_time_idx
+- [2026-09-01] Extend audit_log partitions through 2027-12 — 0060_audit_log_partitions
+- [2026-08-26] Add UNIQUE constraint on interview_level_kits.interview_id — 0058_uq_ivw_level_kits_iid
+- [2026-08-27] Add RLS write policies to candidate_documents, bulk_upload_jobs, candidate_consents — 0059_docs_bulkjobs_consents_rls
+- [2026-08-25] Add candidates INSERT/UPDATE RLS policies + widen SELECT to (true) — 0057_candidates_write_rls
+- [2026-08-08] Fix docs/schema.sql load-order bug + make 2 early migrations idempotent — no new Alembic revision
+- [2026-08-06] Attach updated_at/version trigger to interview_level_kits — 0056_ivw_level_kits_upd_trg
+- [2026-08-06] Add matching retry/error state + question_generation_error — 0055_matching_retry_state
+- [2026-08-05] Add retry_count to candidates/interview_level_kits — 0054_pipeline_retry_count
+- [2026-07-31] Add interview_level_panelists (multi-panelist-per-level) — 0053_ivw_level_panelists
+- [2026-07-21] Drop ck_interview_skip_reason (stale table-local CHECK) — 0052_drop_ivw_skip_reason_ck
+- [2026-07-21] Partial unique index for offer_accepted/onboarded active-hire states — 0051_offer_accepted_hire_idx
+- [2026-07-21] Restore accidentally-deactivated interview_levels (2 rows, position 6ed3b751) — no new migration
+- [2026-07-21] interview_levels.level_type data correction (2 active rows) — no new migration
+- [2026-07-15] Dropped/Offer Declined statuses + offer-decline reason enum — 0050_app_dropped_declined
+- [2026-07-14] Redo Interview Level: interviews.superseded_at + partial unique index — 0049_interview_redo_supersede
+- [2026-07-10] Data-correction: backfill legacy interview_feedback.outcome NULLs — no new migration
+- [2026-07-10] Add outcome_change_reason column to interview_feedback (BR-SYNC-006 guardrail) — 0048_feedback_outcome_reason
+- [2026-07-09] Add outcome column to interview_feedback (P36 — feedback edit/upsert) — 0047_feedback_outcome_col
+- [2026-07-09] Add interviews:read permission, grant to interviewer + hiring_manager — 0046_interviews_read_perm
+- [2026-07-07] Rename application_status_enum 'withdrawn' → 'candidature_withdrawn' — 0045_candidature_withdrawn
+- [2026-07-04] Add position_closed to application_status_enum — 0044_pos_closed_status
+- [2026-07-04] P27-C scorecard_template column on interview_level_kits — 0043_kit_scorecard_tmpl
+- [2026-07-04] P27-A application status expansion + interview workflow schema — 0042_app_ivw_status_expansion
+- [2026-07-03] Position on_hold timestamps + portco_deferred rename — Phase P24 — 0041_position_onhold_timestamps
+- [2026-07-02] Position close_reason JSONB column — Phase 23B — 0040_position_close_reason
+- [2026-07-02] Candidate recruiter touchpoint — Phase 22C — 0039_recruiter_touchpoint
+- [2026-07-01] Candidate profile fields — Phase 22A — 0038_cand_profile_fields
+- [2026-06-30] Restore screening_decisions.status (ai_screening_decision_enum) — 0037_restore_sd_status
+- [2026-06-30] Add candidate_screenings table and screening_status_enum — 0036_candidate_screenings
+- [2026-06-30] Drop interview_kits, scorecards, scorecard_entries tables — 0035_drop_ivw_kits
+- [2026-06-30] Add deleted_at to interview_question_bank (soft-delete mandate) — 0034_qbank_deleted_at
+- [2026-06-30] Add deleted_at to interview_level_kits (patch) — 0033_level_kits_deleted_at
+- [2026-06-30] Add interview_level_kits and interview_question_bank tables — 0032_level_kits_question_bank
+- [2026-06-29] One-active-hire-per-candidate partial unique indexes — 0031_candidate_hire_unique
+- [2026-06-29] Extend interview_status_history partitions through 2027-12 — 0030_ivw_hist_partitions
+- [2026-06-24] Add owning_recruiter_id to applications — 0029_application_owning_recruiter
+- [2026-06-24] Add closed to position_status_enum, index on positions.approved_at — 0028_position_closed_status_ageing
+- [2026-06-24] Add position_recruiter_assignments table — 0027_pos_recruiter_assign
+- [2026-06-23] Add deleted_at soft-delete column to interviews, screening_decisions, bulk_upload_jobs — 0026_add_deleted_at_soft_delete
+- [2026-06-23] Add offers table, offer_status_enum, role and permission seeds — 0025_offers
+- [2026-06-21] Drop interview status-change trigger (MAJ-2 fix) — 0024_drop_int_status_trigger
+- [2026-06-21] Add interview tables (Phase 19-A) — 0023_interviews
+- [2026-06-20] Add applications table (P18-A) — 0022_applications
+- [2026-06-20] Add candidates.last_matched_at — 0021_cand_last_matched_at
+- [2026-06-19] Make candidates.display_name nullable — 0020_cand_display_name_null
+- [2026-06-18] Add candidate_position_scorecards table (Phase 17A AI screening) — 0019_position_scorecards
+- [2026-06-18] Add 'direct' to candidate_source_enum — 0018_cand_src_direct
+- [2026-06-18] Add panelist_id FK to interview_levels (CR-001) — 0017_lvl_panelist_fk
+- [2026-06-18] Add technical_competencies and consulting_fee_inr to interview_panelists — 0016_panelist_enhancements
+- [2026-06-17] Add interview_panelists table (global panelist master) — 0015_interview_panelists
+- [2026-06-17] Cast candidate_consents.ip_address from inet to VARCHAR(45) — 0014_consents_ip_to_varchar
+- [2026-06-17] Add candidates.duplicate_of_candidate_id self-referential FK — 0013_candidates_dedup_col
+- [2026-06-17] Bridge — align candidate schema with Phase-16 ORM — 0012_candidates_schema_bridge
+- [2026-06-17] Phase 16 — candidate_position_matches + candidate_source_details — 0011_candidate_matches_source
+- [2026-06-17] Phase 16 — core candidate tables — 0010_candidates
+- [2026-06-16] Position current-status remap to on_hold — 0009_positions_status_remap
+- [2026-06-16] JD extraction provenance column — 0008_jd_extraction_provider
+- [2026-06-16] Per-org position-code sequence table — 0007_org_position_sequences
+- [2026-06-16] Human-readable position code — 0006_position_code
+- [2026-06-16] AI Interview Kit + online Scorecard — 0005_interview_kit_scorecard
+- [2026-06-15] v2.2 Positions subset APPLIED via Alembic — no-show + budget/currency — 0004_positions_noshow_budget
+- [2026-06-12] v2.2 schema additions — Candidate Source + Positions (no-show, budget/currency) — schema.sql (no Alembic yet)
+- [2026-06-10] uq_idempotency_key_user → NULLS NOT DISTINCT — 0003_idem_uq_nulls_not_distinct
+- [2026-06-10] users.mfa_channel + users.mobile (SMS/Email OTP MFA) — 0002_users_mfa_channel_mobile
+- [2026-06-09] positions.approved_at (Position Approved Date) + per-tranche TAT — positions
+- [2026-06-08] Initial enterprise schema — baseline
+
+</details>
+
+---
+
+### [2026-09-09] Widen interview_panelist_assignments.sequence_number CHECK 1-2 → 1-3 — 0062_ivw_panelist_max3
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer (app-layer fix) + main-loop (this migration), CR-002 follow-up
+- Trigger         : bug fix (docs/BACKLOG.md §4/§9 top-5 item 3) — CR-002's auto-assign gap fix
+                    revealed a DB-level constraint that was never widened to match BR-064's
+                    existing "1-3 panelists, any category" rule; found live via
+                    functional-test-engineer against the real local DB (unhandled 500
+                    IntegrityError on a 3rd panelist), not caught by unit tests (mocked repo layer
+                    cannot see a real Postgres CHECK constraint).
+- Module(s)       : interviews
+- Change type     : add constraint (widen existing CHECK's range, same constraint name)
+- Objects         : interview_panelist_assignments.sequence_number
+                    (interview_panelist_assignments_sequence_number_check)
+- Storage decision: N/A — no new column/table, widening an existing CHECK's range only.
+- Backward compat : Every existing row already satisfies sequence_number <= 2, which trivially
+                    still satisfies the new 1-3 range — zero existing rows affected. App-layer
+                    enforcement (`_panelist_ceiling.max_panelist_slots`, a flat 3 for any
+                    category, consumed by both do_add_panelist and the auto-assign loop) is what
+                    actually keeps the ceiling correct going forward; this constraint only needed
+                    to stop rejecting the 3rd-slot case the application code already permits.
+                    Backfill mandate: N/A — no new column, nothing was ever persisted incorrectly
+                    for this migration to correct.
+- Migration       : 0062_ivw_panelist_max3; downgrade implemented (yes) — restores the
+                    original 1-2 CHECK exactly as added in 0023_interviews.py.
+- Validation      : Applied live against the local dev DB (`atsplatform`, target confirmed before
+                    running); upgrade's constraint definition verified via `pg_get_constraintdef`
+                    (1-3). `docs/schema.sql`'s inline CHECK updated to match so a fresh bootstrap +
+                    `alembic upgrade head` stays consistent with an already-migrated database.
+                    `docs/ci_schema_snapshot.sql`'s `interview_panelist_assignments_sequence_
+                    number_check` line ALSO updated to 1-3 (CI's G15d definition-drift check
+                    caught the initial push missing this — surgical single-line edit, not a
+                    `pg_dump` regeneration, to avoid the known risk of a full regeneration
+                    silently dropping the file's hand-curated reference-data seed tail; verified
+                    no drift by loading the corrected file into a scratch DB and running
+                    `check_schema_definition_drift.py` locally before re-pushing).
+                    principal-reviewer (round 2, opus) executed an earlier draft's `downgrade()`
+                    pre-check against a real Postgres in 3 data states (offending row / clean row /
+                    empty table) and found it raised `AttributeError` in ALL THREE — `alembic.op`
+                    has no `text` attribute, so the pre-check never reached SQL. Fixed by importing
+                    `sqlalchemy.text` instead of `op.text`; re-verified live against a fresh
+                    scratch DB (`cr002_rev2_fix_check`, created and dropped, NOT `atsplatform`) in
+                    the same 3 states, all correct. Separately (2026-09-10, before merge): the
+                    user corrected the ceiling itself from a wrongly category-split STG=2/Org=4 to
+                    a flat 3 for any category (see positions/spec.md BR-064) — this migration was
+                    downgraded on the local dev DB (confirmed zero rows with sequence_number > 2
+                    first), renamed from `0062_ivw_panelist_max_org4` to `0062_ivw_panelist_max3`,
+                    rewritten to widen to 1-3 instead of 1-4, and re-upgraded; constraint
+                    reverified via `pg_get_constraintdef` as `CHECK ((sequence_number >= 1) AND
+                    (sequence_number <= 3))`. Folded into this same entry rather than logged as a
+                    new one (against this file's usual "corrections get their own entry
+                    referencing the prior one" convention): the 1-4 version never reached `main`
+                    or any shared environment, so there is no durable record elsewhere that a
+                    separate correcting entry would need to reconcile against.
+- Rollback        : NOT unconditionally reversible once this feature has real usage.
+                    `alembic downgrade -1` from 0062 fails loud (RuntimeError, naming the
+                    offending interview_ids) if any row already has sequence_number 3 — the
+                    downgrade never auto-deletes data to force the stricter CHECK through. An
+                    operator must first remove those assignments (`DELETE
+                    /interviews/{id}/panelists/3`) before retrying the downgrade. Reversible with
+                    no data loss only when zero rows use slot 3.
+- Notes           : This is the DB-layer half of the CR-002 auto-assign fix
+                    (`dev/cr002-panelist-auto-assign`) — the application code alone was not
+                    sufficient; both halves ship in the same PR per the schema-evolution mandate
+                    (migration ships in the SAME commit as the code change that needs it).
+
 ### [2026-09-01] G15 full migration-replay reconciliation — 0010/0011/0012 rewritten + 0047/0048/0061 guarded
 
 - Baseline        : v2.2 (11-Jun-2026)

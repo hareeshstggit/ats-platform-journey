@@ -57,64 +57,82 @@ below before doing anything else.
 - 2026-09-06 — item 6 CLOSED (PR #241 merged); caught + fixed a 1-day unpushed-mandate-commits gap on local main during the merge
 - 2026-09-06 evening — full non-infra BACKLOG scan (22 items, top-5 ranked); paused before starting any, resume tomorrow
 - 2026-09-08 — top-5 item 1 (positions actor-org isolation, PR #242) + a recurring flaky-CI-test root-cause fix (PR #243) both merged
+- 2026-09-10 — CR-002 panelist auto-assign flat-cap-3 fix, PR #244 open, merge-ready (3 review rounds)
 
 </details>
 
-## RESUME HERE FIRST (2026-09-09 — item 2 CLOSED (stale, already fixed); item 3 (CR-002) decision confirmed, build NOT started, ready to fire; items 4-5 untouched)
+## RESUME HERE FIRST (2026-09-10 — CR-002 panelist auto-assign MERGE-READY, PR #244 open; items 4-5 untouched)
 
 **Item 2 (migration 0011 unreplayable) CLOSED, no code change needed** — already fixed by
 earlier commit `f5d6a47` (G15/G15b); BACKLOG entry was just stale, corrected in commit
-`4f63896`. Confirmed via `git log`, re-reading the current file, and every green CI run
-this session already replaying the full migration chain.
+`4f63896`.
 
-**Item 3 (CR-002 panelist auto-assign) — investigated, product decision CONFIRMED with user,
-build not yet dispatched (session paused at user's requested 5pm IST cutoff before a
-full Gate-5 build could safely complete).**
+**Item 3 (CR-002 panelist auto-assign) — DONE, PR #244 open (`dev/cr002-panelist-auto-assign`,
+3 commits, CI green), awaiting the user's explicit merge approval.**
 
-Investigation found (`cavecrew-investigator`, file:line references):
-- Auto-assign (slot-1-only today): `backend/app/modules/interviews/_service_creation.py:99-110`
+The panelist ceiling is a **flat cap of 3, any category** — 1 mandatory, 2nd/3rd optional —
+identical to the pre-existing BR-064 (configured-roster rule). `positions/spec.md`'s BR-004/
+BR-005 are RETIRED in favor of BR-064 as the single governing rule for both the configured
+roster and the actual scheduled interview (`interview_panelist_assignments`). Interview
+creation auto-assigns every configured panelist on the level (was: slot 1 only); manual
+`POST /interviews/{id}/panelists` allows up to 3 (was: flat 2 for everyone). Migration
+`0062_ivw_panelist_max3` widens the DB CHECK from 1-2 to 1-3, with a `downgrade()` that fails
+loud (naming offending `interview_id`s) rather than silently discarding data.
+
+**The build initially shipped the WRONG rule and took 3 principal-reviewer rounds to correct
+— read this before ever touching a panelist-count business rule again:**
+- The investigation phase (below, preserved for the lesson) had already correctly recorded
+  **"Confirmed decision (user): Uniform 3 slots for all categories"** — right here in this
+  file. The actual build then shipped a category-differentiated STG=2/Org=4 split anyway,
+  because a later re-investigation re-derived a DIFFERENT number by reading
+  `positions/spec.md`'s BR-004/BR-005 prose literally (which were themselves written wrong in
+  that same building session) instead of checking this file's own recorded decision first.
+- Root confusion: STG=2/Org=4 is a REAL pair of numbers in this codebase, but they mean
+  something totally different — the number of configurable interview ROUNDS/LEVELS per
+  position (STG L1+L2 = 2, Org L1-L6 = 6, 8 total; BR-SEQ-001 sequencing chain, already built,
+  untouched by CR-002). Confusing "2 STG rounds / 6 Org rounds" with "STG panelist cap 2 / Org
+  panelist cap 4" cost 2 extra review rounds (opus tier) to unwind.
+- **Standing lesson, going forward**: when this file records a "Confirmed decision" in that
+  exact form, re-read and trust it over spec prose that seems to contradict it on the same
+  topic — do not silently re-derive the answer from the spec as if the decision were never
+  made. Treat a recorded decision as higher-priority than a spec passage that appears to give
+  a different answer for what looks like the same rule.
+
+**Two clarifications from the same conversation, not code changes:**
+- Feedback is single-submission per interview (one of the assigned panelists submits, after
+  all assigned panelists discuss OFFLINE/outside the platform and reach consensus) — not
+  per-panelist independent submissions. This is why the recruiter-notification fix (fires on
+  any submission, no panelist-count gate) is correct as shipped.
+- **NEW requirement, not yet built, separate scope**: the LLM-generated interview kit for an
+  STG-Labs-specific interview level must be visible to ALL assigned panelists for that
+  interview, not just one. Current interview-kit visibility scoping not yet investigated
+  (likely `_service_kits.py`) — needs its own spec-first pass before building.
+
+**Tracked, deferred, not blocking merge** (`docs/BACKLOG.md` §4): redo-interview
+panelist-count asymmetry (`_service_redo.py`/`_repo_redo.py` only carry over 1 replacement
+panelist, not the full roster); pre-existing file/function-cap overage on
+`_service_scheduling.py`/`service.py`/`do_create_interview`, marginally aggravated.
+
+**Resume by:** get the user's explicit merge approval for PR #244 (never merge without it),
+then merge, then the external-sharing mirror sync (this branch touched 3 of the 18 mirrored
+files: `docs/SCHEMA_CHANGE.md`, `docs/BACKLOG.md`, `openspec/specs/positions/spec.md`) in the
+same batch as closing out the merge.
+
+<details>
+<summary>Original investigation notes (2026-09-09, preserved for the file-reference detail — the confirmed decision above is authoritative over anything in this collapsed section)</summary>
+
+Investigation found (`cavecrew-investigator`, file:line references, may have drifted since):
+- Auto-assign (slot-1-only pre-CR-002): `backend/app/modules/interviews/_service_creation.py:99-110`
 - Panelist slots 1-3 config + dual-write: `backend/app/modules/positions/levels_service.py:161-168`
-- `add_panelist`'s current cap: `backend/app/modules/interviews/schemas.py:122` —
+- `add_panelist`'s pre-CR-002 cap: `backend/app/modules/interviews/schemas.py:122` —
   `sequence_number: Annotated[int, Field(ge=1, le=2)]` (hard cap at 2, not category-aware)
 - BR-064 cap (max 3/level, any category): `backend/app/modules/positions/levels_service.py:42,189-190`
 - Manual workaround endpoint: `backend/app/modules/interviews/_router_panelists_feedback.py:34-58`
+- 19 files were grepped as referencing `BR-004`/`BR-064`/the `le=2` cap at investigation time;
+  several were false positives (offers module unrelated) — the actual build's Rule 6
+  dependency mapping superseded this list.
 
-**Confirmed decision (user, 2026-09-09): "Uniform 3 slots for all categories"** — NOT the
-category-aware option. This means BR-004's STG-specific 2-panelist cap is being retired, not
-preserved. Required changes:
-1. `interviews/schemas.py:122` — raise `add_panelist`'s `sequence_number` cap from `le=2` to
-   `le=3`.
-2. `interviews/_service_creation.py:99-110` — replace the single `level.panelist_id`-based
-   slot-1-only branch with a loop over `level.panelists` (the `interview_level_panelists`
-   relationship, already populated 1-3 deep by `levels_service.py`), auto-assigning every
-   configured slot.
-3. **Spec update required (Spec-implementation sync mandate — this changes a business rule,
-   not just adds capability)**: `openspec/specs/interviews/spec.md` and
-   `openspec/specs/positions/spec.md` both reference BR-004/BR-064 — read both, update BR-004's
-   text to reflect the cap is retired (or superseded by BR-064 uniformly), in the same change
-   as the code.
-4. **19 files reference `BR-004`/`BR-064`/the `le=2` cap** (grepped, not yet individually read):
-   `positions/subresource_service.py`, `positions/tests/test_subresource_service.py`,
-   `interviews/tests/test_service.py`, `interviews/service.py`, `interviews/_service_scheduling.py`,
-   `interviews/_service_creation.py`, `interviews/_create_validators.py`,
-   `positions/tests/test_functional_cr002_multi_panelist.py`, `positions/levels_service.py`,
-   `interviews/router.py`, `interviews/schemas.py`, `positions/exceptions.py`,
-   `offers/tests/test_unit_offers.py`, `interviews/exceptions.py`,
-   `alembic/versions/0053_ivw_level_panelists.py`, `offers/exceptions.py`,
-   `interviews/tests/test_functional_audit_2026_06_29.py`,
-   `interviews/tests/test_functional_19b_status.py`,
-   `applications/tests/test_functional_p20_screening.py`. Several are almost certainly false
-   positives (offers module unlikely related) — the real dependency-mapping pass (read each,
-   per this project's own Rule 6) is the FIRST thing to do on resume, before dispatching
-   backend-engineer, since some of these likely assert the OLD `le=2`/slot-1-only behavior and
-   will need updating as part of this same change, not discovered mid-build.
-
-**Next session: run Rule 6's dependency mapping on those 19 files first (cheap, main-loop
-reads), THEN dispatch backend-engineer with the confirmed decision + the 3 required-changes
-list above, then full Gate 5 (unit-test-engineer → functional-test-engineer →
-principal-reviewer).** Not started today specifically because a full build+test+review cycle
-realistically needs more than the ~25 minutes that were left before the user's requested 5pm
-IST pause — starting it risked leaving a business-rule change mid-flight at a hard cutoff.
+</details>
 
 ## DETOUR: LLM failover-chain spec proposed, NOT YET APPLIED (2026-09-08 — items 2-5 below still untouched, resume THOSE first unless continuing this detour)
 

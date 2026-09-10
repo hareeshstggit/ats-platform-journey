@@ -602,6 +602,23 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   partial view with no indication. Needs a paginated UI affordance before it's a real gap in
   practice (unlikely at current scale, but unbounded). See §8 for the full pagination detail and
   a related DB-side index gap (P8/P9) found in the same review.
+- 🟡 **Redo-interview panelist-count asymmetry** (found 2026-09-09, `principal-reviewer` round 1,
+  `dev/cr002-panelist-auto-assign` CR-002 review — Minor 10; ceiling corrected 2026-09-10 to a
+  flat cap of 3 for any category, see BR-064): `_service_redo.py:157,167` and
+  `_repo_redo.py:69-73`'s panelist-reuse-on-redo path still assumes/copies at most 1 panelist per
+  level and was not updated alongside the auto-assign extension to up to 3 — a redo on a
+  multi-panelist level (STG or Org, since the ceiling is now uniform) may not carry over
+  panelists 2/3 the same way a fresh create's auto-assign now does. Not fixed in this PR (out of
+  CR-002's stated scope — CR-002 only touched creation-time auto-assign + manual add, not redo);
+  needs its own scoped fix once confirmed against the redo spec.
+- 🟡 **`_service_scheduling.py` / `service.py` file-cap, `do_create_interview` function-cap
+  overage** (found 2026-09-09, review round 2; updated 2026-09-10 round 3 to also name
+  `service.py`): `_service_scheduling.py` is 328 lines and `service.py` is 496 lines (CLAUDE.md's
+  300-line file cap), both pre-existing and only marginally aggravated by this PR's
+  `do_add_panelist` cap-check addition and the module-header note for `_panelist_ceiling.py`;
+  `do_create_interview` in `_service_creation.py` is ~99 lines against the 40-line function cap,
+  also pre-existing. Same systemic gap as the `models.py`/`schemas.py` decomposition entries
+  above — needs its own scoped decomposition pass, not a one-off extraction in this PR.
 
 ## 5. Tech debt — tests/CI
 

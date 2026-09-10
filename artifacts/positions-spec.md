@@ -458,24 +458,36 @@ BR-003a On-Hold requires a reason. When status is set to on_hold, hold_reason
 BR-003b Every status change is recorded in position_history with the timestamp
         (change_type = 'status_change') via the DB trigger — satisfies the v2
         requirement to capture status-change date & time.
-BR-004  [Deferred Phase 18/20] STG Labs panelists: maximum 2 (sequence_number 1 and 2 only).
-        Unrelated to BR-064 below — this governs interview_panelist_assignments
-        (per-scheduled-interview slots, Interviews module), not interview_levels'
-        configured panelist roster (Positions module). Left as-is by this change.
-BR-005  [Deferred Phase 18/20] Organisation panelists: maximum 4 (sequence_number 1 through 4).
-        Same distinction as BR-004 — unrelated to BR-064, left as-is.
-BR-064  (this change) Interview level panelist count: 1-3 per level, any level_category,
-        editable up/down within that band, in the Positions module only (create or edit).
-        Reducing an already-populated level below 1 → 400 PANELIST_MIN_REQUIRED,
-        "at least one interview panelist need to be assigned to the interview level."
-        Adding beyond 3 → 422 PANELIST_MAX_EXCEEDED, "Max 3 interview panelists could
-        be added for any interview level." A level may be created with 0 panelists;
-        the minimum only applies once panelists exist and are being reduced.
-        Known limitation: only slot 1 auto-assigns to interview_panelist_assignments at
-        interview-creation time (dual-write to the legacy interview_levels.panelist_id
-        column); slots 2-3 need the manual POST /interviews/{id}/panelists follow-up
-        step until a product decision resolves this against BR-004's 2-slot STG cap
-        (tracked in docs/BACKLOG.md).
+BR-004  RETIRED 2026-09-10 — was a wrongly category-split scheduled-slot ceiling
+        (STG max 2). Corrected: the scheduled-interview panelist ceiling is a flat 3
+        for any category, identical to BR-064 below (there never was a real STG/Org
+        distinction — it was conflated with the unrelated configurable-interview-
+        ROUND-count axis, STG L1/L2 + Org L1-L6). See BR-064 for the single governing
+        rule, now covering both the configured roster AND the actual scheduled
+        interview.
+BR-005  RETIRED 2026-09-10 — was a wrongly category-split scheduled-slot ceiling
+        (Org max 4). Same correction and reason as BR-004 above; see BR-064.
+BR-064  (this change, corrected 2026-09-10) Interview panelist count: 1-3, any
+        level_category, uniform — 1 mandatory, 2nd/3rd optional. This single rule
+        now governs BOTH interview_levels' configured panelist roster (Positions
+        module, create/edit) AND the actual scheduled interview's
+        interview_panelist_assignments (Interviews module) — there is no
+        category-differentiated ceiling on either axis.
+        Configured roster (Positions module): reducing an already-populated level
+        below 1 → 400 PANELIST_MIN_REQUIRED, "at least one interview panelist need
+        to be assigned to the interview level." Adding beyond 3 → 422
+        PANELIST_MAX_EXCEEDED, "Max 3 interview panelists could be added for any
+        interview level." A level may be created with 0 panelists; the minimum
+        only applies once panelists exist and are being reduced.
+        Scheduled interview (Interviews module, CR-002 multi-panelist-per-level,
+        implemented): at interview-creation time, every configured panelist on the
+        level auto-assigns to interview_panelist_assignments, in sequence_number
+        order, up to 3 — since the configured roster is already capped at 3
+        (identical to the scheduled ceiling), there is no over-provisioned case to
+        silently truncate. Manual POST /interviews/{id}/panelists raises 422
+        VALIDATION_ERROR for a sequence_number beyond 3 (the request schema's own
+        Field(le=3) bound rejects it first) or, if that bound and the ceiling ever
+        drift apart, 422 PANELIST_SLOT_CAP_EXCEEDED (service-layer defense-in-depth).
 BR-006  JD upload: file type must be PDF or DOCX. Max size 10 MB.
         File type validated by MIME inspection (python-magic), not extension.
 BR-007  JD versioning: when a new JD is uploaded, the previous JD record
