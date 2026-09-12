@@ -662,19 +662,31 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   this is an environment-credential gap, not a code defect), but flagged so it isn't silently
   assumed verified: re-check with a real `ANTHROPIC_API_KEY` smoke call before/at AWS Bedrock
   go-live, same class as the already-tracked NFR go-live-gated items.
-- 🔴 **Gemini's path in `level_kit_agent.py` still blocks the Celery worker's event loop**
-  (found 2026-09-03, principal-reviewer round 1, `dev/level-kit-agent-llm-gateway`, M5) —
-  `_gemini()`/`_call_gemini()`/`_invoke_gemini()` are still fully synchronous (`time.sleep`
-  retries, blocking `google-genai` SDK call), explicitly out of scope for that change (only
-  Anthropic/Bedrock were converted to async + routed through `llm_gateway`). Gemini is now
-  reached through `run()`'s newly-`async` dispatch and is the CURRENTLY-CONFIGURED local
-  provider (`INTERVIEW_KIT_PROVIDER=gemini`) — so this is the live path, not a dormant one.
-  Needs its own pass: convert `_gemini`/`_call_gemini`/`_invoke_gemini` to async
-  (`asyncio.sleep` for retries, `run_in_executor` for the blocking SDK call, matching the
-  pattern `llm_gateway_providers.py`'s bedrock/gemini functions already use), or route
-  Gemini through `llm_gateway` too (`llm_gateway_providers.py`'s `call_gemini` already
-  exists and is already bounded/async — the remaining work is entirely in
-  `level_kit_agent.py`'s dispatch, not the gateway).
+- ✅ **Gemini's path in `level_kit_agent.py` blocked the Celery worker's event loop —
+  FIXED 2026-09-11** (found 2026-09-03, principal-reviewer round 1,
+  `dev/level-kit-agent-llm-gateway`, M5; `fix/level-kit-gemini-async-event-loop`).
+  `_gemini()`/`_call_gemini()`/`_invoke_gemini()` (`level_kit_agent.py`) and
+  `_call_gemini_impl()`/`_invoke_gemini_impl()` (`_level_kit_gemini.py`) converted to
+  `async def`: `asyncio.sleep` for the 3x exp-backoff retry loop, the blocking
+  `google-genai` SDK call wrapped in `loop.run_in_executor` — same pattern
+  `llm_gateway_providers.py`'s own `call_gemini_with_tokens` already uses. Deliberately
+  NOT routed through the shared `llm_gateway_providers.call_gemini` (the alternative
+  considered): that function's `GenerateContentConfig` sets neither `response_mime_type=
+  "application/json"` nor `thinking_config` — both load-bearing here (an earlier
+  `thinking_budget=-1`/dynamic attempt consumed ~11.5K of a 12K output-token cap on
+  internal reasoning alone, truncating JSON and silently degrading every call to
+  `local_kit`) — routing through it would have silently reintroduced that exact,
+  already-fixed bug. `GenerateContentConfig` confirmed byte-for-byte unchanged.
+  `_RETRY_DELAYS=(1.0,2.0,4.0)` unchanged. Live-verified: a real Gemini API call reached
+  the network boundary (got a transient `ServerError` from Google's side, not a
+  code-side short-circuit), retried with correct `asyncio.sleep` backoff timing
+  (elapsed 8.78s vs 7.0s theoretical + real round-trip time), degraded gracefully to
+  `status="failed"` — no hang. `principal-reviewer`: APPROVE, no findings.
+  Scoping note: this worker runs `--pool=solo` (single-threaded, processes tasks
+  strictly sequentially regardless of sync/async internals) — this fix's value is
+  correctness/future-proofing (an `async def` must never silently block) for whatever
+  pool type AWS production eventually uses, not a locally-demonstrable concurrency
+  gain under the current dev pool.
 - 🔴 **`app/modules/offers/tasks.py` — 0% test coverage, 89 statements** (found 2026-09-03
   during the coverage-gate risk-impact assessment, PRIORITY item 4). A Celery task file with
   zero automated coverage — touches Reliability/Observability per the 10-dimension mandate,
