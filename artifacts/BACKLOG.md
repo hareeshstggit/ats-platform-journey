@@ -687,12 +687,17 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   correctness/future-proofing (an `async def` must never silently block) for whatever
   pool type AWS production eventually uses, not a locally-demonstrable concurrency
   gain under the current dev pool.
-- 🔴 **`app/modules/offers/tasks.py` — 0% test coverage, 89 statements** (found 2026-09-03
-  during the coverage-gate risk-impact assessment, PRIORITY item 4). A Celery task file with
-  zero automated coverage — touches Reliability/Observability per the 10-dimension mandate,
-  not inert like the standalone `app/scripts/*` files driving the aggregate 66%. Not blocking
-  any of today's merges (it's inside the 88.2%-covered real-app-code slice, which already
-  clears the 80% gate in aggregate) — needs its own scoped test-writing pass.
+- ✅ **`app/modules/offers/tasks.py` — 0% test coverage, 89 statements — FIXED 2026-09-15**
+  (found 2026-09-03 during the coverage-gate risk-impact assessment, PRIORITY item 4). A
+  Celery task file touching Reliability/Observability per the 10-dimension mandate, not
+  inert like the standalone `app/scripts/*` files. New
+  `backend/app/modules/offers/tests/test_unit_offers_tasks.py` (10 tests) closes it to
+  **100% coverage (89/89 statements)** — happy path with `set_rls_context` proven at the
+  call site (Rule 3), `_load_offer_data` returning `None` (early-return, no side effects),
+  the `attested_at` present/absent timestamp fallback, transient-failure retry vs.
+  retries-exhausted `__error__` persistence, and `_render_pdf`'s missing-optional-field
+  fallbacks (real reportlab calls, not mocked). `principal-reviewer`: APPROVE-WITH-NITS
+  (the only nit was this BACKLOG row not being flipped in the same commit — fixed here).
 - 🔴 **`tests/integration/test_candidates_flow.py:160` — `_require_offline_providers` has the
   same `autouse=True`-module-scope + denylist shape principal-reviewer found and fixed in
   `test_positions_defects_flow.py` (branch `fix/main-ci-break`, round 4, 2026-09-03).** Its
@@ -702,7 +707,7 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   branch's diff, which only touched this file's resume-download rename) — same fix shape when
   picked up: narrow to an allowlist (`if provider != "local_nlp": skip`) and scope the fixture
   to only the tests that actually need an offline provider, not `autouse=True` module-wide.
-- 🔴 `offers/tests/test_functional_hiring_uniqueness.py` — 3 of 6 tests fail against the live stack (drives hire-uniqueness via a manual status PATCH to `hired`, which is 422-blocked since BR-054). Needs a rewrite to go through the real `POST /offers/{id}/accept` path.
+- ✅ `offers/tests/test_functional_hiring_uniqueness.py` — 3 of 6 tests failed against the live stack (drove hire-uniqueness via a manual status PATCH to `hired`, blocked by the applications-manual-status-lockdown feature) — **FIXED 2026-09-15**. Traced BR-012's originally-specified 409 `CANDIDATE_ALREADY_HIRED` code and found it's no longer reachable from ANY endpoint: `applications/_status_rules.py`'s `_MANUAL_TARGET_BLOCKED` blocks `hired` as a manual PATCH target unconditionally, and `do_update_status` never runs a hire-uniqueness check on that path by design. The only reachable route into `offer_accepted`/`onboarded` (what `has_hired_application_for_candidate` checks) is `offers.do_accept`, which simultaneously satisfies `has_accepted_offer_for_candidate` for the same offer — so the 2 tests built to isolate the "hired-only" disjunct in isolation would collapse into byte-identical duplicates of already-existing tests if rewritten; retired rather than kept as artificial copies (with a documented explanation in the file). The remaining test (error-shape/no-SQL-leak check) rewritten through the real accept-offer flow. File went from 6 tests/3 failing to 4 tests/4 passing, live-verified twice independently. Also added full Rule-5 cleanup (the file had ZERO teardown before this fix, a separate real gap found mid-task) and fixed an unrelated pre-existing blocker (`_create_position`'s fixture was missing the now-mandatory Org L1/L2 interview levels, D9). **Follow-up flagged, not fixed here**: `openspec/specs/applications/spec.md`'s BR-012 (lines ~500-512) still describes the old `update_status`-guard/`CANDIDATE_ALREADY_HIRED` wording — real spec-vs-code drift, needs its own spec-sync pass.
 - 🔴 **`positions/tests/test_functional_p6_4_closed_lockdown_e2e.py` — stale since 2026-07-31, root-caused during Tier-3 hygiene batch 1's review (2026-08-27).** The module-scoped `closed_fixture` creates an interview via a level that has no `interview_level_panelists` row — `_make_panelist` (line 444, called after the failing assert) inserts into the global `interview_panelists` directory instead, a table the `LEVEL_HAS_NO_PANELISTS` gate (landed `89db1f8`, multi-panelist levels, 2026-07-31) doesn't read. Test written 2026-07-23, never updated for the gate that shipped 8 days later — reproduces deterministically in isolation (`1 failed, 24 errors`), NOT a rate-limit/throughput artifact. Fix: seed `interview_level_panelists` for the created level inside `_create_position`, before interview-create.
 - 🔴 **`positions/tests/test_functional_p24_position_status.py` + `test_functional_p23b_position_status.py` — stale since 2026-07-04, same review.** Both assert that open→closed with no reason auto-sets `portco_deferred` — that behavior was deliberately removed 2026-07-04 (`d1d003e`, "enforce user reason on open→closed"; `positions/validation.py:85` now raises `CLOSE_REASON_REQUIRED`). Tests last touched 2026-07-28 without updating this assertion. Deterministic, reproduces in isolation. Fix: update both to expect `CLOSE_REASON_REQUIRED` instead of the auto-set behavior.
 - 🟡 **The backend functional test suite is skip-by-default (`RUN_FUNCTIONAL_TESTS=1` gated) — the above 2 stale-test defects sat undetected for 4-8 weeks as a direct result**, since Gate 1's routine unit runs never exercise them. No action proposed here beyond flagging the systemic risk; a periodic scheduled functional-suite run (not gated on a specific PR touching the file) would catch this class of drift proactively instead of waiting for an unrelated review to stumble into it.
