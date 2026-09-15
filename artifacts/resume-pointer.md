@@ -60,8 +60,23 @@ below before doing anything else.
 - 2026-09-10 — CR-002 panelist auto-assign flat-cap-3 fix MERGED (PR #244)
 - 2026-09-10 — Item 4: offers org-ban parity fix (BR-017) MERGED (PR #245)
 - 2026-09-11 — Item 5 (Gemini blocks Celery event loop) MERGED (PR #246) — top-5 BACKLOG queue (items 2-5) fully CLOSED
+- 2026-09-15 — offers/tasks.py 0% coverage MERGED (PR #247) + stale hiring-uniqueness tests fixed MERGED (PR #248) — both offers-module BACKLOG items closed
 
 </details>
+
+## RESOLVED 2026-09-15 — offers-module BACKLOG cleanup (2 items)
+
+Both PRs merged, no migration in either (test-only changes): **PR #247** — `offers/tasks.py`
+(the `generate_offer_pdf` Celery task) had 0% coverage, 89 statements; now 100%. **PR #248** —
+`test_functional_hiring_uniqueness.py` had 3/6 tests failing (stale manual-PATCH-to-`hired`
+path, now unconditionally blocked by the applications-manual-status-lockdown feature); traced
+BR-012's `CANDIDATE_ALREADY_HIRED` code as dead (no endpoint emits it anymore — only
+`offers.do_accept` reaches the check, and it always satisfies the OTHER hire-uniqueness
+disjunct too), retired 2 tests that would've become duplicates rather than faking distinct
+coverage, rewrote the 3rd; also added Rule-5 cleanup the file never had, and fixed an
+unrelated blocking fixture gap (missing mandatory Org L1/L2 levels). Both `principal-reviewer`:
+APPROVE, no nits. Follow-up flagged, not fixed: `applications/spec.md`'s BR-012 text still
+describes the dead code path — real spec-vs-code drift, needs its own spec-sync pass.
 
 ## RESOLVED 2026-09-11 — top-5 ranked BACKLOG queue (items 2-5) fully CLOSED
 
