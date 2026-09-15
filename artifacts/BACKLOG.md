@@ -308,7 +308,7 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 3. Business-rule gaps (unverified candidates — spot-check before building, none touched since found)
 
-1. 🔴 Offers has no mirrored org-rejection-ban check at offer-create time (BR-014 exists for applications, not offers).
+1. ✅ Offers had no mirrored org-rejection-ban check at offer-create time (BR-014 exists for applications, not offers) — **fixed 2026-09-11, PR #245**, offers/spec.md's own BR-017 (see §4 above for the full fix history).
 2. 🔴 Screening: reverting shortlisted→screen_rejected doesn't cascade-invalidate existing interviews (orphaned pending interview records).
 3. ❓ Applications: manual status→`onboarded` bypassing override_reason gate — likely false positive (onboarded already requires `onboarded_at`), recheck before building.
 4. 🔴 Interviews: feedback outcome submittable with no `scheduled_at` set — no validation gap-check done yet.
