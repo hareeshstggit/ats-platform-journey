@@ -619,6 +619,13 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   `do_create_interview` in `_service_creation.py` is ~99 lines against the 40-line function cap,
   also pre-existing. Same systemic gap as the `models.py`/`schemas.py` decomposition entries
   above — needs its own scoped decomposition pass, not a one-off extraction in this PR.
+- 🟡 **`candidates/_reminder_tasks.py` reads `applications`/`position_recruiter_assignments`
+  directly via raw SQL from inside the candidates module** (2026-09-17, `dev/offers-candidate-
+  fields-reminder`, principal-reviewer round 3) — a deliberate, reviewed exception to the
+  "inter-module calls via service interface only" rule, since no equivalent
+  applications/positions service method exists yet for this read shape. Not a blocker for that
+  change; route through `applications.service`/`positions.service` accessors next time either
+  module is touched for other reasons.
 
 ## 5. Tech debt — tests/CI
 

@@ -51,6 +51,7 @@ append-only (corrections are added as new entries that reference the prior one).
 <details>
 <summary><strong>Dated index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- [2026-09-17] Add 3 offer-relevant candidate columns (relevant_experience_years, years_in_current_organization, title_in_current_organization) — 0063_cand_offer_fields
 - [2026-09-09] Widen interview_panelist_assignments.sequence_number CHECK 1-2 → 1-3 (BR-064 flat cap, any category) — 0062_ivw_panelist_max3
 - [2026-09-01] G15 full migration-replay reconciliation — 0010/0011/0012 rewritten + 0047/0048/0061 guarded
 - [2026-09-01] position_history pagination index — 0061_pos_hist_id_time_idx
@@ -124,6 +125,51 @@ append-only (corrections are added as new entries that reference the prior one).
 </details>
 
 ---
+
+### [2026-09-17] Add 3 offer-relevant candidate columns — 0063_cand_offer_fields
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer
+- Trigger         : new feature (openspec/changes/offers-org-templates-and-approval-workflow,
+                    design.md Decision 5 / tasks.md §2) — held change, this slice (tasks §2+§4)
+                    explicitly authorized ahead of the rest of that change.
+- Module(s)       : candidates
+- Change type     : add column (x3)
+- Objects         : candidates.relevant_experience_years (SMALLINT),
+                    candidates.years_in_current_organization (SMALLINT),
+                    candidates.title_in_current_organization (VARCHAR(255))
+- Storage decision: REAL COLUMNS on candidates, not metadata JSONB/lookup_values/
+                    custom_field_definitions/tags — typed scalar entity attributes read at
+                    offer-creation time, same class as the existing experience_years/
+                    current_organization columns; not tenant-specific or ad-hoc data a
+                    lookup mechanism is meant for (docs/SCHEMA_EVOLUTION.md). The daily
+                    `candidates.send_offer_field_reminders` task's 3-way `IS NULL` OR scan
+                    is bounded by _SCAN_LIMIT, not by an index — "hot-queried"/indexability
+                    is not the basis for this decision.
+- Backward compat : All 3 columns NULLable, no default, no existing-row rewrite. No backfill
+                    possible or needed (Backfill Mandate option (b)): these fields were never
+                    captured by any prior mechanism on this platform (no manual-entry field,
+                    no earlier extraction attempt, no related table records them) — there is
+                    no authoritative source to derive a value from for any existing row, so
+                    every existing NULL is the true historical value, not a stand-in for an
+                    unknown one. Documented explicitly per the mandate, not assumed away.
+- Migration       : 0063_cand_offer_fields; downgrade implemented (drops all 3 columns,
+                    reverse order) — yes.
+- Validation      : additive/NULLable/no-default migration; upgrade+downgrade round-trip
+                    executed successfully (`alembic upgrade head` then `alembic downgrade
+                    0062_ivw_panelist_max3`) against the local dev DB. 126 existing
+                    candidate rows (all soft-deleted) and 0 application rows were present;
+                    the `ADD COLUMN … NULL` upgrade and the downgrade round-trip both
+                    executed against them without a table rewrite — consistent with the
+                    Backfill Mandate option (b) rationale above (no authoritative source
+                    exists, independent of row count; no existing row could ever have had
+                    these values).
+- Rollback        : `alembic downgrade 0062_ivw_panelist_max3` (drops the 3 columns; no data
+                    loss risk since nothing pre-existing depends on them yet).
+- Notes           : `ProfileExtractorAgent` (profile_extractor.py) extended in the same
+                    change to attempt all 3 fields, each independently optional per the
+                    existing uncertain-field pattern — see openspec/changes/
+                    offers-org-templates-and-approval-workflow/specs/candidates/spec.md.
 
 ### [2026-09-09] Widen interview_panelist_assignments.sequence_number CHECK 1-2 → 1-3 — 0062_ivw_panelist_max3
 

@@ -10,6 +10,12 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-09-17 — RESUME HERE FIRST: offer-workflow tasks.md §2+§4 (candidate offer-relevant
+  fields + daily reminder) MERGED (PR #250, 3 principal-reviewer/opus rounds). See
+  "Offer module redesign — spec proposed, held" below — updated with this progress.
+- 2026-09-17 — offer-workflow redesign OpenSpec change proposed + MERGED (PR #249,
+  spec-only, no code). See "Offer module redesign — spec proposed, held" below for the
+  full decision log and next steps.
 - 2026-09-03 — RESUME HERE FIRST: G15/G15b/G15c-G19 series + main-CI-break + bucket (b) ALL closed
 - 2026-09-01 — backend-ci Celery-worker saga CLOSED end-to-end
 - 2026-09-01 — G14 + P8/P9 code-optimization items CLOSED
@@ -63,6 +69,70 @@ below before doing anything else.
 - 2026-09-15 — offers/tasks.py 0% coverage MERGED (PR #247) + stale hiring-uniqueness tests fixed MERGED (PR #248) — both offers-module BACKLOG items closed
 
 </details>
+
+## 2026-09-17 — Offer module redesign — spec proposed, MERGED, held (no code yet)
+
+`main` @ `14f5ae9` (PR #249, squash-merged, spec-only — no code/migrations in this PR).
+OpenSpec change at `openspec/changes/offers-org-templates-and-approval-workflow/`
+(proposal.md + design.md + specs/offers+candidates + tasks.md, all 4 artifacts complete).
+
+**What it covers:** full Offer module redesign — (1) offer-eligibility gate switches
+from `screening_decisions.status=='shortlisted'` to interview-outcome-based (all
+relevant levels' latest outcome = `selected`); (2) org-specific `.docx` offer letter
+template (S3-versioned, mirrors `positions.JobDescription`), replaces the hardcoded
+reportlab PDF entirely, mail-merged via `docxtpl` + converted via **LibreOffice
+headless**; (3) org-specific compensation-structure upload, fixed documented Excel/Word
+layout, deterministic parse only (no AI-flexible parsing); (4) computed compensation
+values become overridable with an audit trail; (5) 3 new candidate fields (relevant YOE,
+years-in-current-org, title-in-current-org) sourced from `ProfileExtractorAgent`, never
+block candidate creation if undetermined, plus a new daily Celery Beat reminder to the
+owning recruiter — stops once ALL of that candidate's applications are terminal; (6)
+mandatory remarks on every submit AND every resubmit (not resubmission-only) +
+notification to a **tightly-coupled** dynamic approver (`offer_approvers.linked_user_id`
+required — Approve/Reject requires the acting user to BE that specific selected user, not
+merely hold the `offers:approve` role); approve+attest merged into one action; median-hike
+LLM analysis is **platform-wide** (all orgs, not just the submitting org), matched on
+position title + experience band, **uncapped** (no N-limit), with a 3-comparable-offer
+floor before degrading to text.
+
+**Explicitly OUT OF SCOPE, deferred to a later separate change:** how the final offer is
+delivered to / e-signed by the candidate. Today's `sent → accepted|declined|withdrawn`
+flow is untouched.
+
+**Status: PARTIALLY BUILT, rest HELD.** tasks.md §2 (candidate schema) + §4 (profile
+extractor + daily reminder) are MERGED (PR #250, `main` @ post-merge head, migration
+`0063_cand_offer_fields` applied). Sections 3, 5-10 (offer templates, compensation
+structures, eligibility gate, editable overrides, dynamic approver, notifications,
+frontend) remain HELD — do NOT dispatch `backend-engineer` on any of those until the user
+explicitly says to proceed with a specific section. New candidate spec BRs: BR-041 is now
+used (see `openspec/changes/offers-org-templates-and-approval-workflow/specs/candidates/
+spec.md`, delta only — NOT yet synced to `openspec/specs/candidates/spec.md` via
+`/opsx:sync`, that happens at archive time per tasks.md §11). New offer spec BRs still
+start at BR-018 (real max BR-017; BR-061 in `offers/spec.md` is a cross-ref to
+`positions/spec.md`, not a collision).
+
+**PR #250 build summary (2026-09-17):** added `candidates.relevant_experience_years/
+years_in_current_organization/title_in_current_organization` (NULLable, bounds-checked
+both on the API path via `CandidateUpdate` and the extraction path), extended
+`ProfileExtractorAgent` to attempt all 3, and a new daily Celery Beat reminder
+(`candidates._reminder_tasks.py` — bounded scan/dispatcher + per-candidate task, each with
+its own session/RLS/commit; gated on `extraction_status IN (completed, failed,
+manual_review)`; deduped per (candidate, recruiter) per day via a `notifications`-table
+idempotency check; stops once ALL of a candidate's applications are terminal, per
+CONFIRMED Option A). Took 3 `principal-reviewer` (opus) rounds — every finding was
+independently re-verified by the main loop before/after each fix, not just trusted from
+the agent's own report; see PR #250's description for the full findings list. Also fixed
+along the way: `docs/ci_schema_snapshot.sql` was stale (would have failed CI's schema-
+drift check) — now current.
+
+**Resume by:** for the REMAINING sections of this change (templates, compensation
+structures, eligibility gate, overrides, approver, notifications, frontend), re-read
+`design.md`'s Decisions 1-4, 6-7 (all CONFIRMED) and the relevant `tasks.md` sections
+before dispatching anything — get the user's explicit go-ahead per section (one at a
+time, per standing directive), continue risk-tiering `principal-reviewer` to opus given
+schema + financial (compensation) + auth (approver permission-check) + cross-module
+territory. Expect multiple `principal-reviewer` rounds per section based on this
+session's experience — budget for it rather than treating round 1 as likely-final.
 
 ## RESOLVED 2026-09-15 — offers-module BACKLOG cleanup (2 items)
 
