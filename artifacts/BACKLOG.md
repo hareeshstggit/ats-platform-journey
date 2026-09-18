@@ -658,6 +658,71 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   outside the position-UUID class's own scoped-pass fix shape. Pre-existing, unrelated to the
   llm_gateway migration this branch actually ships — reported, not fixed, per functional-test-
   engineer's mandate. Needs its own fix: re-derive both IDs dynamically or from a live query.
+- 🔴 **`notifications/tests/test_functional_notifications_fanout.py` confirmed as ANOTHER
+  carrier of dead `c180a718-...` (`POSITION_ID`) + stale `RECRUITER_USER_ID`** (found
+  2026-09-17, `dev/offers-eligibility-gate` C1 verification — same class as the entry directly
+  above, reconciled here rather than duplicated). All 3 tests in the file error at
+  `_make_shortlisted_application`'s INSERT with `ForeignKeyViolation: applications_position_id_
+  fkey` — the shared position simply doesn't exist in this local DB. `RECRUITER_USER_ID` in
+  this file was ALSO the stale `4a678325-...` value; fixed it to `bdee609b-...` (same as the
+  other 2 files touched this session) since it was necessary just to get past that half of
+  setup, but the file still cannot run at all until the dead `c180a718-...` position is
+  resolved — out of scope for the offers-eligibility-gate change, tracked here per the
+  existing scoped-pass item above (now 9 confirmed files, not 8).
+- 🔴 **Live 2026-09-17 recurrence of the venv→system-Python re-exec quirk (item (b) in the
+  dev-stack-watchdog entry above) actively caused false-negative functional-test failures —
+  not just "believed harmless."** Found during `dev/offers-eligibility-gate` C1 verification:
+  two `python.exe` processes (`.venv\Scripts\python.exe` and `AppData\...\Python312\python.exe`,
+  identical `CreationDate`, both invoking `uvicorn app.main:app --port 8000`, no `--reload`)
+  were simultaneously present; only the system-Python312 one actually held the port
+  (`Get-NetTCPConnection -LocalPort 8000` confirmed). It was serving stale bytecode of
+  `offers/_service_writes.py::_assert_interviews_selected` — a raw-SQL repro proved
+  `get_offer_gate_levels` returned the CORRECT per-level state (Org L2 status=None, correctly
+  "never created") while the live API still 422'd naming Org L2 as unselected. Killing both
+  processes and starting one fresh `.venv` uvicorn immediately fixed it — the same repro then
+  returned 201. This produced ~2 hours of misdiagnosis this session (chased a phantom BR-018
+  bug that didn't exist) before the mandate's own "confirm the live server loaded new code,
+  restart if stale" rule was actually applied. Upgrades item (b) from "still believed harmless,
+  not investigated further" to: it is NOT harmless — it silently serves stale application code
+  indefinitely with no error, and every functional-test session should restart uvicorn via a
+  kill-by-port-then-start script BEFORE the first test run, not just when a failure looks
+  suspicious.
+- 🔴 **Real spec-vs-code drift in `_service_transitions.py`'s BR-056 gate — needs a
+  reconciliation DECISION, not a test fix** (`applications/tests/
+  test_functional_phasea_status_lifecycle.py::test_scenario2_gate_blocks_entry_when_org_l2_
+  pending`, reworded 2026-09-17 after the offers-eligibility-gate change's principal-reviewer
+  round confirmed the ORIGINAL framing below was backwards). The test expects `PATCH .../
+  status -> portco_confirmed_offer` to 409 `OFFER_PIPELINE_NOT_ELIGIBLE` when only Org L1 has
+  been created (Org L2 configured but never created) — this matches BR-056's own canonical
+  spec (`applications/spec.md:617-621`), which documents Org L2 as BR-056's "minimum bar."
+  But the CODE, `_service_transitions.py::_offer_pipeline_gate_satisfied` (lines ~102-113),
+  computes `gate_level = last_created or org_l2` — since Org L1 is the only CREATED org level,
+  it IS `last_created`, and it's `selected`, so the code returns 200 instead of the spec's
+  documented 409. The test is correctly encoding the canonical spec; it is the CODE that has
+  the gap (previously mis-diagnosed here as "the test matches an older, superseded design" —
+  that framing had it backwards: no evidence exists that BR-056's Org L2 minimum bar was ever
+  formally superseded, only that `last_created` can currently substitute for it). **Explicitly
+  out of scope for `offers-eligibility-gate`**: `_service_transitions.py`/BR-056 is untouched
+  by that change (see its own tasks.md §11a.1 follow-up item and spec.md's "Known divergence"
+  note — BR-018's gate now separately enforces its own Org L2 floor, mirroring BR-056's, but
+  does not touch BR-056's code). **Do NOT modify
+  `test_functional_phasea_status_lifecycle.py` or `_service_transitions.py` to close this
+  item** — it needs a scoped decision + fix of its own: either tighten
+  `_offer_pipeline_gate_satisfied` to also require Org L2 specifically (not just the last
+  created org level) before allowing the PATCH, or formally amend BR-056's spec to document
+  `last_created` as the intended (superseding) behavior and update the test to match. Same
+  class as the two already-tracked stale-test entries below this one
+  (`test_functional_p24/p23b_position_status.py`), but distinguished from them precisely
+  because those two are genuinely stale tests, while this one is not.
+- 🟡 **`positions/tests/test_functional_p6_4_closed_lockdown_e2e.py::TestManualAndAutoClose::
+  test_auto_close_persists_exact_remark_text` — the ONLY remaining failure in this file after
+  the `LEVEL_HAS_NO_PANELISTS` fix above, confirmed Celery-dependent, not a code defect.** The
+  application flow (interview→feedback→pending→offer_accepted→onboarded) now completes
+  correctly; the position simply never auto-closes within the test's 15s poll because
+  `applications.check_position_auto_close` (Celery, `maintenance` queue) has no worker consuming
+  it in this local environment (`Get-CimInstance Win32_Process -Filter "Name = 'python.exe'"`
+  showed uvicorn only, no celery process, 2026-09-17). Not fixed/started here — starting a
+  background worker is an operational action outside a test-fix task's scope; note only.
 - ❓ **Schema-constrained happy path for `level_kit_agent`'s Anthropic call (`schema=_OUTPUT_SCHEMA`
   passed to `llm_gateway.complete()`) never exercised against a real 200 response** (found
   2026-09-03, functional-test-engineer, `dev/level-kit-agent-llm-gateway`) — this local
@@ -715,7 +780,7 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   picked up: narrow to an allowlist (`if provider != "local_nlp": skip`) and scope the fixture
   to only the tests that actually need an offline provider, not `autouse=True` module-wide.
 - ✅ `offers/tests/test_functional_hiring_uniqueness.py` — 3 of 6 tests failed against the live stack (drove hire-uniqueness via a manual status PATCH to `hired`, blocked by the applications-manual-status-lockdown feature) — **FIXED 2026-09-15**. Traced BR-012's originally-specified 409 `CANDIDATE_ALREADY_HIRED` code and found it's no longer reachable from ANY endpoint: `applications/_status_rules.py`'s `_MANUAL_TARGET_BLOCKED` blocks `hired` as a manual PATCH target unconditionally, and `do_update_status` never runs a hire-uniqueness check on that path by design. The only reachable route into `offer_accepted`/`onboarded` (what `has_hired_application_for_candidate` checks) is `offers.do_accept`, which simultaneously satisfies `has_accepted_offer_for_candidate` for the same offer — so the 2 tests built to isolate the "hired-only" disjunct in isolation would collapse into byte-identical duplicates of already-existing tests if rewritten; retired rather than kept as artificial copies (with a documented explanation in the file). The remaining test (error-shape/no-SQL-leak check) rewritten through the real accept-offer flow. File went from 6 tests/3 failing to 4 tests/4 passing, live-verified twice independently. Also added full Rule-5 cleanup (the file had ZERO teardown before this fix, a separate real gap found mid-task) and fixed an unrelated pre-existing blocker (`_create_position`'s fixture was missing the now-mandatory Org L1/L2 interview levels, D9). **Follow-up flagged, not fixed here**: `openspec/specs/applications/spec.md`'s BR-012 (lines ~500-512) still describes the old `update_status`-guard/`CANDIDATE_ALREADY_HIRED` wording — real spec-vs-code drift, needs its own spec-sync pass.
-- 🔴 **`positions/tests/test_functional_p6_4_closed_lockdown_e2e.py` — stale since 2026-07-31, root-caused during Tier-3 hygiene batch 1's review (2026-08-27).** The module-scoped `closed_fixture` creates an interview via a level that has no `interview_level_panelists` row — `_make_panelist` (line 444, called after the failing assert) inserts into the global `interview_panelists` directory instead, a table the `LEVEL_HAS_NO_PANELISTS` gate (landed `89db1f8`, multi-panelist levels, 2026-07-31) doesn't read. Test written 2026-07-23, never updated for the gate that shipped 8 days later — reproduces deterministically in isolation (`1 failed, 24 errors`), NOT a rate-limit/throughput artifact. Fix: seed `interview_level_panelists` for the created level inside `_create_position`, before interview-create.
+- ✅ **`positions/tests/test_functional_p6_4_closed_lockdown_e2e.py` — stale since 2026-07-31 — FIXED 2026-09-17** (found again independently during `offers-eligibility-gate` C1 verification; root cause confirmed identical to the 2026-08-27 diagnosis below). `_create_position`'s Org L1/L2 `levels_payload` never carried `panelist_ids`, so BOTH `closed_fixture` (line ~438) and `test_auto_close_persists_exact_remark_text` (line ~346) hit `LEVEL_HAS_NO_PANELISTS` at the FIRST interview-create call — pre-existing, unrelated to BR-018/the eligibility-gate change, confirmed by reproducing on this branch's `_create_position` code unchanged from main. Fixed: `_create_position` now takes an optional `panelist_id` param, passed as `panelist_ids: [panelist_id]` on both Org levels via the same `POST .../interview-levels` API call (not a raw `interview_level_panelists` INSERT as originally proposed below — the API param achieves the same outcome without bypassing validation); both callers that create real interviews (`closed_fixture`, `test_auto_close_persists_exact_remark_text`) now call `_make_panelist` BEFORE `_create_position` and pass its id through; `test_manual_close_with_free_text_reason` (never creates an interview) passes no panelist_id, unaffected. Re-verified live: `5 passed` (was `1 failed, 1 passed, 24 errors`) for the file's non-BR-056-affected tests — see the NEW scenario-2-class finding below for the one remaining unrelated stale-test gap this surfaced.
 - 🔴 **`positions/tests/test_functional_p24_position_status.py` + `test_functional_p23b_position_status.py` — stale since 2026-07-04, same review.** Both assert that open→closed with no reason auto-sets `portco_deferred` — that behavior was deliberately removed 2026-07-04 (`d1d003e`, "enforce user reason on open→closed"; `positions/validation.py:85` now raises `CLOSE_REASON_REQUIRED`). Tests last touched 2026-07-28 without updating this assertion. Deterministic, reproduces in isolation. Fix: update both to expect `CLOSE_REASON_REQUIRED` instead of the auto-set behavior.
 - 🟡 **The backend functional test suite is skip-by-default (`RUN_FUNCTIONAL_TESTS=1` gated) — the above 2 stale-test defects sat undetected for 4-8 weeks as a direct result**, since Gate 1's routine unit runs never exercise them. No action proposed here beyond flagging the systemic risk; a periodic scheduled functional-suite run (not gated on a specific PR touching the file) would catch this class of drift proactively instead of waiting for an unrelated review to stumble into it.
 - ✅ `tests/unit/test_seed_dev.py::test_run_seed_fresh_creates_users_grants_and_audits` (2026-08-08, `chore/ci-real-db-e2e-fix` round 3) — root-caused: the test's hardcoded `== 7` was stale (2026-07-23 mypy-cleanup pass) AND it compared `summary["users"]` (covers both `TEST_USERS` + `NAMED_RECRUITER_USERS`) against `len(TEST_USERS)` alone, an existing scope mismatch independent of the stale count. Fixed to compute `total_users = len(TEST_USERS) + len(NAMED_RECRUITER_USERS)` instead of a magic number, so it self-adjusts as either list grows.
