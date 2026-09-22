@@ -10,7 +10,76 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-09-17 — RESUME HERE FIRST: offer-workflow tasks.md §2+§4 (candidate offer-relevant
+- 2026-09-22 — RESUME HERE FIRST: §8 (dynamic approver + multi-role auth + merged
+  approve/attest) MERGED (PR #255, squash-merged, branch deleted). Went through 4
+  `principal-reviewer` rounds (opus tier): CHANGES-REQUESTED (1 Critical — breaking UI
+  contract — + 6 Major) → CHANGES-REQUESTED (6 new Majors from the fix round itself,
+  user-confirmed round-3 go-ahead) → APPROVE-WITH-NITS (all nits fixed inline) → a
+  tenant-isolation sweep discovered mid-close-out (list endpoint, then 3 more sibling
+  gaps — PDF url, template upload/list — user-confirmed fix-now-same-branch both times)
+  → final APPROVE-WITH-NITS, nits closed. Migration `0065_user_roles_offer_approver`
+  applied to local main, confirmed at head. Local CI gotcha hit and fixed: a doc-only
+  `[skip ci]` tip commit suppressed the WHOLE PR's CI (push-level, not per-commit — same
+  documented failure class as backend-ci.yml's 2026-09-01 header note); fixed by
+  touching both workflow files' own self-match path filter to force the trigger — an
+  empty commit alone does NOT retrigger a `pull_request`-filtered workflow (zero
+  changed files to match). §2, §3, §4, §5, §6.1/6.3, §7, §8 now done; §6.2
+  (compensation-structure upload, blocked pending user's fixed-layout spec), §9
+  (mandatory remarks + notifications), §10 (frontend, beyond the minimal pulled-forward
+  slice already shipped in §8) remain. User's standing instruction: "Proceed with 8 and
+  then logically take it forward with 9 and 10" — §9 is next, no re-ask needed to start
+  it, though genuinely new scope/blocking decisions within it should still be surfaced
+  (same pattern as this whole §8 build).
+- 2026-09-21 (later) — session paused for laptop restart, mid-§8
+  build. Branch `dev/offers-approver-workflow` created off main, pushed to origin.
+  Uncommitted-at-pause change: `openspec/changes/offers-org-templates-and-approval-workflow/tasks.md`
+  §8 rewritten (still uncommitted on that branch when the pause hit — check
+  `git status`/`git diff` on that branch first thing on resume).
+  Key decisions made this segment (already written into tasks.md §8, re-read it):
+  (1) §8.3 (invite-a-brand-new-user) DROPPED — user confirmed Offer Approver is a role
+  grantable to any EXISTING stg.com/stglabs.in platform user, no invite flow.
+  (2) Because `User.role_id` is a single FK (one role per user), granting Offer Approver
+  as a second role without stripping the user's existing role needs real multi-role
+  support — user explicitly chose "Add multi-role support" (new `user_roles` M2M table,
+  `role_id` stays primary/default; `require_permission`/`require_roles` in
+  `app/core/dependencies.py` must union primary+secondary role permissions instead of
+  checking only `user.role.name`). New tasks 8.0/8.0b added for this.
+  (3) `offers.selected_approver_id` (nullable FK→`offer_approvers.id`) also confirmed
+  missing — added to 8.0's migration.
+  A `backend-engineer` agent (dispatched, background, id starts `a60ca4c1...`) was
+  mid-build on all of §8 (migrations, offer_approvers CRUD, grant/revoke-role endpoints,
+  submission integration, merged approve+attest, tight-coupling authz) when the pause
+  was called. **It runs as a local process — a laptop restart almost certainly kills
+  it.** On resume: `cd` into the repo, `git status`/`git log dev/offers-approver-workflow`
+  to see what (if anything) it actually committed before dying; if nothing landed,
+  re-dispatch backend-engineer fresh using the exact brief in this session's own
+  transcript (§8.0 through §8.6, the tasks.md text above is the authoritative scope).
+  Do NOT re-ask the user the two clarifying questions above — both are already decided
+  and written into tasks.md.
+  Next after §8 lands: unit-test-engineer → functional-test-engineer →
+  principal-reviewer (escalate to **opus** — auth/permission-model + schema + cross-
+  module, per Model tier mandate) → PR → explicit user "merge" approval → then §9
+  (mandatory remarks + notifications) → §10 (frontend), per user's standing
+  "Proceed with 8 and then logically take it forward with 9 and 10" authorization
+  (still valid, no need to re-ask before starting 9/10 once 8 is merged).
+- 2026-09-21 — RESUME HERE FIRST: §6 (template upload + PDF rewrite) MERGED (PR #254).
+  M2's concurrency race was reproduced AND its fix verified with 2 real concurrent
+  `soffice` processes in a scratch Podman container once the local VM's transient network
+  issue cleared. §2, §3, §4, §5, §6, §7 now done; §8/§9/§10 remain held. Also fixed a
+  doc-sync bug found while checking this: §4 and §5's tasks.md checkboxes had never been
+  ticked despite being fully merged (PR #250 and #251 respectively) — corrected inline.
+  See "Offer module redesign — spec proposed, held" below.
+- 2026-09-19/20 — session PAUSED. §7 (editable overrides) MERGED (PR #253, built in
+  parallel with §6 per user's explicit "do both at once" request). See "§6+§7 built in
+  parallel" below for the full decision/debugging log (now resolved).
+- 2026-09-19 — offer-workflow tasks.md §3 (offer_templates/
+  offer_compensation_structures/offer_approvers tables) MERGED (PR #252, 2 principal-
+  reviewer/opus rounds). See "Offer module redesign — spec proposed, held" below. §2,
+  §3, §4, §5 now done; §6-10 remain held.
+- 2026-09-18 — offer-workflow tasks.md §5 (eligibility gate) MERGED
+  (PR #251, 4 principal-reviewer/opus rounds). See "Offer module redesign — spec
+  proposed, held" below — updated with this progress.
+- 2026-09-17 — offer-workflow tasks.md §2+§4 (candidate offer-relevant
   fields + daily reminder) MERGED (PR #250, 3 principal-reviewer/opus rounds). See
   "Offer module redesign — spec proposed, held" below — updated with this progress.
 - 2026-09-17 — offer-workflow redesign OpenSpec change proposed + MERGED (PR #249,
@@ -126,13 +195,152 @@ along the way: `docs/ci_schema_snapshot.sql` was stale (would have failed CI's s
 drift check) — now current.
 
 **Resume by:** for the REMAINING sections of this change (templates, compensation
-structures, eligibility gate, overrides, approver, notifications, frontend), re-read
-`design.md`'s Decisions 1-4, 6-7 (all CONFIRMED) and the relevant `tasks.md` sections
-before dispatching anything — get the user's explicit go-ahead per section (one at a
-time, per standing directive), continue risk-tiering `principal-reviewer` to opus given
-schema + financial (compensation) + auth (approver permission-check) + cross-module
-territory. Expect multiple `principal-reviewer` rounds per section based on this
-session's experience — budget for it rather than treating round 1 as likely-final.
+structures, overrides, approver, notifications, frontend — §5 below is done pending final
+review), re-read `design.md`'s Decisions 2-4, 6-7 (all CONFIRMED) and the relevant
+`tasks.md` sections before dispatching anything — get the user's explicit go-ahead per
+section (one at a time, per standing directive), continue risk-tiering `principal-
+reviewer` to opus given schema + financial (compensation) + auth (approver permission-
+check) + cross-module territory. Expect multiple `principal-reviewer` rounds per section
+based on this session's experience — budget for it rather than treating round 1 as
+likely-final.
+
+### §5 eligibility gate — MERGED 2026-09-18 (PR #251, `main` @ `b5733f0`)
+
+4 `principal-reviewer` (opus) rounds total. Round 4's last 2 findings (missing live test
+for the Org-L2-never-created case; 4 stale doc sites incl. the OpenAPI route description)
+were fixed inline the next session and self-verified — no round 5 needed, matching the
+reviewer's own recommendation. Final: 174 unit + 4/4 functional (interview-gate file)
+passing, ruff/mypy clean, CI green (backend+frontend+e2e), merged, `docs/BACKLOG.md`
+re-synced to the external mirror.
+
+**Still tracked, deliberately NOT part of this change** (`docs/BACKLOG.md` §5): the
+separate, already-shipped BR-056 gate (`applications/_service_transitions.py`) has a
+confirmed real spec-vs-code drift (doesn't enforce its own documented Org L2 minimum bar
+in the "only Org L1 created" case) — round 4's assessment: this PR's new BR-018 floor
+already mitigates the practical blast radius (an offer can't actually be CREATED via that
+gap even though the status PATCH still lets an application through), so it's a genuine
+separate follow-up decision, not urgent. Also tracked: a stale `RECRUITER_USER_ID` UUID
+constant fixed only in the files this change touched (26 files repo-wide carry it,
+untouched, tracked); `test_functional_notifications_fanout.py` still blocked by an
+unrelated pre-existing dead shared-position-UUID (9th confirmed carrier, tracked); one
+Celery-worker-dependent test with no worker running locally (environmental, tracked).
+
+**Resume by:** §2, §3, §4, §5 of the offer-workflow redesign are now done (§3 merged
+2026-09-19, PR #252 — new `offer_templates`/`offer_compensation_structures`/
+`offer_approvers` tables, RLS + optimistic-concurrency trigger added after 2
+principal-reviewer rounds; see `docs/SCHEMA_CHANGE.md`'s `0064_offer_org_tables` entry
+for full detail, and `docs/BACKLOG.md` for a new tracked item: the schema-snapshot
+regeneration procedure should be promoted from tribal knowledge into a committed script).
+Next up (get the user's explicit go-ahead per section, one at a time): §6 (offer-template
++ compensation-structure upload endpoints, `.docx` mail-merge via `docxtpl` + LibreOffice
+headless PDF conversion) or §8 (dynamic approver CRUD + merged approve/attest) — both now
+unblocked by §3's schema; §7 (editable computed values) can also start independently
+since it's pure JSONB/application-layer work needing no new schema.
+
+**What shipped across rounds 1-4** (all independently verified by the main loop directly,
+not just agent-reported): the offer-creation eligibility gate replaced
+`screening_decisions.status == 'shortlisted'` with an interview-outcome check
+(`_assert_interviews_selected` in `backend/app/modules/offers/_service_writes.py`) —
+(a) zero active interview levels configured on the position → blocked; (b) zero
+interviews ever created for this application → blocked; (c) among levels that WERE
+created, all must have `status == 'selected'` (levels never created for this application
+don't block on their own); (d) **Org L2 specifically must be created AND selected as a
+mandatory floor, independent of (c)** — user-confirmed 2026-09-17 ("Org L2 should be
+created and selected"), closing a gap where a candidate could be offered having only ever
+completed Org L1. This mirrors the identification logic already used by the existing,
+separate BR-056 gate in `applications/_service_transitions.py` (same `category_rank == 2`
+lookup, not reinvented).
+
+Also fixed along the way: 2 Critical cross-module functional-test regressions (4 tests in
+`test_functional_hiring_uniqueness.py`, all of `test_functional_p21a_offers.py`, plus 3
+more in `applications`/`positions`/`notifications` test files outside the offers module —
+all took the old shortlisted-status shortcut and needed real interview-level-selected
+fixtures instead); a stale `RECRUITER_USER_ID` UUID constant (fixed in the touched files
+only, 26-file repo-wide sweep tracked separately in `docs/BACKLOG.md` §5, not done); a live
+recurrence of the venv→system-Python uvicorn re-exec quirk that was silently serving stale
+bytecode and causing false-negative test failures (BACKLOG entry upgraded from "believed
+harmless" to confirmed actively harmful — if tests fail mysteriously next session, restart
+uvicorn fresh and confirm via `/openapi.json` content, not just process count, before
+assuming a real regression); a genuine spec-vs-code drift found in the UNRELATED, already-
+shipped BR-056 gate (`_service_transitions.py`'s `last_created or org_l2` silently drops
+the Org L2 floor when only Org L1 was created) — correctly scoped as tracked-only,
+NOT fixed in this branch (`docs/BACKLOG.md` §5, needs its own separate decision + PR).
+
+Offers-module unit-test coverage: 79.51% (under the 80% gate) — shortfall is mostly
+`router.py`/`_router_actions.py`'s HTTP layer at 0% (covered by functional tests instead,
+a pre-existing repo-wide pattern), but `repository.py` accounts for 47 of the 159 uncovered
+statements (30% of the shortfall) and is NOT HTTP layer — it's pagination/WHERE-builder
+code, confirmed fully parameterized and live-exercised by existing functional tests.
+Round 4 confirmed both pieces are provably inert per the coverage-gate risk-impact caveat;
+overall conclusion (mergeable) stands, only the per-file reasoning needed this correction.
+
+BR numbering: this change's own BR-018 (eligibility gate) is not yet synced to the real
+`openspec/specs/offers/spec.md` — stays in the delta spec until `/opsx:sync` at archive
+time (tasks.md §11), consistent with how PR #250's BR-041 was handled.
+
+### §6+§7 built in parallel — BOTH MERGED 2026-09-21
+
+User explicitly asked for §6 (offer-template upload + PDF-generation rewrite) and §7
+(editable computed compensation values) to be built AT THE SAME TIME. Given real file-
+overlap risk between them (both touch `offers/service.py`/`schemas.py`), each was built in
+its own isolated git worktree (via the Agent tool's `isolation: "worktree"` option) rather
+than the main working tree, then reviewed/merged as two separate PRs. **This pattern
+worked well and is the template for any future "do X and Y in parallel" request.**
+
+**§7 (editable computed compensation values) — MERGED (PR #253, squash), 2026-09-19.**
+2 `principal-reviewer` (opus) rounds: round 1 found `is_overridden=True` accepted with
+`computed_value=None` (spec violation — fixed with a `model_validator`), round 2 APPROVE
+(verified by execution against a full boundary matrix). Live functional check: real
+`audit_log` row queried directly, confirmed both before/after override values genuinely
+persist. No migration (JSONB-only).
+
+**§6 (offer-template upload + PDF-generation rewrite) — MERGED (PR #254, squash),
+2026-09-21.** `POST/GET /organizations/{org_id}/offer-templates` (mirrors
+`positions/jd_files.py`'s upload/versioning pattern; `hr_admin`/`super_admin` write only,
+deliberately excludes `recruiter`). `generate_offer_pdf` fully rewritten: hardcoded
+reportlab removed entirely, replaced with org-template lookup → S3 download → `docxtpl`
+mail-merge → LibreOffice headless conversion. Scoped to tasks.md §6.1+§6.3 only — **§6.2
+(compensation-structure upload/parser) is STILL deliberately excluded: the user has not
+yet provided the exact fixed-layout spec it needs.** Ask before building that piece.
+
+1 `principal-reviewer` (opus) round found 2 Majors, both fixed and CONFIRMED in round 2
+(APPROVE): (1) the no-template case used to fail asynchronously inside the Celery task
+after the offer had already transitioned to `attested`, permanently stranding it —
+fixed with a synchronous pre-flight check in `OfferService.attest_offer` before any state
+mutation; (2) concurrent `soffice` invocations shared one LibreOffice profile lock,
+causing random silent failures on a real financial document under load — fixed with a
+per-conversion isolated profile (`-env:UserInstallation=file://{tmp}/lo-profile`).
+**The concurrency fix was LIVE-PROVEN, not just code-reviewed**: 2 real concurrent
+`soffice` processes were run in a scratch Podman container matching the exact Dockerfile
+package set — without the fix, one process silently failed (exit 1, no PDF); with the
+fix, both succeeded and produced genuine valid PDFs. Plus 6 minors (stale dependency
+comments, log-event distinction, tasks.md sync, size-cap docs, a new permission-tier
+regression test).
+
+**Podman VM networking troubleshooting knowledge (in case this recurs):** the local
+Podman machine had silently gone down mid-session at one point (`podman machine start`
++ `podman start ats-platform ats-redis` fixed it — this is almost certainly what causes
+any mysterious "repeat API Error" symptom, always check `podman ps` first). Separately, a
+FRESH scratch container hit a transient DNS issue (resolved `pypi.org`/`deb.debian.org` to
+IPv6-only addresses with no working IPv6 route out, while the HOST machine's own internet
+was completely fine) — this turned out to be transient; a later session's fresh container
+worked cleanly with zero workarounds. If it recurs: editing `/etc/hosts` or `podman run
+--add-host` both get blocked by the Claude Code permission auto-classifier
+("Containment Escape") — that needs an actual Bash permission rule added to Claude Code
+settings, not verbal user consent in-chat. `apt-get -o Acquire::ForceIPv4=true` (a
+standard apt flag) is NOT blocked and is worth trying first.
+
+**Flagged, tracked, not yet acted on** (`docs/BACKLOG.md` has 2 entries from this work):
+a Windows-only `python-magic-bin` false-negative shared between `positions/jd_files.py`
+and `offers/template_files.py` (confirmed NOT a production bug); a tenant-isolation
+observation on the new org-templates endpoint (an `hr_admin` of org A could theoretically
+write a template into org B's row, since RLS's `app.current_org` is caller-supplied and
+every current user is internal — faithfully mirrors the existing `departments` module's
+identical pattern, not a regression, tracked for a future shared-guard fix across both).
+
+**Next up:** §8 (dynamic approver CRUD + merged approve/attest), §9 (mandatory remarks +
+notifications), §10 (frontend) all remain held — get the user's explicit go-ahead per
+section. §6.2 needs the user's fixed-layout spec before it can start.
 
 ## RESOLVED 2026-09-15 — offers-module BACKLOG cleanup (2 items)
 
