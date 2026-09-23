@@ -10,7 +10,90 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-09-22 — RESUME HERE FIRST: §8 (dynamic approver + multi-role auth + merged
+- 2026-09-23 (later) — RESUME HERE FIRST: §9 (mandatory remarks + submit/approve/reject
+  notifications) MERGED (PR #256, squash-merged, branch deleted). No migration in this
+  change, local main confirmed still at `0065_user_roles_offer_approver (head)`. Went
+  through 3 `principal-reviewer` rounds (opus): CHANGES-REQUESTED (3 Major — a critical
+  live RLS-context bug making notifications a silent no-op in production, a recruiter-
+  notification fallback gap, unfiltered draft offers in the median-hike comparable set)
+  → CHANGES-REQUESTED (found during close-out: an order-dependent test failure, a
+  partition-pruning claim overstated, a libmagic validation weakening with no content
+  check, a misleading log line, and the median-hike filter itself needed correcting a
+  second time — declined offers were wrongly excluded, biasing the result the wrong
+  direction) → APPROVE-WITH-NITS, all nits fixed inline per the project's own
+  fix-inline-no-redispatch rule. User confirmed no admin access to install LibreOffice
+  on this machine (winget failed twice — interactive UAC prompt this session can't
+  answer, then a silent-flag retry failed outright) — accepted scenario 4's live-PDF
+  test staying environment-blocked (SKIPPED, not FAILED) rather than chasing an install
+  with no path to succeed; tracked in `docs/BACKLOG.md`, not a merge blocker (the
+  underlying LibreOffice mechanism was already live-proven in §6/§7's merged work).
+  §2, §3, §4, §5, §6.1/6.3, §7, §8, §9 now done. Remaining: §6.2 (compensation-structure
+  upload, still blocked on user's fixed-layout spec) and §10 (frontend beyond the
+  minimal slice already shipped in §8). User has not yet given go-ahead for §10 — the
+  original "8 then 9 then 10" instruction covered starting §10 without re-asking, but
+  confirm before dispatching given this session's now-established pattern of
+  discovering significant new scope/questions inside supposedly-scoped sections.
+- 2026-09-23 — session paused for laptop restart, mid-§9 review.
+  Branch `dev/offers-notifications-remarks`, commits through `d8a6544`, pushed to
+  origin. Since the 2026-09-22 17:00 pause (below): `functional-test-engineer` ran
+  against the live stack and found a CRITICAL bug — `shared/outbox.py::_run_handler`
+  never called `set_rls_context` before dispatching to notification handlers, so under
+  the app's real `ats_app` DB role (RLS-subject, unlike the superuser role tests connect
+  as), `offer.submitted`/`offer.rejected` handlers silently read `None` from
+  RLS-protected tables (`offer_approvers`, `positions`) — a genuine, live, Rule-3-class
+  violation that made real submit/reject notifications a complete no-op in production,
+  proven via an executed repro, not inferred. Routed through the full Gate-5 bug-fix
+  pipeline (no shortcut, per the binding no-override rule): `cavecrew-investigator`
+  confirmed the exact single choke point → `cavecrew-builder` applied the 1-line fix
+  (`set_rls_context(session, org_id=None, is_internal=True)`, mirrors the existing
+  correct pattern in `offers/tasks.py`) → I ran the checks myself (cavecrew-builder has
+  no Bash tool) → restarted uvicorn+Celery (stale-server check caught the running
+  processes predated the fix) → re-ran the functional suite live: found ONE more
+  failure, a test-fixture gap (`owning_recruiter_id` never set by `/apply`, already
+  self-diagnosed by the FT agent as unrelated to the RLS bug) → fixed that too (mirrors
+  `notifications/tests/test_functional_notifications_fanout.py`'s established SQL-set
+  pattern) → re-ran twice: **6 passed, 1 skipped** (scenario 4's approve→PDF→notification
+  skip is environment-dependent PDF/template readiness, not a defect), both clean.
+  Committed as `d8a6544`. `principal-reviewer` (opus tier) was dispatched right before
+  this pause — **background local process, almost certainly killed by the restart.**
+  On resume: `git log`/`git status` on this branch first (same check as every prior
+  restart-pause this session) to confirm nothing landed from it; if nothing did,
+  re-dispatch fresh using this same brief (full context is in this session's own
+  transcript — the dispatch that was running is not repeated here since it's long;
+  re-derive it from tasks.md §9 + design.md's notifications section + the bug
+  description above, or just re-ask if genuinely needed).
+- 2026-09-22 (17:00 IST) — paused per user's scheduled request
+  ("start with 9, pause at 5pm IST"). §9 (mandatory remarks + submit/approve/reject
+  notifications) backend build DONE — branch `dev/offers-notifications-remarks`, commits
+  through `2802118`, pushed to origin. Ruff/mypy clean, 275 passed/54 skipped
+  (offers+notifications, RUN_DB_TESTS=1), independently verified.
+  **3 genuine ambiguities found + resolved by the user this session, all written into
+  tasks.md §9 — do NOT re-ask:** (1) the "12 fields" for the submit notification were
+  never enumerated anywhere despite 3 references — user confirmed a drafted list.
+  (2) "Stakeholders" (CC'd on submit, notified on reject) were never defined — user
+  confirmed hr_admin+super_admin scoped to the offer's org. (3) tasks.md originally said
+  "new Celery task" per notification — corrected to the actual established pattern
+  (outbox `publish_event` + a handler in `notifications/service.py`, relayed by the
+  existing `relay_outbox_events` Beat task — verified via code, not a new mechanism).
+  **Implementer's own judgment calls, all sound, not yet independently re-reviewed by
+  principal-reviewer:** `offer.approved` publishes at PDF-generation-SUCCESS time (inside
+  `tasks.py`), not at approve-action time — the signed PDF doesn't exist yet at approve
+  time, publishing there would race the async PDF task; median hike computed
+  deterministically in Python (`statistics.median`), LLM only writes the narrative
+  sentence around the number (no hallucination risk); PDF attached via a new
+  `send_email_with_attachment` (SES `send_raw_email` + MIME multipart — plain SES
+  `send_email` has no attachment support, and a 900s presigned URL would expire before
+  the email is read); stakeholder resolution checks primary role only, not secondary
+  `user_roles` grants (hr_admin/super_admin aren't granted as secondary roles in this
+  codebase, unlike `offer_approver`).
+  **Next steps on resume**: dispatch `functional-test-engineer` against the real stack
+  (submit→notification-payload assembly→approve→PDF-attached-email, reject→stakeholder
+  fan-out, median-hike degrade path with <3 comparables), then `principal-reviewer`
+  (opus tier — this touches notification/PII-adjacent payload construction + a new SES
+  attachment mechanism + cross-module reads for stakeholder resolution; escalate per the
+  Model tier mandate's cross-module criterion). §6.2 (compensation-structure upload,
+  still blocked on user's fixed-layout spec) and §10 (frontend) remain after §9 closes.
+- 2026-09-22 — §8 (dynamic approver + multi-role auth + merged
   approve/attest) MERGED (PR #255, squash-merged, branch deleted). Went through 4
   `principal-reviewer` rounds (opus tier): CHANGES-REQUESTED (1 Critical — breaking UI
   contract — + 6 Major) → CHANGES-REQUESTED (6 new Majors from the fix round itself,

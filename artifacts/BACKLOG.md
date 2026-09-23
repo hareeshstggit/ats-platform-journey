@@ -626,8 +626,39 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   applications/positions service method exists yet for this read shape. Not a blocker for that
   change; route through `applications.service`/`positions.service` accessors next time either
   module is touched for other reasons.
+- 🟡 **`notifications/_offer_events.py::handle_offer_sent`'s identical missing-recruiter-fallback
+  gap, NOT fixed here (2026-09-23, §9 review M1)** — M1 fixed the same "silently drops the
+  notification when `owning_recruiter_id` is NULL" gap for `handle_offer_approved`/
+  `handle_offer_rejected` (now falls back via `shared.recruiter_fallback.resolve_fallback_
+  recruiter`), but `service.py::handle_offer_sent`'s `_fan_out` has the identical gap on its
+  recruiter leg and was deliberately left untouched (pre-existing, out of M1's stated scope).
+  Apply the same fallback next time `offer.sent`/`_fan_out` is touched.
+- 🟡 **`notifications` module reaches into `offers`/`positions`/`candidates`/`security`
+  repositories directly** (pre-existing pattern; `offers-org-templates-and-approval-workflow`
+  §9 extends it further via `_offer_events.py`) — same class of deliberate, reviewed
+  "inter-module calls via service interface only" exception as the `_reminder_tasks.py` entry
+  above, since none of those modules expose a service-layer method for these specific reads
+  yet. Not a blocker; route through each module's `service.py` next time one of these call
+  sites is touched for other reasons (m9, §9 review).
+- 🟡 **`notifications/_median_hike.py`'s comparable-offer query has no supporting index**
+  (m10, §9 review, 2026-09-23) — `_COMPARABLE_SQL` filters `offers` by `LOWER(p.title)` +
+  `o.status IN ('sent','accepted')` + non-null CTC fields with no index covering that shape;
+  an org-leading unique index can't serve a platform-wide title probe. Off the request path
+  (runs inside the `offer.submitted` Celery handler, not inline with the HTTP request) and low
+  row-count today, so not a current SLO risk — revisit if the `offers` table grows large enough
+  for this scan to show up in a live `EXPLAIN`.
 
 ## 5. Tech debt — tests/CI
+
+- 🟡 **2 sibling `test_functional_*`-named files still gated on `RUN_DB_TESTS=1` instead of
+  `RUN_FUNCTIONAL_TESTS=1`** (m1, §9 review, 2026-09-23) — `test_functional_stakeholder_users.py`
+  had this exact defect (silently skips under the functional-test gate, false confidence it ran)
+  and was renamed to `test_db_stakeholder_users.py` to match this project's actual `test_db_*`
+  precedent (`shared/tests/test_db_partition_maintenance.py`). Two siblings have the identical
+  naming/gate mismatch and were left untouched (out of m1's stated single-file scope):
+  `security/tests/test_functional_multi_role_and_approver_repo.py` and
+  `interviews/tests/test_functional_calendar_invite_panelist_query.py`. Rename both to `test_db_*`
+  next time either is touched.
 
 - 🔴 **Same dead-UUID class as bucket (b) — NOT scope-closed at 2, an earlier version of this
   entry claimed that without independently re-deriving it and was wrong.** Live-verified against
@@ -973,6 +1004,49 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
 - 🟡 **`docs/ci_schema_snapshot.sql` regeneration procedure is tribal knowledge, got it wrong once (2026-09-19, offers-schema §3 change).** Found and self-caught before commit: extracting the hand-curated reference-data seed tail via a hardcoded `sed` line range broke the moment the schema portion grew (a prior migration's regeneration had already shifted line numbers); `psql -v ON_ERROR_STOP=1` caught the resulting duplicate-policy DDL immediately during test-load, and the drift-check script (`check_schema_definition_drift.py`) confirmed the corrected file clean — both safety nets worked exactly as designed, but the fix was manual and ad-hoc. Suggested (principal-reviewer, not yet built): promote the marker-anchored extraction (split on `-- PostgreSQL database dump complete`, never a hardcoded line number) into a small committed script (`backend/app/scripts/regenerate_schema_snapshot.py`, same ENVIRONMENT-gated pattern as the backfill scripts) so the next schema change doesn't re-derive this from scratch. Not urgent — the drift check is the real backstop regardless of how the file is produced — but cheap and worth doing next time this file needs touching.
 
 - 🟡 **`_is_docx`-style MIME detection (`positions/jd_files.py`, and now `offers/template_files.py` which faithfully mirrors it) has a Windows-only false-negative gap, found 2026-09-19 during offers §6 functional testing.** On Windows dev boxes, `python-magic-bin==0.4.14`'s bundled libmagic database sometimes misidentifies a real, valid `.docx` as `application/octet-stream`. The code's fallback to a ZIP-magic+extension sniff only triggers on an `import magic` exception, never on a wrong-but-successful MIME match, so a genuinely valid file gets permanently rejected with no fallback on Windows. **Confirmed NOT a production bug**: the identical file correctly identifies via real Linux libmagic in a container (production runs on Linux/ECS). Existing unit tests for both files can't catch this since they stub `sys.modules['magic']` entirely rather than exercising the real installed library. Fix (not yet applied, shared across both files): also trigger the fallback sniff when the detected MIME doesn't match the expected type, not only on an exception. **Recurred 2026-09-21** during offers §8 functional testing (blocked the live approve/attest/PDF scenario's template-upload setup step) — same root cause, no new information, not re-investigated. Worked around for §8's verification by confirming the merged approve action's `generate_offer_pdf.delay(str(offer_id))` call directly in code (`_router_actions.py:100`) rather than re-running the upload step, since the PDF-generation task itself was already live-proven in §6/§7's LibreOffice concurrency work — only the one-line enqueue call was unverified, and it's confirmed present. Bumping this from 🟡 to more-actionable given it has now blocked live testing twice; still not a production bug, still not urgent to fix pre-merge, but worth the small fix next time either file is touched.
+  **Escalated 2026-09-23 (principal-reviewer, §9 review, M2): the "confirmed NOT a
+  production bug" conclusion above needs qualifying, not retracting.** The mechanism
+  is: `import magic` succeeding but returning a WRONG-but-successful MIME
+  (`application/octet-stream` for a genuine `.docx`) short-circuits the exception-only
+  fallback — this is a property of the installed libmagic magic-database's OOXML
+  coverage, not fundamentally an OS distinction. The original Linux/ECS container test
+  that cleared this happened to use a magic database that identified the file
+  correctly; that doesn't guarantee every Linux/ECS magic-database build does. Blocked
+  §9.3's only live-tested path this round (offer-template upload 400s in dev,
+  preventing the approve→PDF→notification functional scenario from running at all) —
+  fixed as part of closing out §9 (see the entry below this one once applied). Fix
+  applied: trigger the ZIP-magic+extension fallback on an inconclusive/wrong MIME
+  result, not only on an `import`/call exception.
+  **CONFIRMED FIXED, live-verified 2026-09-23:** unit tests added (both files) covering
+  the exact wrong-but-successful-MIME case now pass; live re-run of
+  `test_scenario4_approve_pdf_success_then_approved_notification` shows the template
+  upload no longer 400s — the skip reason changed from "BLOCKED: org has no current
+  offer template" to a wholly different, unrelated cause (below), and the celery log
+  confirms `generate_offer_pdf` is now actually dispatched and reaches the LibreOffice
+  conversion step for the first time. **New, separate finding — NOT fixed here, out of
+  M2's scope:** LibreOffice (`soffice`) is not installed at all in this session's sandbox
+  environment (`where soffice` → not found; no `Program Files\LibreOffice` directory) —
+  every `generate_offer_pdf` attempt fails with `OfferPdfConversionError: [WinError 2]
+  The system cannot find the file specified` after 3 retries, so scenario 4 still cannot
+  reach PASSED here (it skips on the 60s poll timeout instead, a good-enough approximation
+  of the real failure but a slightly misleading skip message). This contradicts this
+  entry's own earlier claim that "the PDF-generation task itself was already live-proven
+  in §6/§7's LibreOffice concurrency work" for THIS particular environment — either
+  LibreOffice was present then and has since been removed, or that verification ran on a
+  different machine than this session's sandbox. Needs the human's own dev machine (where
+  LibreOffice is confirmed installed, per the earlier §6/§7 note) to get scenario 4 to an
+  actual PASSED; not something a fix in this codebase can close.
+  **2026-09-23: user confirmed no admin access on this machine to install LibreOffice**
+  (`winget install` failed — first attempt cancelled by an interactive UAC/MSI prompt this
+  non-interactive shell couldn't answer, retry with `--silent`/`--override "/quiet"` failed
+  outright). Accepted as-is per user direction — not re-attempting the install. §9's merge
+  readiness rests on: unit tests (mocked) + principal-reviewer's independent live
+  verification of the MIME/attachment mechanics and the publish-ordering (code execution,
+  `d8a6544`'s review round) + §6/§7's separate, already-merged live proof of the
+  LibreOffice conversion step itself on a machine where it was available. Scenario 4
+  remains SKIPPED (not failing) in this sandbox specifically — track as environment debt
+  until the code is run on a machine with LibreOffice installed (production/CI, or the
+  user's other dev machine), not a code defect blocking merge.
 
 ## 6. Tech debt — code hygiene (oversized files, 300-line/40-line caps)
 
@@ -1553,6 +1627,24 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
 
 ## 9. Feature backlog (not started / deferred)
 
+- 🟡 **`shared/recruiter_fallback.py::resolve_fallback_recruiter` picks one arbitrary
+  recruiter when a position has 2+ active recruiter assignments (N-2, §9 review round
+  2, 2026-09-23).** `owning_recruiter_id` is NULL by design for both 0 and 2+ active
+  assignments (BR-021, "never guess an owner"); the fallback correctly returns `None`
+  for 0, but for 2+ silently picks the most-recently-created assignment, so the other
+  recruiter(s) get no offer-approved/rejected notification at all. Consistent with the
+  pre-existing `candidates/_reminder_tasks.py` behavior this was promoted from (not a
+  regression), and one recipient beats zero — but "notify all active assignees" is
+  arguably the more correct semantic. Not fixed now (judgment call, not a defect).
+- 🟡 **`test_functional_offer_notifications_remarks.py::test_scenario4_...` skip reason
+  still doesn't name the real cause when it times out (N-3, §9 review round 2,
+  2026-09-23).** The `pdf_key == "__error__"` branch does correctly name LibreOffice
+  when that marker is written, but in an environment where LibreOffice is entirely
+  absent (this sandbox, see the libmagic/LibreOffice entry above) the test instead
+  skips on the 60s poll timeout with a generic "Celery worker likely not running/slow"
+  message — `OfferPdfConversionError` evidently never writes the `__error__` marker in
+  that failure mode. Cheap fix if revisited: on timeout, read the offer's latest PDF-
+  related audit row or Celery task error and include it in the skip reason.
 - 🔴 **RESOLVED-IN-PART 2026-09-21 (principal-reviewer round-2 MIN-3): the cross-org
   direction of this gap is fixed; a narrower manual-DB-edit direction remains.**
   Originally flagged 2026-09-21 by unit-test-engineer as "revoke keyed off the
