@@ -647,6 +647,11 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   (runs inside the `offer.submitted` Celery handler, not inline with the HTTP request) and low
   row-count today, so not a current SLO risk — revisit if the `offers` table grows large enough
   for this scan to show up in a live `EXPLAIN`.
+- 🟡 **`offers/schemas.py`'s `CompensationComponent.annual`/`monthly` have no lower bound**
+  (found 2026-09-27, `principal-reviewer`, round-3 review of the §10.2 CTC calculator UI —
+  pre-existing, not introduced by that change, out of scope for it). A negative amount is
+  accepted server-side; only the client's `min="0"` constraint blocks it in the browser, which
+  is bypassable via direct API calls. Cheapest fix: add `ge=0` to both fields.
 
 ## 5. Tech debt — tests/CI
 
@@ -1627,6 +1632,44 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
 
 ## 9. Feature backlog (not started / deferred)
 
+- ✅ **RESOLVED 2026-09-27 (round-2 review, m5): §6.2 review's M6 teardown-restore fix now
+  explicitly `SET is_current = FALSE` on whatever row currently holds `is_current=true` for
+  the org+artifact_type BEFORE restoring the prior row** — closes the debris-accumulation
+  gap described in the original entry. Live-verified clean (single non-deleted
+  `is_current=true` row for STG Labs' `offer_letter_template`) after the fix.
+- 🟡 **`test_functional_offer_approvers.py`/`test_functional_ctc_formula_signon_org_artifacts.py`
+  share ONE org-scoped `offer_approvers` fixture (recruiter as STG Labs' offer_approver)
+  with no per-run isolation, and the seed login endpoint enforces a 5-per-minute rate limit
+  per email — both surfaced 2026-09-27 re-verifying the §6.2 fix round's live functional
+  suite back-to-back several times in one session (self-inflicted repetition, not a single
+  bad run).** Symptoms: (a) a `/submit` call mid-test intermittently 404s
+  `OFFER_APPROVER_NOT_FOUND` on an approver id this SAME test just granted, because a
+  different scenario/file granted+revoked the identical (org, user) row concurrently or
+  moments earlier in the same session — the grant endpoint appears to reactivate/revoke
+  the one shared row rather than each test getting its own; (b) `get_token()` for
+  `interviewer@ats.test`/`recruiter@ats.test` etc. 429s ("Rate limit exceeded: 5 per 1
+  minute") when the same 3 files are re-run within a short window, since each fresh pytest
+  process re-logs-in every seed user (no cross-process token cache). Neither is a defect in
+  the §6.2 code itself — re-running the SAME 3 files once, cleanly, with nothing else
+  hitting the API concurrently, passes the CTC-formula/org-artifact scenarios cleanly (only
+  this shared-approver race and the rate limit caused failures, both traced live). Cheap
+  fix if touched again: (1) namespace the approver fixture per test run (grant a
+  FT-prefixed secondary approver user instead of reusing `recruiter@ats.test` across every
+  file), or serialize these 3 files (`pytest -p no:randomly` / explicit ordering) so they
+  never share the row concurrently; (2) raise the seed-login rate limit for
+  `RUN_FUNCTIONAL_TESTS=1` runs specifically, or add a small cross-process token cache
+  (e.g. a temp-file-backed cache keyed by email+expiry) so repeated local runs don't
+  re-login every seed user from scratch.
+- 🟡 **`backend/app/scripts/seed_legal_transaction_demo.py`'s offer walkthrough is broken by
+  two PRIOR, unrelated §8/§6.2 changes (found 2026-09-27, §6.2 round-2 review nit) — not
+  fixed here (out of scope for this round).** (1) Line 303 still `POST`s
+  `/offers/{offer_id}/attest`, an endpoint removed by an earlier §8 change (offer PDF
+  generation/send/accept flow) — 404s immediately. (2) Its `comp` compensation_breakdown
+  payload (built ~line 270+) has no `total_ctc` key, which is now REQUIRED (M3, 2026-09-25)
+  — would 422 even if (1) were fixed. Confirmed via direct grep, not executed (the script
+  hits a live stack this session didn't stand up). Fix if this demo script is touched again:
+  drop the `/attest` call (offer flow is now approve -> wait pdf -> send -> accept) and add
+  `total_ctc` to the compensation_breakdown payload.
 - 🟡 **`shared/recruiter_fallback.py::resolve_fallback_recruiter` picks one arbitrary
   recruiter when a position has 2+ active recruiter assignments (N-2, §9 review round
   2, 2026-09-23).** `owning_recruiter_id` is NULL by design for both 0 and 2+ active

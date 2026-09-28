@@ -51,6 +51,8 @@ append-only (corrections are added as new entries that reference the prior one).
 <details>
 <summary><strong>Dated index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- [2026-09-21] Add user_roles (multi-role support) + offers.selected_approver_id — 0065_user_roles_offer_approver
+- [2026-09-19] Add offer_templates, offer_compensation_structures, offer_approvers tables — 0064_offer_org_tables
 - [2026-09-17] Add 3 offer-relevant candidate columns (relevant_experience_years, years_in_current_organization, title_in_current_organization) — 0063_cand_offer_fields
 - [2026-09-09] Widen interview_panelist_assignments.sequence_number CHECK 1-2 → 1-3 (BR-064 flat cap, any category) — 0062_ivw_panelist_max3
 - [2026-09-01] G15 full migration-replay reconciliation — 0010/0011/0012 rewritten + 0047/0048/0061 guarded
@@ -125,6 +127,301 @@ append-only (corrections are added as new entries that reference the prior one).
 </details>
 
 ---
+
+### [2026-09-25] Add organization_artifacts; migrate offer_templates rows in — 0066_org_artifacts
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer for hareesh@stg.com
+- Trigger         : spec change — BR-ORG-001 (`openspec/changes/offers-org-templates-and-
+                    approval-workflow/specs/organizations/spec.md`), generalizing the
+                    offer-letter template's org-scoped versioned file storage out of the
+                    `offers` module into `organizations` so any future artifact type reuses
+                    one table (design.md Decision 2 revision, 2026-09-25).
+- Module(s)       : organizations, offers
+- Change type     : add table + data migration (copy)
+- Objects         : `organization_artifacts(id, organization_id FK organizations.id,
+                    artifact_type VARCHAR(50) CHECK IN ('offer_letter_template'),
+                    version_number SMALLINT, s3_key VARCHAR(512), s3_version_id
+                    VARCHAR(128), original_filename VARCHAR(255), file_type VARCHAR(10)
+                    CHECK IN ('docx'), file_size_bytes INT CHECK > 0, content_sha256
+                    CHAR(64), is_current BOOLEAN, uploaded_by FK users.id, uploaded_at,
+                    deleted_at, version INTEGER, created_at)`; partial unique index
+                    `uq_org_artifacts_current` on (organization_id, artifact_type) WHERE
+                    is_current AND deleted_at IS NULL; index `ix_org_artifacts_org_type`;
+                    RLS policy `rls_organization_artifacts_isolation` (mirrors
+                    `rls_offer_templates_isolation`'s `fn_is_internal() OR
+                    organization_id = fn_current_org()` shape).
+- Storage decision: REAL TABLE. Per docs/SCHEMA_EVOLUTION.md decision tree — same
+                    reasoning `offer_templates` (0064) already established: versioned,
+                    S3-pointer, per-org relational data needing an `is_current` index on
+                    every offer-PDF-generation read; not ad-hoc attribute data a
+                    JSONB/lookup mechanism is meant for. Exactly one `artifact_type` value
+                    exists today — not a speculative generalization to hypothetical types.
+- Backward compat : Additive — new table only, `offer_templates` left in place (superseded,
+                    not dropped) per the "never drop in the same release" rule. No existing
+                    code path is broken by the new table's mere existence.
+- Backfill        : REAL backfill performed (CLAUDE.md Backfill Mandate option (a), not
+                    the "no backfill possible" exception) — every existing `offer_templates`
+                    row IS its own unambiguous authoritative source, so this migration
+                    copies every row into `organization_artifacts` with
+                    `artifact_type='offer_letter_template'`, preserving the original `id`
+                    for 1:1 traceability. Zero rows are left NULL/undetermined; there is no
+                    ambiguous case to flag for manual review.
+- Migration       : Alembic revision `0066_org_artifacts` (revises
+                    `0065_user_roles_offer_approver`). Downgrade implemented: drops
+                    `organization_artifacts` (its indexes + RLS policy go with it). The
+                    `offer_templates` rows this migration copied FROM are untouched — but
+                    this is NOT "no data lost on downgrade" unconditionally (principal-
+                    reviewer M7, corrected 2026-09-25): any artifact version uploaded via
+                    the new `organizations` endpoint AFTER this migration ships has no
+                    `offer_templates` counterpart and IS destroyed on downgrade with no path
+                    back. Expected/acceptable for an additive-then-populated table (the
+                    "never lost" guarantee only ever covered rows this migration itself
+                    copied, not future writes) — not a backfill gap, since there is nothing
+                    to derive for a row that never existed at migration time.
+- Live round-trip : 2026-09-25, scratch DB (`scratch_0066_roundtrip`, dropped after):
+                    schema.sql -> stamp 0001_baseline -> upgrade head -> inserted a
+                    post-migration test `organization_artifacts` row -> `alembic downgrade
+                    -1` (table dropped, test row gone as documented, pre-existing
+                    `offer_templates` rows untouched) -> `alembic upgrade head` again (table
+                    cleanly recreated: same columns/indexes/constraints/RLS policy, test row
+                    correctly NOT restored, 0 rows since this scratch DB's `offer_templates`
+                    was empty). Structural round-trip confirmed clean; only the documented
+                    data-loss window is real. `docs/ci_schema_snapshot.sql` regenerated from
+                    the local dev DB (already at `0066` head) via marker-anchored
+                    `pg_dump --schema-only` + the existing hand-curated seed tail;
+                    `check_schema_definition_drift.py` re-run clean against it afterward.
+- Rollback        : `alembic downgrade 0065_user_roles_offer_approver`.
+- Notes           : `offers/_router_templates.py`, `template_repository.py`,
+                    `template_service.py`, `template_files.py` and their unit tests are
+                    DELETED in the same change (zero frontend consumer existed yet — clean
+                    relocation, not a breaking change to any shipped UI). New home:
+                    `organizations/_router_artifacts.py` (mounted at
+                    `/organizations/{org_id}/artifacts?artifact_type=...`),
+                    `artifact_service.py`, `artifact_repository.py`, `artifact_files.py`
+                    (validation logic moved verbatim, not reimplemented).
+                    `offers/tasks.py`'s `generate_offer_pdf` and
+                    `offers/_service_guards.py`'s `assert_template_exists` now read the
+                    current artifact via `OrganizationArtifactService.get_current_artifact`
+                    (the organizations module's public SERVICE interface, never its
+                    repository directly) instead of the old `OfferTemplateRepository`.
+
+---
+
+### [2026-09-21] Add user_roles (multi-role support) + offers.selected_approver_id — 0065_user_roles_offer_approver
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer
+- Trigger         : new feature (openspec/changes/offers-org-templates-and-approval-workflow,
+                    design.md Decision 6 / tasks.md §8.0) — Offer Approver must be
+                    grantable as a SECOND role to an existing platform user without
+                    stripping their primary role, and the offer must remember which
+                    specific approver was selected at submission (drives §8.6's tight
+                    authorization coupling).
+- Module(s)       : security (new table), offers (new column)
+- Change type     : add table + add column + add index (x2)
+- Objects         : user_roles (id, user_id, role_id, created_at, created_by,
+                    uq_user_roles_user_role, ix_user_roles_user);
+                    offers.selected_approver_id (+ ix_offers_selected_approver, partial
+                    on IS NOT NULL)
+- Storage decision: REAL TABLE + REAL COLUMN (docs/SCHEMA_EVOLUTION.md decision tree).
+                    `user_roles` is a relational many-to-many join needing FK integrity
+                    (CASCADE on user/role deletion) and a uniqueness guarantee — no
+                    JSONB/lookup_values mechanism expresses that. `users.role_id` stays
+                    untouched as every user's primary/default role; this table is
+                    purely additive multi-role support, not a replacement.
+                    `offers.selected_approver_id` is a hot-queried FK — read on every
+                    approve/reject authorization check (§8.6) and by the submission
+                    notification's routing (§9, later) — not a JSONB/lookup_values
+                    candidate.
+- Backward compat : Both additive, NULLable/brand-new. `user_roles` is a new table with
+                    zero pre-existing rows — no prior user ever had a "secondary role"
+                    concept, so there is nothing to backfill (Backfill Mandate option
+                    (b)). `offers.selected_approver_id` is NULLable; no existing offer
+                    could have had a selected approver before this column existed
+                    because the `offer_approvers` entity itself did not exist until the
+                    immediately-prior migration (0064, same change) — no authoritative
+                    prior source exists to derive a value from for any pre-existing
+                    offer row (Backfill Mandate option (b)).
+- Migration       : 0065_user_roles_offer_approver; downgrade implemented (drops the FK
+                    column + index, then the table, in FK-safe reverse order).
+- Validation      : Applied upgrade against local dev DB (`atsplatform`, Podman
+                    container "ats-platform"), confirmed `alembic current` shows the new
+                    head, ran `alembic downgrade -1` then `alembic upgrade head` again to
+                    confirm the downgrade path is clean, re-confirmed head afterward.
+- Rollback        : `alembic downgrade -1` (tested, see Validation) — no data loss risk,
+                    nothing pre-existing depends on either object yet.
+- Notes           : RLS — `user_roles` gets no RLS policy (roles/permissions are global
+                    in this schema, not org-scoped — mirrors `role_permissions`/`roles`/
+                    `permissions`, none of which have RLS). `offers` already has RLS
+                    enforced transitively via its parent `applications`/`positions`;
+                    adding a nullable column doesn't change that. `core/dependencies.py`'s
+                    `require_permission`/`require_roles` were updated to resolve this new
+                    table lazily (fallback-only, on a primary-role miss) — see PR for the
+                    accompanying code change; every existing single-role call site pays
+                    zero extra queries. **Post-review fix (2026-09-21, principal-reviewer
+                    CHANGES-REQUESTED Major 2):** this entry's own migration had shipped
+                    without regenerating `docs/ci_schema_snapshot.sql`, which would have
+                    failed `check_schema_definition_drift.py` on the next CI run.
+                    Regenerated via `podman exec ats-platform pg_dump -U atsplatformuser
+                    -d atsplatform --schema-only --no-owner --no-privileges` against the
+                    local dev DB (already at head `0065`), then re-spliced with the
+                    pristine hand-curated data tail using the stable
+                    `-- PostgreSQL database dump complete` marker (not a hardcoded line
+                    number — docs/BACKLOG.md §5's documented incident/procedure). Diffed
+                    line-ending-normalized old vs. new: only `user_roles` (table + its 2
+                    constraints + `ix_user_roles_user`), `offers.selected_approver_id` (+
+                    `ix_offers_selected_approver` + its FK), and the 2 cosmetic per-dump
+                    `\restrict`/`\unrestrict` session tokens changed — nothing else.
+                    Verified clean: loaded the regenerated file into a scratch DB
+                    (`atsplatform_schema_drift_snapshot`) via `psql -v ON_ERROR_STOP=1`
+                    (exit 0), then ran `check_schema_definition_drift.py` against the real
+                    replayed DB at head `0065` — "Schema definition drift check: no
+                    differences found." Scratch DB dropped after verification.
+                    **Second post-review fix (2026-09-21, principal-reviewer round-3
+                    Minor MIN-6):** added an explicit `GRANT SELECT, INSERT, UPDATE,
+                    DELETE ON user_roles TO ats_app;` to `upgrade()`, matching
+                    0005/0007's own explicit-grant precedent — the table already worked
+                    via the DB's `ALTER DEFAULT PRIVILEGES` (confirmed: neither this nor
+                    0064_offer_org_tables actually contains an explicit per-table grant
+                    with that exact comment, despite the review citing 0064 as the
+                    "unlike" precedent — the real precedent files are 0005/0007) but an
+                    implicit default-privilege grant is invisible to a reviewer/CI diff
+                    reading the migration file itself. No snapshot regeneration needed:
+                    `docs/ci_schema_snapshot.sql` is generated with `pg_dump
+                    --no-privileges`, so GRANT statements never appear in it either way.
+
+### [2026-09-19] Add offer_templates, offer_compensation_structures, offer_approvers tables — 0064_offer_org_tables
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer
+- Trigger         : new feature (openspec/changes/offers-org-templates-and-approval-workflow,
+                    design.md Decisions 2/3/6 / tasks.md §3) — held change, this slice
+                    (tasks.md §3, schema-only) explicitly authorized ahead of the rest of
+                    that change (§6/§8 service/router/endpoint work not yet authorized).
+- Module(s)       : offers
+- Change type     : add table (x3)
+- Objects         : offer_templates, offer_compensation_structures, offer_approvers
+                    (+ indexes uq_offer_tpl_current, ix_offer_tpl_org, uq_offer_comp_current,
+                    ix_offer_comp_org, uq_offer_approvers_active, ix_offer_approvers_org;
+                    + CHECK constraints chk_offer_tpl_file_type ('docx' only),
+                    chk_offer_comp_file_type ('xlsx'|'docx'), chk_offer_tpl_size_positive,
+                    chk_offer_comp_size_positive; + trigger trg_offer_approvers_upd
+                    (fn_set_updated_at_and_version, offer_approvers only — it's the only one
+                    of the 3 with version/updated_at columns); + RLS policies
+                    rls_offer_templates_isolation, rls_offer_compensation_structures_isolation,
+                    rls_offer_approvers_isolation on all 3 tables)
+- Storage decision: REAL TABLES (x3), not JSONB/lookup_values/custom_field_definitions/tags
+                    (docs/SCHEMA_EVOLUTION.md decision tree walked explicitly in the
+                    migration docstring). offer_templates/offer_compensation_structures are
+                    versioned, S3-pointer, per-org relational data needing an `is_current`
+                    index on every offer-generation/parse read — same justification already
+                    established as precedent by positions.JobDescription
+                    (positions/models.py:143-177, docs/schema.sql:390-418). offer_approvers
+                    is a real organization<->user join entity driving an authorization check
+                    (acting user id == offer's selected approver's linked_user_id) and a
+                    partial-unique business constraint — not expressible via a lookup
+                    mechanism without losing FK integrity; the partial unique index
+                    uq_offer_approvers_active is INSPIRED BY but not an exact mirror of
+                    positions.PositionRecruiterAssignment's uq_pos_recruiter_active
+                    (positions/models.py:228-253, 0027_position_recruiter_assignments.py):
+                    the offer_approvers predicate adds `AND is_active` (deletion is
+                    additionally not the only reason a row stops counting as active — see
+                    OfferApprover's docstring), which means deactivating then re-adding the
+                    same person creates a NEW row rather than reactivating the old one (an
+                    "all approvers" admin list will show that person twice — one inactive,
+                    one active). This is intentional (design.md Decision 6), stated here so
+                    it isn't silently rediscovered when §6/§8 builds on this table.
+                    name/email intentionally NOT duplicated on offer_approvers — read from
+                    linked_user_id's user record at query time (single source of truth, no
+                    drift risk, per design.md Decision 6).
+- Backward compat : All 3 are brand-new tables — no existing rows, no existing table/column
+                    touched, no backfill applicable (Backfill Mandate only concerns new
+                    columns on tables that already have rows). All 3 tables carry a direct
+                    `organization_id` column and are the offers domain's FIRST directly
+                    org-scoped tables — unlike job_descriptions/offers (the previously-cited,
+                    incorrect precedent: neither of those has a direct organization_id at
+                    all; they inherit tenant isolation transitively through their
+                    RLS-protected parent positions/applications), these 3 inherit nothing and
+                    would have zero DB-level tenant isolation without their own RLS. Fixed:
+                    RLS enabled on all 3, mirroring positions' exact pattern
+                    (rls_<table>_isolation USING (fn_is_internal() OR organization_id =
+                    fn_current_org()), docs/schema.sql:1110-1111) — real risk, since
+                    offer_approvers is an authorization source (§6's approve/reject gate
+                    checks linked_user_id) and offer_templates determines which org's
+                    letterhead generates a real offer letter. offer_templates and
+                    offer_compensation_structures have no deleted_at — they are immutable
+                    versioned uploads that use is_current-supersession instead (matching
+                    job_descriptions' precedent: a new upload flips is_current, the old row
+                    is retained for audit, never soft-deleted). offer_approvers DOES have
+                    deleted_at because it's a mutable membership row (an approver can be
+                    removed), not a versioned file upload — hence the 2 different lifecycle
+                    conventions across the 3 tables in this one migration.
+- Migration       : 0064_offer_org_tables; downgrade implemented (drops all 3 tables +
+                    their indexes, reverse FK-safe order: offer_approvers ->
+                    offer_compensation_structures -> offer_templates) — yes.
+- Validation      : `alembic upgrade head` -> `alembic downgrade -1` -> `alembic upgrade
+                    head` executed against the local dev DB (`atsplatform` @
+                    127.0.0.1:5432, confirmed via DATABASE_ADMIN_URL before each DDL run) —
+                    clean round-trip, final head confirmed `0064_offer_org_tables` via
+                    `alembic current`. ORM model column/constraint shapes (offers/models.py)
+                    cross-checked against `Base.metadata` post-upgrade and match the
+                    migration's DDL exactly. `ruff check app/modules/offers/
+                    alembic/versions/0064_offer_org_tables.py` and `mypy
+                    app/modules/offers/` both clean; `pytest app/modules/offers/tests/
+                    test_unit*.py` — 174 passed, no regressions from the new model classes.
+                    Post-review fix (2026-09-19, principal-reviewer CHANGES-REQUESTED, 2
+                    Majors): confirmed `relrowsecurity = true` for all 3 tables via
+                    `pg_class`, confirmed `trg_offer_approvers_upd` via `pg_trigger`, and
+                    functionally proved the trigger — inserted one throwaway row into
+                    offer_approvers, UPDATEd it (toggled is_active), confirmed `version`
+                    incremented 1->2 and `updated_at` advanced, then hard-deleted the row.
+- Rollback        : `alembic downgrade 0063_cand_offer_fields` (drops the 3 new tables; no
+                    data loss risk — nothing pre-existing depends on them, no application
+                    code reads/writes them yet since §6/§8 service/router work is separate,
+                    not-yet-authorized future work per tasks.md).
+- Notes           : Schema-only slice per explicit scope instruction — no service/router/
+                    business logic, no endpoints. **`docs/ci_schema_snapshot.sql`
+                    regenerated** (the building agent's sandbox had no `pg_dump` reachable;
+                    done by the main loop instead, which has `podman exec` access to the
+                    running local Postgres container — `pg_dump -U atsplatformuser -d
+                    atsplatform --schema-only --no-owner --no-privileges` against the DB
+                    at head `0064_offer_org_tables`, per the Live-verification &
+                    environment-parity mandate's "provision tooling in the main loop's own
+                    environment" rule). Regenerated TWICE in this task (round 1 for the 3
+                    tables alone; round 2 after `principal-reviewer` round 1 added the
+                    `offer_approvers` trigger + RLS on all 3 tables) — **round 1's splice
+                    had a real bug, self-caught and fixed before either was ever committed**:
+                    the hand-curated reference-data seed tail was extracted using a
+                    hardcoded line range (`sed -n '6882,7081p'`) that was only valid against
+                    the pristine pre-change file; re-running that same hardcoded range
+                    against round 1's already-modified (188-lines-longer) snapshot in round
+                    2 grabbed the wrong slice, duplicating RLS-policy DDL that a modern
+                    `pg_dump` (v18.4) already captures natively — `psql -v ON_ERROR_STOP=1`
+                    caught it immediately as a real `ERROR: policy ... already exists`
+                    during test-load, it was never silently swallowed. Fixed by re-deriving
+                    the tail from the pristine original (`git show main:docs/
+                    ci_schema_snapshot.sql`) via the stable `-- PostgreSQL database dump
+                    complete` marker instead of a hardcoded line number, confirming the true
+                    tail is pure data (`SET search_path`/organizations-INSERT/COPY blocks
+                    for consent_purposes/currencies/feature_flags/lookup_values/
+                    permissions/roles/role_permissions/tenant_settings) with zero
+                    `CREATE POLICY` lines in it. Final verification (this corrected file):
+                    loaded into a scratch DB via `psql -v ON_ERROR_STOP=1 -f`, exit 0, zero
+                    errors; then loaded into the actual `atsplatform_schema_drift_snapshot`
+                    DB name and ran this project's own `backend/app/scripts/
+                    check_schema_definition_drift.py` (the same authoritative tool CI and
+                    `principal-reviewer` use, not just an ad-hoc load) against the live
+                    replayed DB at head `0064` — **"Schema definition drift check: no
+                    differences found."** Confirmed `offer_templates`/
+                    `offer_compensation_structures`/`offer_approvers` present with the
+                    exact column list, `trg_offer_approvers_upd` trigger present, all 3
+                    tables' `relrowsecurity=true`, all 8 reference tables' row counts
+                    (3/15/2/11/21/8/63/2) match the pre-change file exactly. Final
+                    `git diff --stat`: 234 insertions/2 deletions (3 tables' DDL + trigger +
+                    3 RLS policies, plus the 2 cosmetic per-dump `\restrict`/`\unrestrict`
+                    session tokens) — nothing else changed. All scratch DBs dropped after
+                    verification.
 
 ### [2026-09-17] Add 3 offer-relevant candidate columns — 0063_cand_offer_fields
 

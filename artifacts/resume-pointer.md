@@ -10,7 +10,78 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-09-23 (later) — RESUME HERE FIRST: §9 (mandatory remarks + submit/approve/reject
+- 2026-09-25 (later still) — RESUME HERE FIRST: paused with the fix-round agent
+  (from the entry directly below) STILL RUNNING and UNCOMMITTED — user had to leave
+  for home with 10 min notice, agent was mid-edit, not yet reported done.
+  **Working tree has real, uncommitted, possibly-INCOMPLETE changes** on
+  `dev/offers-ctc-formula-signon-bonus` (pushed HEAD is still `b5e3319` — nothing
+  from this fix round is on origin yet). Touched at last check: `0066_org_artifacts.py`,
+  `offers/{_org_access,_service_guards,_service_writes,exceptions,schemas,tasks}.py`,
+  `organizations/{_org_access,artifact_service,exceptions,service}.py`,
+  `docs/{SCHEMA_CHANGE.md,ci_schema_snapshot.sql}`, both delta spec files, tasks.md, and
+  — because M3 (total_ctc now required) ripples into every test that creates an offer —
+  functional test files in `applications/`, `notifications/`, `positions/` too, not
+  just `offers/`.
+  **On resume, do NOT assume this is finished or consistent.** This is almost certainly
+  a Windows background process that dies when the laptop is closed/restarted (same as
+  every prior pause this session) — but even if the process is somehow still alive,
+  don't trust a mid-run notification as "done." First steps, in order: (1) check if the
+  agent (task id, search this transcript for "Fix §6.2 review findings") ever delivered
+  a final SubagentHandback report — if yes, process it normally (verify diff, run
+  checks, commit). (2) If not (most likely — laptop closes kill the local process): run
+  `git status`/`git diff --stat` yourself first to see exactly how far it got, then run
+  `cd backend && ruff check . && mypy . && pytest app/ -m "not functional" -q` to see
+  what's actually broken vs. finished. Given the scope (8 Major + 6 Minor + 5 Nit + the
+  total_ctc-required ripple across 3+ other modules' test files), a partial run could
+  plausibly leave things red. If it's badly inconsistent, the safe move is reverting the
+  uncommitted changes (`git status` first, per this project's own destructive-action
+  discipline — these are agent-authored uncommitted changes, not the user's own work, so
+  reverting them to re-dispatch fresh is lower-risk than usual, but still verify before
+  discarding) and re-dispatching the SAME fix-round brief fresh — the full finding list
+  (8 Major/6 Minor/5 Nit from principal-reviewer's round-1 opus review) is in this
+  session's own transcript. Do NOT re-ask the user anything already decided this
+  session (M3: total_ctc required now; M6: shared DB already repaired manually,
+  `organization_artifacts` id `a0f15973-b123-4dbd-b23c-4780a2ee525d` — re-verify it's
+  still `is_current=true` on resume in case a broken partial run touched it again).
+- 2026-09-25 — session paused mid-§6.2 fix round (superseded by the entry above, kept
+  for the original finding-list detail). Branch
+  `dev/offers-ctc-formula-signon-bonus`, commits through `93e321b` pushed to origin.
+  **§6.2 redefined this session** (user reviewed the real CTC-structure screenshot +
+  offer-letter PDF sample): universal formula (not per-org upload/parse — Basic = Total
+  CTC ÷ 2.0481, every other component a fixed % of Basic), Sign-on-Bonus toggle + INR
+  amount, Variable-Pay toggle (No-path only, Yes deferred), and org-scoped artifact
+  storage GENERALIZED + RELOCATED from `offers` into `organizations` (its first-ever
+  file-storage capability) — all confirmed via multi-round rehash-and-confirm with the
+  user, written into design.md Decisions 2/3/3b/3c + BR-024/025/026 + new
+  `specs/organizations/spec.md` BR-ORG-001, before any code was touched.
+  Backend built (migration `0066_org_artifacts`, `_compensation_formula.py`, toggles,
+  old offer-template code deleted — confirmed zero frontend consumer). Sweep-tested
+  against the real compliance engine (40 cases first pass, caught+fixed a real
+  sub-paisa rounding bug). Functional-tested live: 8/8 pass. `principal-reviewer`
+  (opus) round 1: **CHANGES-REQUESTED, 8 Major** — two would break in production
+  (M1: the documented sign-on-bonus template idiom `{% if signon_bonus.included %}`
+  actually raises `UndefinedError` in real jinja2 when the key is absent, never
+  executed before being documented; M4: client can inflate CTC totals by posting extra
+  components), one would redden CI (M5: `ci_schema_snapshot.sql` not regenerated), one
+  had **already broken the shared local dev DB** (M6: the new functional test flipped
+  the shared org's current offer-template row via `is_current`, teardown never
+  restored it — **I manually repaired this live**, `organization_artifacts` id
+  `a0f15973-b123-4dbd-b23c-4780a2ee525d` is `is_current=true` again, verified). User
+  also decided M3 (whether omitting `total_ctc` should stay an allowed interim
+  bypass or become a hard requirement now): **make it required now** — this has a
+  real ripple across existing test fixtures using the old shape, already briefed to
+  the fix-round agent.
+  **In flight at pause**: a `backend-engineer` dispatch (background local process,
+  will almost certainly die on a laptop restart — same as every prior restart-pause
+  this session) fixing all 8 Major + 6 Minor + 5 Nit findings, including the
+  `total_ctc`-required ripple. On resume: `git log`/`git status` on this branch FIRST
+  (standard check) to see if anything landed; if not, re-dispatch fresh — the full
+  finding list is in this session's own transcript (search for "principal-reviewer —
+  CHANGES-REQUESTED" near this date) or just re-derive from a fresh review if the
+  transcript isn't handy. Do NOT re-ask the user about M3 (already decided: required
+  now) or the org-artifact-relocation architecture (already decided, multi-round
+  confirmed) — only genuinely new findings warrant a fresh question.
+- 2026-09-23 (later) — §9 (mandatory remarks + submit/approve/reject
   notifications) MERGED (PR #256, squash-merged, branch deleted). No migration in this
   change, local main confirmed still at `0065_user_roles_offer_approver (head)`. Went
   through 3 `principal-reviewer` rounds (opus): CHANGES-REQUESTED (3 Major — a critical
