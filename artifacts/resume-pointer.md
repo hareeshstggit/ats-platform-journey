@@ -10,6 +10,25 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-09-28 — RESUME HERE FIRST: §6.1/§6.2 (universal CTC formula, sign-on-bonus +
+  variable-pay toggles, org-artifact relocation) + full §10.2 CTC calculator UI **MERGED,
+  PR #257, squash, branch `dev/offers-ctc-formula-signon-bonus` deleted**. Local `main`
+  fast-forwarded to `d16edac`; `alembic upgrade head` applied, `alembic current` confirms
+  `0066_org_artifacts (head)`. All CI green (backend + frontend). External-sharing mirror
+  (`ats-platform-journey`) synced for the 3 touched mirrored files (`BACKLOG.md`,
+  `resume-pointer.md`, `SCHEMA_CHANGE.md`), pushed as `70380de`.
+  4 review rounds total this change: backend round 1 (opus, 8 Major/6 Minor/5 Nit) →
+  round 2 (opus, 1 Critical C1 + 1 Major + 5 Minor + 4 Nit — C1 was the user's own M3
+  decision, total_ctc required, breaking the shipped frontend create/edit UI; user chose
+  the full §10.2 rebuild over a bridge patch) → round 3 (opus, scoped to the new UI + a
+  live-caught ₹NaN subtotal bug in `compensation-table.tsx`: CHANGES-REQUESTED, 1 Major —
+  no test coverage for the string-wire-format/legacy-prefill paths, exactly the class of
+  gap that let the NaN bug ship untested) → round 4 (sonnet, scoped confirm): **APPROVE**.
+  Remaining tracked debt from this change, not blockers: `offers/schemas.py`'s component
+  `annual`/`monthly` has no server-side lower bound (BACKLOG §4, cheapest fix `ge=0`);
+  §10.3's read-only offer-detail override display (`compensation-table.tsx` showing
+  "Computed: ₹X" for an overridden row) still unbuilt — only the edit-drawer half shipped.
+  Next up: whatever the user directs — no open item from this change blocks it.
 - 2026-09-25 (later still) — RESUME HERE FIRST: paused with the fix-round agent
   (from the entry directly below) STILL RUNNING and UNCOMMITTED — user had to leave
   for home with 10 min notice, agent was mid-edit, not yet reported done.
