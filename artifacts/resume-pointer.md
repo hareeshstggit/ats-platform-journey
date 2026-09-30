@@ -10,6 +10,79 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-09-30 (extended pause) — RESUME HERE FIRST: session paused for an EXTENDED period —
+  user is down sick with viral bronchitis, resuming after recovery (not a same-day pause
+  like prior entries). State is fully clean, nothing at risk: `main` at `b2ae378`, no
+  open branches, no uncommitted changes, no background agents running. Verified via
+  `git status`/`git branch --show-current`/`git log -1` immediately before the pause.
+  **What's done:** §10.1 (org-artifact upload UI, BR-ORG-002) merged PR #259 — see the
+  entry directly below for full detail. This was the first task built end-to-end under
+  the new binding **Rule 8** (CLAUDE.md, "spec-first + regression-scenario analysis,"
+  added 2026-09-30 at the user's explicit direction) — confirmed working as intended.
+  **What's next, in order, per the user's own chosen batching:**
+  1. **§10.4** — Offer submission UI: mandatory remarks field, approver-select dropdown,
+     and an inline "add approver" form. Read `tasks.md` §10.4's current bullet text first.
+  2. **§10.5** — Offer approval screen: merged single Approve button (replaces separate
+     approve/attest actions) + Reject dialog with mandatory remarks. `tasks.md` §10.5.
+  3. §10.6 (UX/UI guardrail review of all of §10) and §11.1-11.3 (spec-sync/backlog/
+     archive) as closing steps once §10.4/§10.5 land.
+  **Both §10.4 and §10.5 MUST follow Rule 8's full sequence** (same as §10.1): read/write
+  the BR-numbered spec with explicit Given/When/Then scenarios first, confirm with the
+  user → write a design decision record (screen inventory, permission model, component
+  reuse, states, per the ATS UX/UI guardrails) → write the execution plan (file-impact +
+  regression-scenario analysis + regression test scenarios) into `tasks.md` → THEN
+  dispatch backend-engineer/ux-ui-engineer to build → unit test → functional test →
+  principal-reviewer. Do not skip the spec/design/plan step and go straight to a build
+  dispatch — that was exactly the gap Rule 8 was written to close.
+  **Standing session-wide practices to keep applying, no exceptions:** never merge
+  without the user's explicit approval; independently verify every subagent's diff/checks
+  myself before trusting a self-report (`git status`/`git diff --stat` + re-run
+  tsc/eslint/vitest or ruff/mypy/pytest myself); state `[COST ALERT]` before/after
+  non-trivial dispatches; check `gh api users/hareeshstggit/settings/billing/usage`
+  before any CI-triggering batch; sync `docs/BACKLOG.md`/`memory/resume-pointer.md`/
+  `docs/GO_LIVE_CHECKLIST.md` inline after every merge; sync the external mirror
+  (`ats-platform-journey`) if any of the 18 tracked files changed.
+- 2026-09-30 (later) — §10.1 (org-artifact upload UI, BR-ORG-002)
+  **MERGED, PR #259, squash, branch `dev/offers-org-artifact-upload-ui` deleted.** Local
+  `main` synced to `4a00b2e`. No migration, no mirrored-file touch (no external-sharing
+  sync needed). This was the first task built end-to-end under the new binding Rule 8
+  (CLAUDE.md, "spec-first + regression-scenario analysis") — worked as intended: the
+  spec/design/plan written before build caught nothing wrong itself, but the process
+  DID produce 2 real findings during build (logged to `docs/BACKLOG.md` §9, both still
+  open, not blockers): (1) `org-artifact-fieldset.tsx`'s original 314 lines got split into
+  a 227-line fieldset + 92-line history-table component, both now compliant; (2)
+  BR-ORG-002's "any authenticated user can view version history read-only" scenario isn't
+  reachable through the real wired UI — `organization-detail.tsx` only mounts the whole
+  edit drawer for `canWrite` roles, and that drawer has no read-only rendering mode.
+  Deliberately not fixed here (un-gating naively would expose editable org fields to the
+  wrong role); needs its own design pass. principal-reviewer independently confirmed this
+  reasoning holds. Single review round: APPROVE-WITH-NITS (1 Minor — `handleUpload` over
+  the 40-line-per-function guideline; 1 Nit — a clarifying comment — both fixed inline).
+  **Next up: §10.4 (offer-submission UI: mandatory remarks + approver-select) and §10.5
+  (offer-approval screen: merged Approve button + Reject dialog)**, per the user's own
+  chosen batching from 2026-09-27 ("batch the 2 small ones, then check in" — §10.1 alone
+  counts as a full check-in-worthy unit; report status before starting §10.4/§10.5, same
+  as always). Both should follow Rule 8 (spec-first + regression-scenario analysis) same
+  as §10.1 did — read tasks.md §10.4/§10.5 for their current bullet text, write the
+  BR-numbered spec + design decision + execution plan BEFORE dispatching backend-engineer/
+  ux-ui-engineer, same sequence.
+- 2026-09-28 (later) — RESUME HERE FIRST: §10.3-remainder (read-only offer-detail
+  override display: "(overridden)" + "Computed: ₹X" in `compensation-table.tsx`) + §10.7
+  (CTA gate alignment: "Proceed to Offer" now enforces BR-018's Org L2 mandatory floor via
+  `useLevels`, closing a gap where the CTA could show enabled when Org L2 was configured but
+  never created) **MERGED, PR #258, squash, branch `dev/offers-detail-override-cta-align`
+  deleted.** Local `main` synced to `74b4a96`. No migration, no mirrored-file touch (no
+  external-sharing sync needed). Single review round: APPROVE-WITH-NITS (2 nits — stale
+  module docstring, misleading comment — fixed inline, no re-dispatch).
+  User asked to "build the remaining pieces of Offer module" — 5 items identified from
+  tasks.md §10: §10.1 (org-artifact upload UI, organizations module), §10.3-remainder (done
+  above), §10.4 (offer-submission UI: remarks + approver-select), §10.5 (offer-approval
+  screen: merged Approve button + Reject dialog), §10.7 (done above). User chose to batch
+  the 2 small ones first, then check in before §10.1/§10.4/§10.5 — **next up: report this
+  status to the user and get go-ahead before starting the bigger 3-item batch.** §10.6 (UX
+  guardrail review of all 5) and §11.1-11.3 (spec-sync/backlog/archive) remain as closing
+  steps once all 5 land. §11a.1 (BR-056 vs BR-018 divergence) confirmed explicitly
+  out-of-scope for this change, tracked separately.
 - 2026-09-28 — RESUME HERE FIRST: §6.1/§6.2 (universal CTC formula, sign-on-bonus +
   variable-pay toggles, org-artifact relocation) + full §10.2 CTC calculator UI **MERGED,
   PR #257, squash, branch `dev/offers-ctc-formula-signon-bonus` deleted**. Local `main`
