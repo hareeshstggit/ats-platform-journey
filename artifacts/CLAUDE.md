@@ -435,6 +435,62 @@ duplicate `SubPlan`/`SeqScan` where an index or single evaluation is expected) i
 replace that check, it moves the same check earlier so a wrong "fixed" report never reaches
 review in the first place.
 
+**Rule 8 — Spec-first documentation + regression-scenario analysis is mandatory for every
+new feature, enhancement, and change request, scaled (not skipped) for bug fixes (binding —
+added 2026-09-30, at the user's explicit direction).**
+This closes two gaps a direct user review of the process found: (1) tasks pulled straight
+from a `tasks.md` bullet were going to build via a context-mapping dispatch with no
+dedicated requirement/test-case/acceptance-criteria artifact reviewed first — full OpenSpec
+changes already did this (BR-numbered requirements + Given/When/Then scenarios in
+`spec.md`), but smaller tasks did not; (2) Rule 6's regression/file-impact mapping only
+triggers for changes to an EXISTING SHIPPED feature's contract — leaving brand-new builds,
+enhancements, and bug fixes with no equivalent mandatory step. The user's own direction on
+scope: apply the full sequence to new features/enhancements/CRs; scale it down (never skip
+it entirely) for genuinely small/surgical fixes.
+
+The full sequence, in order, for any new feature, enhancement, or change request:
+1. **Requirement/spec review or creation** — read the existing `openspec/specs/<module>/
+   spec.md` requirement; if none exists for this capability, write one (BR-numbered,
+   house format) INCLUDING explicit test cases and acceptance criteria as Given/When/Then
+   scenarios — not left implicit in a tasks.md bullet. Confirm/rehash with the user before
+   proceeding, per the existing Quality Gate Rule 1 (clarify before building).
+2. **Design/Architecture** — a `design.md`-equivalent decision record (screen inventory +
+   permission/visibility model for UI work per the ATS UX/UI guardrails; data-flow +
+   layering decisions for backend work).
+3. **Execution plan**: file-impact analysis (every file touched, every consumer of a
+   shared type/response shape/component) + regression-scenario analysis (what existing,
+   already-shipped behavior could this touch, even if the change is additive) with the
+   findings written into the design record — this generalizes Rule 6's mapping duty to
+   EVERY change in this category, not only contract-altering changes to shipped features.
+   Regression test scenarios identified here get written up alongside the functional
+   tests, not invented ad hoc during test-writing.
+4. **Build** (backend-engineer / ux-ui-engineer / cavecrew-builder per existing agent
+   routing — unchanged).
+5. **Unit testing** (unit-test-engineer — unchanged, Gate 1 still runs before functional).
+6. **Functional testing**, including the regression scenarios identified in step 3
+   (functional-test-engineer — unchanged, still a hard gate).
+7. **Final review** — `principal-reviewer`'s Blocking/Critical/Major/Minor/Nit verdict
+   (unchanged) — plus confirmation that step 1's acceptance criteria are actually met and
+   step 3's regression scenarios were actually exercised, not merely listed.
+
+**Scaling for small/surgical fixes (≤2 files, ≤10 lines — today's Gate 4/cavecrew-builder
+path) and routine bug fixes (Gate 5's investigator→builder→reviewer path):** the full
+sequence above is disproportionate and would conflict with this project's own minimalism
+and Agent-dispatch cost discipline. These keep their existing lighter path, but Gate 5's
+`cavecrew-investigator` step now explicitly includes a one-line regression-scenario note
+in its report (what else could this touch, even briefly) instead of skipping the question
+entirely — the full written regression-scenario document is not required at this scale,
+but the question itself is never skipped. `principal-reviewer`'s standing checklist gains:
+(g) for a new-feature/enhancement/CR-class change, was a requirement spec with explicit
+test cases/acceptance criteria confirmed BEFORE build (not reconstructed after the fact),
+and was a regression-scenario analysis actually written into the design record; (h) for a
+small-fix-class change, was the one-line regression note present in the investigator's
+report.
+
+This does not replace or duplicate the existing OpenSpec workflow, Rule 6, or Rules 1–7
+above — it is the same discipline applied universally across this broader trigger, using
+the same artifacts (`spec.md`, `design.md`, `tasks.md`) already in use.
+
 ### Regression prevention gates (binding — Gates 1–4 overridable only via 3-request rule; Gate 5 has NO override)
 
 These gates exist because regression rework consumed 60–70% of agent cost in multiple sessions
