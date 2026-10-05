@@ -10,6 +10,47 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-05 — RESUME HERE FIRST: §10.4 (offer-submission mandatory remarks + inline
+  add-approver, BR-027) **MERGED, PR #260, squash, branch
+  `dev/offers-submission-remarks-approver` deleted.** Local `main` synced to `e065f52`.
+  No migration. `docs/BACKLOG.md` synced to the external mirror (`GO_LIVE_CHECKLIST.md`
+  is not a mirrored file — confirmed, not an oversight).
+  **This fixed a real live bug**, found during the Rule 8 spec-review step itself (not
+  from a user report): `OfferSubmitDialog` never sent `remarks` in its POST body, and
+  the backend's `SubmitOfferRequest.remarks` is required non-blank with no default —
+  every real offer submission had been rejected with a 422 before this merge. Also
+  shipped: an inline "add approver" form (hr_admin/super_admin only, simple
+  link-existing-user scope — the user explicitly chose this over the bigger
+  grant-role/revoke/deactivate admin flow, which is tracked in `docs/BACKLOG.md` §9 as
+  a separate future task). A second real gap was found and fixed mid-build (not
+  pre-planned): `offer-action-bar.tsx` disabled the Submit button entirely whenever an
+  org had zero approvers, for every role — which made the new admin-only add-approver
+  form unreachable (the button that opens the dialog was disabled before any admin
+  logic could run). Non-admins kept the exact original dead-end behavior.
+  **§10.5 (merged Approve button, mandatory-remarks Reject dialog) confirmed already
+  shipped** in an earlier PR — verified via direct code read + existing passing tests,
+  not assumed; just never flipped `[x]` in `tasks.md` until now. No new work needed.
+  2 review rounds: round 1 (opus — escalated per the Model-tier mandate's auth/
+  permission-logic trigger, since this added a client-side admin-role check) returned
+  CHANGES-REQUESTED (1 Major: a file grew to 360 lines, over the 300-line cap; 4 Minor;
+  4 Nit) → round 2 (sonnet — confirming a mechanical fix, not fresh permission-logic
+  risk): APPROVE.
+  **One process hiccup worth remembering:** a doc-only `[skip ci]` commit
+  (`91e79b7`) was left as the PR's HEAD before requesting CI — GitHub skips ALL
+  workflows for a commit carrying that marker, including the `pull_request`
+  `synchronize` event, so CI silently never ran until I noticed zero checks existed at
+  all. An empty retrigger commit then ALSO failed to fire CI, for an unrelated reason
+  already documented in `frontend-ci.yml`'s own header comment from a past incident
+  (PR #255): the `pull_request` trigger is path-filtered, and an empty commit has zero
+  changed files to match. Fixed by touching `frontend-ci.yml`'s own self-matching path
+  (same documented precedent). **Lesson: never let a `[skip ci]` doc commit be the
+  final commit of a PR still awaiting CI/review — only use `[skip ci]` for commits that
+  are genuinely the end of the line (post-merge bookkeeping on `main`), never mid-PR.**
+  **Next up: §10.6** (UX/UI guardrail review of all of §10's work per
+  `.claude/rules/ats-ux-ui-guardrails.md`) and **§11.1-11.3** (`/opsx:sync` the delta
+  specs into main specs, update BACKLOG/resume-pointer, `/opsx:archive`) — these are
+  the remaining, final items in the `offers-org-templates-and-approval-workflow`
+  change. Check in with the user before starting, per the established pattern.
 - 2026-09-30 (extended pause) — RESUME HERE FIRST: session paused for an EXTENDED period —
   user is down sick with viral bronchitis, resuming after recovery (not a same-day pause
   like prior entries). State is fully clean, nothing at risk: `main` at `b2ae378`, no
