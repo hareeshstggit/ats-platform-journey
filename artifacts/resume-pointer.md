@@ -10,7 +10,41 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-05 (later) — RESUME HERE FIRST: unrelated to the offers change below — re-ran
+- 2026-10-05 (even later) — RESUME HERE FIRST: user reported 3 just-uploaded candidates
+  stuck showing "(pending extraction)" in the Candidates list. Investigated via
+  cavecrew-investigator (Gate 5) — the 3 candidates had actually completed extraction
+  successfully in ~1 second; the real bug was `useCandidates()` (the list query) never
+  auto-refetching after the one-time invalidation that fires on upload's 202 response
+  (before Celery can possibly be done) — so the UI shows the correct-at-that-instant
+  "still pending" state and then never updates without a manual reload. **MERGED, PR
+  #262, squash, branch `dev/candidates-list-extraction-polling` deleted.** Fix mirrors
+  the existing `useGetBulkJob()` polling pattern exactly (3s interval while any row
+  non-terminal, stop once all terminal) — 1 file, 12 lines. Routed through full Gate 5
+  (investigator→builder→reviewer) despite the tiny size, per the gate's own "no
+  exceptions, even for an obvious root cause" rule. Local main synced to `29638dc`.
+  **Separately, also found and fixed (operational, not code) during this investigation:**
+  Celery beat was not running locally this session (I'd only started the worker
+  earlier) — started it, confirmed it correctly picked up and resolved a 32-day-old
+  stale test-fixture row via the reconciler. **Standing correction for future
+  sessions: use `scripts/dev-stack-watchdog.ps1` to start/verify the local dev stack
+  (Postgres/Redis/backend/Celery-worker/Celery-beat all at once, with duplicate-
+  process guards already built in) instead of manually starting each process — this
+  script already exists specifically because of a prior incident (2026-08-04, Celery
+  silently not running during a live demo) and already solves the "is Celery actually
+  healthy" question properly, at the infrastructure/supervision layer, not inside
+  application code.**
+  A related design discussion is worth remembering: the user initially proposed a
+  per-upload "check Celery health, self-heal if down" application-level mechanism —
+  correctly redirected to the above (process-level supervision is the right layer;
+  the web request handler spawning/restarting worker processes would be a real
+  architectural and security problem, and this exact project already lived through
+  the failure mode of a watch-loop over-restarting things, documented inside
+  `dev-stack-watchdog.ps1`'s own history comments). Decided NOT to build a new
+  synchronous health-check endpoint or heartbeat mechanism — the existing
+  `retry_count`/`extraction_error` fields (already shipped, `async-pipeline-durability`
+  D9) plus the now-working reconciler already provide the right signal; the only
+  missing piece was the frontend polling fix above.
+- 2026-10-05 (later) — unrelated to the offers change below — re-ran
   `backend/app/scripts/seed_uat_dataset.py` (recreated the 5 `_Test` orgs/10 users/10
   panelists/40 positions/221 levels from `docs/uat-test-data-reference.pdf`, local DB
   had been reset), then extended the SAME script in place with a resumable Phase 1 +
