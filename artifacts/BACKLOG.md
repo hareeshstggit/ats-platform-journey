@@ -1867,6 +1867,36 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
   guess shipped as if verified.
 - 🔴 **Project-wide OpenSpec format migration.** All existing `openspec/specs/<module>/spec.md` files (candidates, interviews, reporting, positions, offers, data-privacy, etc.) use this project's own house format — numbered sections + BR-xxx business rules — not the OpenSpec-tool-native `### Requirement:`/`#### Scenario:` format. Surfaced 2026-08-05 when writing delta specs for `async-pipeline-durability`: no existing requirement headers to copy for a proper MODIFIED block, so those deltas used ADDED throughout. User confirmed (2026-08-05): keep house format for now, don't block the reliability change on this, but track a full project-wide reformat to make every spec file uniformly OpenSpec-native (`### Requirement:` + `#### Scenario:`, one file per module, no numbered-section/BR-xxx house style) as its own future change. Large — one file alone (`candidates/spec.md`) is 1700+ lines.
 - 🔴 **Self-hosted local-LLM provider + automatic 4-provider failover chain for all 5 AI-enabled features** (`openspec/changes/llm-provider-failover-chain/`, proposed 2026-09-08, commit `d6f96cb` — proposal.md + design.md + 4 delta specs + tasks.md all complete, `/opsx:apply` NOT yet run, zero code written). Motivation: cost/latency at "hundreds of profiles per open position" screening volume vs. the current Gemini-interim setup; a live pilot this session validated Qwen2.5-14B-instruct (via Ollama/vLLM's OpenAI-compatible API) produces exact schema-compliant output on the hardest feature (interview level-kit: 10 focus areas × 5 questions, correct complexity distribution) — laptop hardware (4GB VRAM) was the only real constraint (3.6hr CPU-bound run), not model quality. Separately researched: on-prem production server spec (single NVIDIA L40S 48GB, ~$17-25K BOM). Scope: new `LLMProvider.LOCAL_LLM` in `app/shared/llm_gateway.py` (existing Gemini/Bedrock/Anthropic providers and their retry/circuit-breaker logic stay fully intact — additive only), plus a new `complete_with_failover()` orchestrating a fixed order (local LLM → Gemini → Bedrock → Anthropic) across all 5 features (candidate extraction, JD extraction, matching, screening questions, interview level-kit), with user-visible provenance labeling on failover (extends the existing free-text `provider`/`extraction_provider` field, no schema/migration change). **Blocking, before `/opsx:apply`:** 4 open design questions in `tasks.md` §1 need explicit user sign-off — most material one: shortening each provider's in-chain retry budget from 3 attempts to 1 (needed to keep a 4-provider chain inside the shared Celery `task_soft_time_limit=270s`, confirmed global via `celery_app.py:179`) changes existing Gemini-primary features' resilience today, not just adds an option. `design.md`'s chain-wide latency budget (provisionally 150s) is also flagged as unvalidated per-feature and is the single highest risk in the design.
+- 🟡 **BR-ORG-002's "any authenticated user can view artifact version history (read-only)"
+  scenario is not reachable through the real wired UI today** (found 2026-09-30, `ux-ui-
+  engineer`, §10.1 build). `organization-detail.tsx:219-221` mounts `<OrgFormDrawer>`
+  (the ONLY place the new `org-artifact-fieldset.tsx` lives) only when `canWrite`
+  (hr_admin/super_admin) — a pre-existing, deliberate gate ("Write-role drawers — never
+  mounted for read-only roles") that predates §10.1 and was never scoped for a read-only
+  consumer until now. The backend's read permission (BR-ORG-001: any authenticated
+  in-org user) is correct and tested; only the frontend has no path there for non-write
+  roles. **Not fixed as part of §10.1** — the naive fix (un-gate the drawer's mount)
+  would expose `org-form-drawer.tsx`'s fully EDITABLE name/address/contact fields to
+  read-only roles too, since that component has no read-only rendering mode; that's a
+  worse regression than today's gap, not a fix. A real fix needs one of: (a) a genuine
+  read-only variant of the whole org-edit drawer, or (b) a separate, smaller "view
+  templates" entry point for read-only roles that mounts only the artifact fieldset —
+  either is a real design decision, not a same-PR patch. Verified via component-level
+  tests only (`org-artifact-fieldset.test.tsx`/`org-form-drawer.test.tsx`), which is
+  honest coverage of the built component, not a claim that it's reachable end-to-end.
+- ⏸️ **Offer-approver admin management screen (grant/revoke/deactivate) deferred by
+  user choice, 2026-10-05.** §10.4 (`offers-org-templates-and-approval-workflow`) only
+  built the simple "link an existing `offers:approve`-holding user as an approver"
+  path (`POST /organizations/{org_id}/offer-approvers`). The backend already has a
+  full super_admin-only admin flow — `GET .../offer-approvers/lookup` (find platform
+  users NOT yet holding `offers:approve`), `POST .../offer-approvers/grant` (grant the
+  role as a second role + link), `POST .../offer-approvers/{id}/revoke` (strip the
+  role + deactivate the link), `POST .../offer-approvers/{id}/deactivate` (deactivate
+  the link only, role untouched) — with zero frontend consumer for any of the 4. This
+  is a real, bigger admin screen (different permission tier, role-granting UX,
+  revoke/deactivate distinction) — explicitly scoped out when the user was asked to
+  choose between "simple link-only" and "full admin CRUD incl. role-granting" for
+  §10.4's "inline add approver form." Build as its own future task when prioritized.
 
 ---
 
