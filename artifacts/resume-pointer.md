@@ -10,7 +10,33 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-05 — RESUME HERE FIRST: §10.4 (offer-submission mandatory remarks + inline
+- 2026-10-05 (later) — RESUME HERE FIRST: unrelated to the offers change below — re-ran
+  `backend/app/scripts/seed_uat_dataset.py` (recreated the 5 `_Test` orgs/10 users/10
+  panelists/40 positions/221 levels from `docs/uat-test-data-reference.pdf`, local DB
+  had been reset), then extended the SAME script in place with a resumable Phase 1 +
+  new Phase 2 (candidates/applications/interviews/interview_feedback/
+  application_status_history) so the seed data is actually exercisable against both of
+  the platform's currently-REAL reports (`positions/ageing`, `interviews/pipeline-
+  progress`) — confirmed only 2 of 12 spec'd reporting endpoints exist in code at all,
+  the other 10 are pure stub prose in `openspec/specs/reporting/spec.md`, nothing to
+  seed there. Deliberately did NOT create a second disjoint script (the existing
+  `seed_uat_recruitment_funnel.py` already made that mistake — its own separate 8
+  orgs/12 positions, never connected to this dataset) — user explicitly caught and
+  corrected this in-session before I built anything. **MERGED, PR #261, squash, branch
+  `dev/seed-uat-pipeline-data` deleted** (user's call: local-dev-only tooling, hard-
+  gated to `ENVIRONMENT=local`, but merged to main anyway "for record sake"). No
+  principal-reviewer dispatch — justified explicitly in the PR body (dev-only tooling,
+  never reaches production) and independently verified directly instead: diff/ruff/
+  mypy, live DB counts, a second script run confirmed idempotent no-op, both report
+  endpoints called with real HTTP, one sample application's full interview trail
+  spot-checked end-to-end (real interviews+feedback+panelist-assignments, not just
+  status strings). Local main synced to `22986e8`. Script bug found+fixed live during
+  the build (not left latent): `interview_levels.position_id = ANY(%s)` needed an
+  explicit `::uuid[]` cast in the Phase-1-resume path.
+  **To regenerate this dataset from scratch on a fresh DB:** `ENVIRONMENT=local` must
+  be exported in the shell (the script reads it from process env directly, not from
+  `backend/.env`) before running `python -m app.scripts.seed_uat_dataset`.
+- 2026-10-05 — §10.4 (offer-submission mandatory remarks + inline
   add-approver, BR-027) **MERGED, PR #260, squash, branch
   `dev/offers-submission-remarks-approver` deleted.** Local `main` synced to `e065f52`.
   No migration. `docs/BACKLOG.md` synced to the external mirror (`GO_LIVE_CHECKLIST.md`
