@@ -10,9 +10,11 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-06 — RESUME HERE FIRST: `screening-question-recruiter-quality` build COMPLETE,
-  spec-synced, archived — **ready for PR, not yet PR'd, NOT merged.** Branch
-  `dev/screening-question-quality`, full Rule 8 enhancement-class treatment (3-part fix:
+- 2026-10-06 — RESUME HERE FIRST: `screening-question-recruiter-quality` **MERGED, PR
+  #263, squash, branch `dev/screening-question-quality` deleted** (merge commit
+  `d4a4ca8`). Local `main` synced, Alembic confirmed `(head)` (no migration in this
+  change). Mirrored-file sync to `ats-platform-journey` done (`docs/BACKLOG.md` +
+  this file). Full Rule 8 enhancement-class treatment (3-part fix:
   BR-041 prompt rewrite for non-technical recruiters, BR-042 JD-extraction-provenance
   notice reusing existing infra, BR-043 regenerate-questions endpoint mirroring the
   `interviews` level-kit reset-then-reenqueue pattern).
@@ -48,14 +50,18 @@ below before doing anything else.
   `docs/GO_LIVE_CHECKLIST.md` row 79 (AI: screening question generation) updated inline;
   change archived to `openspec/changes/archive/2026-10-06-screening-question-recruiter-
   quality/`.
-  **Next steps on resume, in order:** (1) create the PR (branch is otherwise ready —
-  everything above is committed/ready to commit, just not yet pushed/PR'd — confirm
-  `git status`/`git log` first since this wasn't re-verified after the archive move).
-  (2) Run CI — check GH Actions usage first per standing practice. (3) Sync any touched
-  mirrored files to `ats-platform-journey` (this PR touches `.claude/agents/*.md`? no —
-  touches `docs/BACKLOG.md` and `memory/resume-pointer.md`, both mirrored — re-copy both
-  after merge, not before). (4) **Wait for the user's explicit merge approval — never
-  auto-merge a feature PR**, even if CI is green and the reviewer approved.
+  **CI note:** PR #263's `component-test` job failed twice in a row on a PRE-EXISTING
+  test (`screening-detail.test.tsx`'s breadcrumb (Bug-3) candidate-name test) — not a
+  random flake (identical failure both runs), root-caused via cavecrew-investigator +
+  2 full local suite runs (590/590 clean both times, confirming it was CI-only): the
+  test asserted the candidate's name right after only the position heading rendered,
+  never waiting for the independent candidate-name fetch — a latent race present on
+  `main` before this branch, but this PR's own new `useJd()`/mutation-hook additions to
+  `ScreeningDetail` shifted fetch timing enough to lose the race consistently in CI.
+  Fixed via Gate 5 (investigator→cavecrew-builder→principal-reviewer APPROVE): wrapped
+  the assertion in `waitFor`, 1-line test-only change, sibling "still loading" test
+  confirmed unaffected. All 11 CI checks green after.
+  This is now DONE — nothing left to resume on this item.
   **Local dev stack note:** uvicorn's `--reload` failed to pick up the new
   `regenerate-questions` route once this session (root cause not investigated, just
   restarted past it) — if this recurs a 2nd time, actually root-cause it instead of
