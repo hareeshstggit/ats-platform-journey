@@ -10,7 +10,63 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-05 (even later) — RESUME HERE FIRST: user reported 3 just-uploaded candidates
+- 2026-10-06 — RESUME HERE FIRST: `screening-question-recruiter-quality` build COMPLETE,
+  spec-synced, archived — **ready for PR, not yet PR'd, NOT merged.** Branch
+  `dev/screening-question-quality`, full Rule 8 enhancement-class treatment (3-part fix:
+  BR-041 prompt rewrite for non-technical recruiters, BR-042 JD-extraction-provenance
+  notice reusing existing infra, BR-043 regenerate-questions endpoint mirroring the
+  `interviews` level-kit reset-then-reenqueue pattern).
+  **Build + review history:** backend-engineer + ux-ui-engineer built in parallel →
+  principal-reviewer round 1 CHANGES-REQUESTED (2 Major: regenerate action unreachable on
+  outright generation failure; a real concurrency gap where the JD-notice's regenerate
+  follow-up could race an in-flight original Celery task — both independently confirmed
+  via direct code read, fixed via a shared `canRegenerate` gate
+  `hasQuestions || question_generation_error` on both call sites, both independently
+  re-verified) + 2 Minor (audit missing `old_values`, fixed; stale spec forward-refs,
+  resolved by the sync below) + 1 Nit (accepted, documented pattern). Missing functional
+  test (tasks.md 3.5) found by round 1, written by functional-test-engineer
+  (`test_functional_regenerate_questions.py`) — 5/6 assertions passed; the 6th
+  (new-questions-differ) failed for a confirmed EXTERNAL reason (live Gemini rate-limited
+  during both test runs, forcing both to BR-040's deterministic `local_scaffold`
+  fallback — NOT a guard regression, proven via the Celery task log's `updated=True` on
+  both runs) — functional-test-engineer returned `[CLEAR FOR INTEGRATION]`; cleanup
+  independently confirmed via direct DB query. Review round 2 (re-review of the fixes
+  only) → **APPROVE-WITH-NITS**, 1 new Minor found (no server-side guard mirroring the
+  frontend's `canRegenerate` check — a direct API call, bypassing the UI, could still race
+  an in-flight original generation task; narrow insider-only exploitability, non-
+  destructive field inconsistency, not data loss/PII). Fixed inline same-session per the
+  binding "APPROVE-WITH-NITS → fix inline + self-verify, no re-dispatch unless the fix
+  itself surfaces a new Major/Critical" rule (it didn't): new
+  `ScreeningGenerationInProgressError` (409 `SCREENING_GENERATION_IN_PROGRESS`) raised by
+  `request_question_regeneration` when `screening_questions` is empty AND
+  `question_generation_error` is NULL; 3 new unit tests (service ×2, router ×1); ruff/
+  mypy clean, 134 passed/11 skipped.
+  **Close-out done this session:** delta spec merged into main `openspec/specs/
+  candidates/spec.md` directly (BR-041/042/043, AC-068/069/070, new §11.11.9/§11.11.10 —
+  renumbered from the delta's planned §11.11.8/9 since main spec's own §11.11.8
+  "Dependencies" already existed under that number); `tasks.md` fully checked off;
+  `docs/GO_LIVE_CHECKLIST.md` row 79 (AI: screening question generation) updated inline;
+  change archived to `openspec/changes/archive/2026-10-06-screening-question-recruiter-
+  quality/`.
+  **Next steps on resume, in order:** (1) create the PR (branch is otherwise ready —
+  everything above is committed/ready to commit, just not yet pushed/PR'd — confirm
+  `git status`/`git log` first since this wasn't re-verified after the archive move).
+  (2) Run CI — check GH Actions usage first per standing practice. (3) Sync any touched
+  mirrored files to `ats-platform-journey` (this PR touches `.claude/agents/*.md`? no —
+  touches `docs/BACKLOG.md` and `memory/resume-pointer.md`, both mirrored — re-copy both
+  after merge, not before). (4) **Wait for the user's explicit merge approval — never
+  auto-merge a feature PR**, even if CI is green and the reviewer approved.
+  **Local dev stack note:** uvicorn's `--reload` failed to pick up the new
+  `regenerate-questions` route once this session (root cause not investigated, just
+  restarted past it) — if this recurs a 2nd time, actually root-cause it instead of
+  restarting again. Stack was confirmed healthy via `scripts/dev-stack-watchdog.ps1`
+  this morning (note: its own health-check probe raced uvicorn's startup and reported
+  "FAILED" even though the log showed a clean start — re-confirmed manually via curl,
+  worth tightening the probe's own wait/retry if this false-negative recurs).
+  Issue #1 from the user's original 2-issue report (position organization name not
+  editable) remains explicitly deferred — user said "Ignore, Issue 1" — not started, not
+  forgotten, just not this change's scope.
+- 2026-10-05 (even later) — user reported 3 just-uploaded candidates
   stuck showing "(pending extraction)" in the Candidates list. Investigated via
   cavecrew-investigator (Gate 5) — the 3 candidates had actually completed extraction
   successfully in ~1 second; the real bug was `useCandidates()` (the list query) never

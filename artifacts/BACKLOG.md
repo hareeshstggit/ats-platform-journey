@@ -317,6 +317,16 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
+- 🔴 **Stale `FT-`-prefixed functional-test fixture rows never cleaned up** — found
+  2026-10-05 by `functional-test-engineer` during the mandatory pre-run stale-data check
+  for the new `regenerate-questions` functional test: 15 `FT-`-prefixed positions + 13
+  `FT-`-prefixed candidates already present in the local dev DB, from unrelated prior
+  sessions/branches whose teardown either never ran or failed silently. Not created by
+  this task, not bulk-deleted (CLAUDE.md "Scoped cleanup only created entities" — no
+  session-ownership evidence for rows this task didn't create). Needs a one-off bulk
+  cleanup pass (soft-delete all `FT-%` positions/candidates with `deleted_at IS NULL`)
+  next time anyone is in this DB for other reasons — low urgency, local-dev-only, zero
+  production impact.
 - ✅ **`positions/_service_writes.py`'s create-position write path passes a caller-supplied
   `organization_id` straight into `PositionRepository.set_org_scope()`, which moves
   `app.current_org` to whatever org the request claims — so for a non-internal (org-scoped)
