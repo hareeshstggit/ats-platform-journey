@@ -10,7 +10,51 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-06 — RESUME HERE FIRST: `screening-question-recruiter-quality` **MERGED, PR
+- 2026-10-06 (later) — RESUME HERE FIRST: `candidate-extraction-provider-reliability`
+  build complete on branch `dev/candidate-extraction-provider-reliability` — spec synced,
+  review round 1 CHANGES-REQUESTED (process-only: spec sync hadn't been done yet, per
+  the reviewer correctly holding tasks.md's own step ordering), now closed; **not yet
+  archived/PR'd at time of writing — next step is archive + final verification + PR.**
+  Root cause (live-verified before any code was written): `CANDIDATE_EXTRACTION_PROVIDER`
+  (resume/profile parsing — separate config from `CANDIDATE_SCREENING_PROVIDER`, matching)
+  was never set in this environment, silently defaulting to `local_nlp`; a well-qualified
+  candidate showed zero AI job matches because the matcher (confirmed working correctly,
+  `gemini`, zero errors) was scoring against garbage offline-extracted skill data, not
+  because anything in the matching engine was broken. Fixed live during investigation:
+  set the env var, re-triggered extraction for the 3 affected candidates, confirmed
+  correct security-domain skills extracted and all 3 now match the position at
+  92%/85%/92%. Shipped fix (3 parts, BR-044/045/046): (1) doc/type-hint parity —
+  `profile_extractor.py`'s docstring already-worked gemini support now documented
+  everywhere, `docs/AI_TRANSITION_RUNBOOK.md` table updated, `backend/.env.example`
+  gained all 5 `*_PROVIDER` vars (previously had NONE of them — the root enabler of this
+  class of gap recurring); (2) real bug fix — `_extraction_mapping.py` was silently
+  nulling a candidate's real name on re-extraction when the agent didn't re-find it
+  (live-reproduced); (3) Job Matches-screen provenance notice — 3rd surface of the same
+  silent-AI-degradation-visibility pattern this session (after JD extraction and
+  screening questions), reuses existing `extraction_provider` field + retrigger
+  endpoint, no new backend. **Explicitly out of scope per user direction**
+  ("go with part 2 first, however ensure 1 is tracked correctly"): the much larger
+  `llm-provider-failover-chain` change (self-hosted local LLM + 4-provider automatic
+  failover across all 5 AI features, ~$17-25K hardware BOM, 4 blocking open design
+  questions) — already thoroughly tracked in `docs/BACKLOG.md`, cross-referenced from
+  this incident, not duplicated or re-scoped. **Production config checked, confirmed
+  N/A**: no live AWS deployment exists yet (`infrastructure/terraform/modules/secrets/
+  main.tf`'s own comment: "Resource bodies intentionally omitted in this skeleton", no
+  backend/API ECS task definition at all) — logged as a go-live forward-note in
+  `docs/GO_LIVE_CHECKLIST.md` instead of a live fix.
+  **Local dev stack note:** had to kill+restart uvicorn AND Celery worker twice this
+  session to pick up `.env` changes (pydantic settings cached at process start;
+  `dev-stack-watchdog.ps1`'s one-shot mode won't restart an already-"healthy" process
+  even after an env-file edit — this is expected/correct behavior for THAT script's
+  job, just worth remembering the watchdog alone isn't sufficient after a `.env` edit).
+  Also: the default `gemini-flash-latest` model was genuinely overloaded (503, not a
+  quota/429 issue) during this session's live verification — temporarily pointed
+  `GEMINI_MODEL_ID` at `gemini-3.5-flash-lite` to get a real live result, same
+  workaround pattern as the screening-question-recruiter-quality session earlier
+  today. `GEMINI_MODEL_ID` override may still be in local `.env` — revert to the
+  default (remove the line) once confirmed no longer needed, it was a verification
+  workaround, not an intended permanent change.
+- 2026-10-06 — `screening-question-recruiter-quality` **MERGED, PR
   #263, squash, branch `dev/screening-question-quality` deleted** (merge commit
   `d4a4ca8`). Local `main` synced, Alembic confirmed `(head)` (no migration in this
   change). Mirrored-file sync to `ats-platform-journey` done (`docs/BACKLOG.md` +
