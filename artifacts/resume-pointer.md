@@ -10,11 +10,11 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-06 (later) — RESUME HERE FIRST: `candidate-extraction-provider-reliability`
-  build complete on branch `dev/candidate-extraction-provider-reliability` — spec synced,
-  review round 1 CHANGES-REQUESTED (process-only: spec sync hadn't been done yet, per
-  the reviewer correctly holding tasks.md's own step ordering), now closed; **not yet
-  archived/PR'd at time of writing — next step is archive + final verification + PR.**
+- 2026-10-06 (later) — `candidate-extraction-provider-reliability` **MERGED, PR #264,
+  squash, branch `dev/candidate-extraction-provider-reliability` deleted** (merge commit
+  `7f66573`). Local `main` synced, Alembic confirmed `(head)` (no migration in this
+  change). Mirrored files (`docs/BACKLOG.md`, `memory/resume-pointer.md`) synced to
+  `ats-platform-journey`. All 11 CI checks green first try (no flake this time).
   Root cause (live-verified before any code was written): `CANDIDATE_EXTRACTION_PROVIDER`
   (resume/profile parsing — separate config from `CANDIDATE_SCREENING_PROVIDER`, matching)
   was never set in this environment, silently defaulting to `local_nlp`; a well-qualified
