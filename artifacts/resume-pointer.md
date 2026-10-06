@@ -10,6 +10,63 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-06 (even later) — `interview-kit-position-skill-grounding` **MERGED, PR #265,
+  squash, branch `dev/interview-kit-position-skill-grounding` deleted** (merge commit
+  `1752f9a`). Local `main` synced, Alembic confirmed `(head)` (no migration in this
+  change). All 5 backend-ci.yml checks green on first try (no frontend files touched,
+  frontend-ci.yml correctly didn't trigger). Review round 1: CHANGES-REQUESTED — 1 Major
+  (`level_kit_agent.py` hit 339 lines, over the 300-line cap, after adding BR-P20-013's
+  skills section — split prompt-construction logic into `_level_kit_prompts.py` as a new
+  `build_user_prompt()` function, same precedent idiom this module family already uses;
+  now 298 lines) + 1 Minor (archived delta-spec scenario overclaimed literal byte-identity
+  of live-call output across experience bands, contradicting the change's own honest
+  finding — corrected to state domain-level consistency + the real, unit-tested
+  prompt-level guarantee). Both closed inline same-session, zero regressions, no round 2
+  needed. Found via a direct, proactive
+  code audit (user's own ask, not a bug report this time, following this session's two
+  prior AI-pipeline-quality fixes) that interview level-kit generation had NEVER used a
+  position's actual extracted JD skills since the feature was first built — unlike
+  screening-question generation and candidate-position matching, which both already did.
+  `LevelKitAgentContext` (the entire AI prompt input) had exactly 6 fields — no
+  `primary_skills`/`secondary_skills` at all — so focus areas were generated purely from
+  the job TITLE plus a hardcoded, level-sequence-keyed depth hint that was IDENTICAL for
+  every position and explicitly software-engineering-biased ("applied algorithms, data
+  structures, OOP design, concurrency concepts"). Fixed (BR-P20-011 revised, new
+  BR-P20-013): `_kit_context.py` now LEFT JOINs the position's current `job_descriptions`
+  row; the prompt now names the position's real skills as the basis for focus-area
+  selection; the hardcoded depth hints were stripped down to complexity/format guidance
+  only (breadth-vs-depth, question-type preference), with all domain-specific topic
+  examples removed. **Explicitly, deliberately unchanged per the user's own direction**:
+  candidate experience band continues to affect ONLY question depth/framing, never which
+  10 focus areas are picked — this was an open design question I raised before building,
+  user chose to keep the existing fairness/consistency property (comparable interviews
+  across candidates for the same role) rather than extend candidate-profile-awareness to
+  focus-area selection.
+  **Live-verified** against the real "Lead Product Security Engineer_Yodlee" position at
+  STG L1 and L2 — generated focus areas named real security-domain topics (Threat
+  Modelling, Secure Code Review, Application Penetration Testing/Red Teaming, GenAI/LLM
+  Security, Cloud-Native/Container Security, FinTech Compliance) with zero algorithms/
+  OOP/concurrency content; re-ran the same position+level with two different candidate
+  experience bands and confirmed focus areas stayed in the same skill domain both times
+  (proving BR-P20-012 still holds against the new prompt shape).
+  **Real bug found and fixed along the way** (not in the original plan, found during the
+  build's own live verification, reproduced against the unmodified prompt too — confirmed
+  pre-existing): `gemini-3.5-flash-lite` non-deterministically returns the bare
+  `[...]` focus-area array instead of the required `{"focus_areas": [...]}` wrapper on an
+  observed ~40-60% of live calls, which `_parse()` previously treated as a parse failure
+  (silently degrading to weaker `local_kit` content) — closed inline with a 2-line
+  defensive normalize-before-validate fix + a dedicated regression test, since it directly
+  undermines the very reliability this change is meant to improve.
+  **Provider config was already correct** (`INTERVIEW_KIT_PROVIDER=gemini`) — no config
+  gap like the `candidate-extraction-provider-reliability` incident; this was purely a
+  prompt/context-quality gap.
+  This is now DONE — nothing left to resume on this item.
+  **Local dev stack note:** `GEMINI_MODEL_ID=gemini-3.5-flash-lite` override (from an
+  earlier session's 503-workaround) is STILL in local `.env` — the default
+  `gemini-flash-latest` was independently re-confirmed still overloaded (503) again
+  during this build's own live verification, so the override remains necessary, not
+  optional, as of this writing. Revisit/remove only once the default model's capacity
+  issue is confirmed resolved.
 - 2026-10-06 (later) — `candidate-extraction-provider-reliability` **MERGED, PR #264,
   squash, branch `dev/candidate-extraction-provider-reliability` deleted** (merge commit
   `7f66573`). Local `main` synced, Alembic confirmed `(head)` (no migration in this
