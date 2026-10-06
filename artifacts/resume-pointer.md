@@ -10,6 +10,59 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-06 (still later) — RESUME HERE FIRST: **two linked, in-flight threads.**
+  **Thread 1 — `dev/gemini-fallback-and-degradation-visibility` (PAUSED, NOT merge-ready).**
+  Full Rule 8 build complete and committed as WIP (`6a0b90c`): Gemini model-level fallback
+  (new `GEMINI_FALLBACK_MODEL_ID` config) across all 5 AI pipelines — "swap on final
+  attempt" for the 2 in-process-retry-loop features (JD extraction, interview kit, zero
+  added latency) and "one bounded extra attempt on the final Celery retry" for the 3
+  Celery-`autoretry_for` features (matching, candidate extraction, screening questions) —
+  plus degradation-visibility notices + recovery actions for the 2 remaining AI surfaces
+  (AI Job Match section notice BR-047, interview-kit-drawer honest attribution + Regenerate
+  button BR-P20-014). Both backend and frontend halves independently verified clean
+  (ruff/mypy/1045 backend tests; tsc/eslint/39 frontend tests) — but **BLOCKED, not sent to
+  review**, because this build's own binding live-verification step surfaced a more
+  foundational, pre-existing bug (see Thread 2). Do NOT resume this thread until Thread 2
+  is merged — then: (1) merge/rebase Thread 2's fix into this branch, (2) RE-RUN the
+  latency-budget arithmetic in the design (tasks.md section 7) — it was built on the WRONG
+  ~60s-per-call assumption, needs redoing on the corrected number, (3) RE-RUN the live
+  verification (tasks.md section 10) end-to-end now that real calls should actually
+  complete in ~seconds instead of ~170s, (4) only then dispatch `principal-reviewer`
+  (ESCALATED TO OPUS/HIGH per design.md's own Model-tier note — this touches Celery retry
+  behavior in 3 pipelines) + `principal-reliability-engineer` for the latency-budget deep
+  dive, per tasks.md section 12.
+  **Thread 2 — the SDK-retry bug itself (not yet branched/built at time of writing — next
+  action on resume).** Found DURING Thread 1's own live-verification (not assumed, not
+  read-only — reproduced identically on the real dev machine, not just a sandbox): a real
+  Gemini call via `llm_gateway_providers.py::call_gemini_with_tokens` took ~170s to
+  fail/succeed, not the documented `LLM_PROVIDER_TIMEOUT_SECONDS=60s`. Root-caused via
+  reading the actual `google-genai` SDK (v2.16.0) source
+  (`.venv/Lib/site-packages/google/genai/_api_client.py:506-510`): the SDK has its OWN
+  default internal retry policy (5 total attempts, 1s/2s/4s/8s backoff, retries on
+  408/429/500/502/503/504) — `llm_gateway_providers.py`'s own code comment claims
+  "SDK-level retries OFF — Celery owns retries at the task level" but the code never
+  actually sets `retryOptions` on the `HttpOptions`/client construction to disable this
+  default. Every Gemini call in this codebase has been silently retrying up to 5x
+  internally this whole time, invisible to Celery's own retry logic — meaning EVERY
+  documented latency-budget claim in this codebase (including `level_kit_agent.py`'s own
+  "~23s headroom under the 270s Celery soft-time-limit" comment) has never actually been
+  true. This is a genuine, confirmed, PRE-EXISTING production reliability risk, independent
+  of Thread 1's feature work — under a real sustained Gemini outage, JD extraction and
+  interview-kit generation have likely already been silently exceeding their documented
+  safety margins. **User's explicit direction: fix this first, as its own Rule-8 change,
+  merge it, THEN resume Thread 1 on the corrected foundation.** The fix itself is narrow
+  and well-understood: set `retryOptions=genai_types.HttpRetryOptions(attempts=1)` on the
+  Gemini client construction in `llm_gateway_providers.py::call_gemini_with_tokens` (the
+  ONLY call site needing this — confirmed single implementation, shared by all gemini-path
+  features except interview-kit's own separately-split `_level_kit_gemini.py`, which ALSO
+  needs the same fix since it makes its own native SDK call, not routed through the shared
+  gateway — check both). Live-verify (binding) by re-running the exact same timed real-call
+  script used to find this bug, confirming the primary model now fails/succeeds in ~seconds
+  (bounded by the real `LLM_PROVIDER_TIMEOUT_SECONDS=60s`), not ~170s. Update
+  `openspec/specs/pipeline-reliability/spec.md` and `interviews/spec.md`'s BR-P20-010/011
+  "~23s headroom" claim to reflect the corrected, now-actually-true latency numbers once
+  fixed. **Next action on resume: create a new branch off `main` (NOT off the Thread-1
+  branch) for this fix, since it's independent/more foundational and should merge first.**
 - 2026-10-06 (even later) — `interview-kit-position-skill-grounding` **MERGED, PR #265,
   squash, branch `dev/interview-kit-position-skill-grounding` deleted** (merge commit
   `1752f9a`). Local `main` synced, Alembic confirmed `(head)` (no migration in this
