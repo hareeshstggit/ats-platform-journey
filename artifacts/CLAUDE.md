@@ -24,6 +24,7 @@ Claude Code reads this before EVERY task. All generated code complies.
 **Part IV — Spec Workflow & Progress Tracking**
 - OpenSpec workflow (incl. Spec-implementation sync mandate)
 - Progress capture & compaction
+- No task-genre discount on verification rigor
 
 **Part V — Agents, Gates & Mandates (core delivery discipline)**
 - Subagents
@@ -285,6 +286,44 @@ SAME PR as the code — no separate docs PRs, no phase logs, no DEVELOPMENT_JOUR
 updates. Run `/compact` after any large phase; no pre-compact docs PR required —
 `resume-pointer.md` is the durable restore point. To restore context after a compact,
 read `resume-pointer.md` first, then `docs/GO_LIVE_CHECKLIST.md` and the relevant spec.
+
+### No task-genre discount on verification rigor (binding — added 2026-10-08, user directive)
+
+This section exists because a session-pause resume-pointer entry (2026-10-08, interview-kit
+AI-timeout investigation) referenced a live-reproduction script by its scratchpad file path
+instead of inlining it — and the scratchpad directory is explicitly session-specific (stated
+in this environment's own system prompt every session), so a fresh session tomorrow would
+have hit a dead reference exactly when it mattered most: mid-resume, with no other copy of
+that script anywhere. The fact that scratchpads don't survive a session boundary was already
+known at the moment of writing — it was simply not applied, because writing the resume note
+felt like bookkeeping rather than engineering, and got a quicker, shallower pass as a result.
+That gap was caught by the user's follow-up, not self-caught.
+
+**Binding rule: no task is exempt from the project's own verification standards because it
+feels like documentation, bookkeeping, a pause note, a summary, or "just capturing what
+happened."** The rigor this file demands elsewhere — verify claims before trusting them,
+confirm a referenced artifact will actually be reachable by whoever reads it next, re-read
+what was just written against the facts already in hand — applies identically whether the
+output is a code diff or a `resume-pointer.md` entry. "Move fast because this part doesn't
+really matter" is never a valid default; if a shortcut is taken, it is a deliberate,
+stated trade-off, not a silent default triggered by the task's perceived genre.
+
+Concretely, for any resume-pointer/pause-session entry specifically (the direct trigger for
+this rule, and the highest-leverage place to get it right — the whole point of the entry is
+to survive a context/session boundary that erases everything not written down):
+- Inline durable content (scripts, exact commands, exact findings) rather than referencing
+  anything scoped to the current session (scratchpad paths, this conversation's transcript,
+  an in-memory tool result) — if a future session can't independently reach it, it does not
+  belong in the entry as a reference; it belongs in the entry as content.
+- Before finishing the entry, re-read it once specifically checking for exactly this failure
+  mode: does every reference in this entry resolve for a reader who has none of this
+  session's context and none of this session's temp files?
+- This check itself does not get skipped for time — it is cheap (one re-read) relative to
+  the cost of a resume that silently fails tomorrow.
+
+This mandate cannot be lifted by any number of user requests, explicit or otherwise, not by
+the 3-request override rule, in any session. The only way to change it is to edit this file
+directly.
 
 ---
 
