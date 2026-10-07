@@ -241,7 +241,7 @@ hand.
 | 5 | Interview Panelists (global master list) | ✅ | ✅ | ✅ | ✅ | Live — CRUD, dedup, RLS. |
 | 6 | Candidates (profiles, dedup, PII encryption) | ✅ | ✅ | ✅ | ✅ | Live — backend + UI, resume-parsing AI wired. |
 | 7 | Applications (pipeline, stage transitions) | ✅ | ✅ | ✅ | ✅ | Live — full 26-status lifecycle. |
-| 8 | Screening (knockout, AI match/rank) | 🟡 | ✅ | ✅ | ✅ | Backend + decision layer live; **UI not built.** |
+| 8 | Screening (knockout, AI match/rank) | ✅ | ✅ | ✅ | ✅ | Live — full UI (`screening-detail.tsx`, role-briefing panel, question cards, regenerate action, start dialog) confirmed built via direct filesystem check 2026-10-07; this row previously read "UI not built," stale since before PR #223 (CR#1 consolidation, 2026-08-18). |
 | 9 | Interviews (scheduling, scorecards, feedback) | ✅ | ✅ | ✅ | ✅ | Live — all phases, AI kit generation included. |
 | 10 | Offers / Approvals | ✅ | ✅ | ✅ | ✅ | Live — state machine, compliance engine, PDF+S3. |
 | 11 | Onboarding / Preboarding | ⬜ | ⬜ | ⬜ | ⬜ | Nothing built — only an enum marker on `positions`/`applications`. No dedicated table. |
@@ -251,7 +251,7 @@ hand.
 | 15 | Notifications | ⬜ | 🟡 | 🟡 | ✅ | Only 2 events wired via SES, **feature-flagged off**. No in-app task center/digest UI. |
 | 16 | Integrations (SSO, HRIS, calendar, job boards, vendors, e-sign) | ⬜ | ⬜ | ⬜ | ⬜ | Nothing built at all. |
 
-**10 of 16 modules fully live end-to-end.** The remaining 6 are exactly what D1/D2/D4/D5 above are
+**11 of 16 modules fully live end-to-end.** The remaining 5 are exactly what D1/D2/D4/D5 above are
 scoping decisions about.
 
 ### 0.5 AWS infrastructure request checklist (2026-08-08) — for IT
