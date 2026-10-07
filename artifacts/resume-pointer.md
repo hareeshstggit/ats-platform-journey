@@ -10,7 +10,25 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-07 (latest) — **Interview-kit create-with-schedule fix MERGED, PR #271, squash,
+- 2026-10-07 (latest) — **Interview-kit Generate-action follow-up MERGED, PR #272, squash,
+  branch `dev/interview-kit-generate-empty-state-action` deleted** (merge commit
+  `1ab5364`), no migration, frontend-only. Closed the gap PR #271 left: once the backend
+  stopped silently skipping kit generation, the user asked why they couldn't just generate
+  the missing kit themselves for the one interview that had already broken — answer: the
+  kit drawer's zero-kit empty state never offered any action at all, even though the
+  backend's regenerate endpoint already works fine with no existing kit row (confirmed
+  live before writing any UI code). Added an `isScheduled` prop to
+  `interview-kit-drawer.tsx`: unscheduled case keeps the original by-design message
+  unchanged; scheduled-but-missing case shows a corrected message + "Generate Kit" button
+  reusing the existing `canRegenerate`-gated mutation. `principal-reviewer`
+  APPROVE-WITH-NITS — one Minor tracked in `docs/BACKLOG.md` (pre-existing, not introduced
+  here: frontend's write-role check is a superset of this endpoint's actual backend role
+  gate, `super_admin` would see the button but get a 403). The specific interview that
+  surfaced this whole incident (`interview_id=bebd6002-...`, candidate "Dandu Mahidhar
+  Reddy") already has a real kit now — triggered directly via the same regenerate
+  endpoint this fix exposes in the UI, confirmed `completed` with 10 focus areas.
+
+- 2026-10-07 — **Interview-kit create-with-schedule fix MERGED, PR #271, squash,
   branch `dev/interview-kit-enqueue-on-create-with-schedule` deleted** (merge commit
   `afced3b`). Alembic confirmed `(head)`, no migration. User-reported: an interview
   created via the real create-interview UI flow (its own built-in schedule step submits

@@ -317,6 +317,17 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
+- 🟡 **Frontend `INTERVIEW_WRITE_ROLES` (`super_admin`/`hr_admin`/`recruiter`) is a superset
+  of the backend's actual role gate on interview-kit regenerate/generate
+  (`_router_level_kit.py`'s `_MUTATE_ROLES = ("recruiter", "hr_admin")`)** — found
+  2026-10-07, `principal-reviewer`, on the interview-kit "Generate Kit" empty-state action
+  (follow-up to PR #271). A `super_admin` user sees the Regenerate/Generate Kit button but
+  gets a 403 on click, since this specific endpoint's backend role set doesn't include
+  `super_admin` while the frontend's shared write-role check does. Pre-existing (already
+  affected the shipped Regenerate button before this session), not introduced by any
+  recent change — just surfaced because this session doubled the surface where it's
+  user-visible. Cheap fix (either add `super_admin` to `_MUTATE_ROLES` or carve out a
+  narrower frontend role check for this one action) — not blocking, not urgent.
 - 🟡 **`GET /api/v1/applications?status=shortlisted` 500s — no such `applications.status`
   enum value** — found 2026-10-07, `functional-test-engineer`, during the interview-kit
   create-with-schedule fix's live verification (unrelated to that fix, flagged per the
