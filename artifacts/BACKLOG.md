@@ -317,6 +317,21 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
+- 🟡 **Pre-fix level kits may still mis-key scorecard xlsx rows if AI output order ever
+  diverged from `sequence`** — found 2026-10-07, `principal-reviewer`, on the
+  `interview-scorecard-xlsx-export` fix (BR-P20-015). `level_kit_generator.py::
+  _build_scorecard_template` now preserves each question's real `sequence` value so the
+  scorecard's `question_id` reconstruction matches submitted feedback correctly for all
+  NEW kit generations. For level kits generated BEFORE this fix, the model's self-reported
+  `sequence` was never persisted anywhere (only the LLM's raw array order), so there is no
+  authoritative source to backfill from — if any pre-fix AI-generated kit's question array
+  order happened to diverge from its own `sequence` field, that specific kit's scorecard
+  may still mis-key a row. Not a schema/migration change (internal JSONB key addition, no
+  DDL), so the Backfill Mandate doesn't formally trigger, but the same spirit applies: this
+  is flagged rather than silently assumed fine. **Resolves itself** on kit regeneration
+  (the existing `POST .../level-kit/regenerate` action rebuilds `scorecard_template` with
+  the fix in place) — no action needed unless a specific pre-fix kit's scorecard is
+  reported as showing an unexpectedly blank row that should have feedback.
 - 🔴 **Stale `FT-`-prefixed functional-test fixture rows never cleaned up** — found
   2026-10-05 by `functional-test-engineer` during the mandatory pre-run stale-data check
   for the new `regenerate-questions` functional test: 15 `FT-`-prefixed positions + 13

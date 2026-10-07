@@ -10,6 +10,41 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-07 (latest) — **`interview-scorecard-xlsx-export` (BR-P20-015) MERGED, PR #269,
+  squash, branch `dev/interview-scorecard-xlsx-export` deleted** (merge commit `0d5827e`).
+  Local `main` synced, Alembic confirmed `(head)` at `0067_screening_role_briefing` — no
+  migration in this PR. All CI green. Change archived at
+  `openspec/changes/archive/2026-10-07-interview-scorecard-xlsx-export/`. New downloadable `.xlsx` interview
+  scorecard combining the kit's existing `scorecard_template` (focus-area questions +
+  expected answers), applicable non-technical criteria, each panelist's existing 1-5 score +
+  comment (side-by-side column-pairs, up to 3 panelists), the user-provided exact 5-row
+  rubric table (Novice→Expert, verbatim), and the round's `interviews.status` as the final
+  result. No schema change, no new role gate.
+  **Session was paused mid-verification for a laptop restart** (a stale backend process
+  genuinely could not be killed from any available shell — confirmed, not a skipped step)
+  — resumed cleanly after restart: fresh stack brought up, backend confirmed to genuinely
+  have the new route registered (checked `/openapi.json` directly, not just a health check),
+  then the real success-path verification completed directly against the real API (no
+  browser tool available in this session, same constraint the build agent hit — substituted
+  with: real login, real `GET .../scorecard.xlsx` call → 200 + real presigned URL → real
+  file downloaded and reopened via `openpyxl` → every section independently confirmed
+  correct against real DB data for "Lead Product Security Engineer_Yodlee" — header,
+  73-row question table (68 focus-area + 5 non-technical), the exact rubric table verbatim,
+  `Final Result: Pending` correctly sourced from `interviews.status`). Combined with the
+  frontend's own prior live confirmation that the button correctly wires the request (fired
+  the right URL, correctly displayed the 404 before the restart) and its unit-tested
+  `window.open` call, this closes Quality Gate Rule 4's intent via the strongest available
+  substitute for an actual browser click, which this session's tooling cannot perform.
+  Spec synced (`openspec/specs/interviews/spec.md` BR-P20-015), `docs/GO_LIVE_CHECKLIST.md`
+  updated inline. Mid-build, `principal-reviewer` found a real Major: `_scorecard_xlsx.py`'s
+  `question_id` reconstruction used list position instead of each question's own `sequence`
+  field — unsafe for the AI-generation path, which never validates array order against
+  `sequence` (a known LLM structured-output failure mode). Fixed by preserving the real
+  `sequence` through `level_kit_generator.py::_build_scorecard_template`; re-reviewed to
+  **APPROVE**. One non-blocking follow-up tracked in `docs/BACKLOG.md` §4 (pre-fix kits have
+  no backfill source for their real sequence — resolves on kit regeneration). **Next action:
+  none — this item is closed.**
+
 - 2026-10-07 (even later) — **`ai-job-match-stale-empty-state` bug fix MERGED, PR #268,
   squash, branch `fix/ai-job-match-stale-empty-state` deleted** (merge commit `df01dd4`).
   All CI green (frontend-only, no migration — `backend-ci.yml` correctly didn't trigger).
