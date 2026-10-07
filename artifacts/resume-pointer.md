@@ -61,9 +61,85 @@ below before doing anything else.
     Anthropic's streaming API (`client.messages.stream(...)`) is actually compatible with
     the `output_config` JSON-schema structured-output parameter this call already uses —
     this must be confirmed BEFORE designing the fix (per the binding live-verification
-    mandate — never assume a third-party API capability). The test script is saved at
-    `backend`'s scratch dir reference in this session's transcript but was NOT run before
-    pausing — **re-run this check FIRST next session**, before writing any design doc.
+    mandate — never assume a third-party API capability). The script was written but
+    **NOT run** before pausing — a prior session's scratchpad directory is tied to that
+    session's own id and will NOT be reachable from a fresh session, so its content is
+    inlined here in full rather than referenced by path. **Run this FIRST next session**
+    (save to the new session's own scratchpad, e.g. `repro_anthropic_streaming.py`, then
+    `cd backend && ./.venv/Scripts/python.exe <path>`), before writing any design doc:
+    ```python
+    import os, sys, time
+
+    BACKEND = r"c:\Users\hareesh\OneDrive - STG Partners\Documents\AI Initiative Self Learning\ats-platform-project\backend"
+    sys.path.insert(0, BACKEND)
+
+    env = {}
+    with open(os.path.join(BACKEND, ".env"), encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            env[k.strip()] = v.strip()
+            os.environ.setdefault(k.strip(), v.strip())
+
+    from app.modules.interviews.agents._level_kit_prompts import _SYSTEM, _OUTPUT_SCHEMA  # noqa: E402
+
+    import anthropic  # noqa: E402
+
+    # Per-chunk read timeout, not a full-response timeout — this is the point being tested.
+    client = anthropic.Anthropic(timeout=60.0)
+    model = "claude-sonnet-4-6"
+
+    prompt = (
+        "Position: Lead Product Security Engineer. Organization: STG Labs. "
+        "Level: STG Labs Level 1. Candidate experience: 10 years 0 months. "
+        "Primary skills: Red Teaming, Penetration Testing, VAPT, SAST, DAST, "
+        "Threat Modeling, Secure SDLC, PCI-DSS Compliance, ISO 27001. "
+        "Generate the interview kit per the system instructions."
+    )
+
+    print("Starting streaming call, 60s per-chunk client timeout...", flush=True)
+    t0 = time.time()
+    chunks = 0
+    text_parts = []
+    try:
+        with client.messages.stream(
+            model=model,
+            max_tokens=12000,
+            system=_SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+            output_config={"format": {"type": "json_schema", "schema": _OUTPUT_SCHEMA}},
+        ) as stream:
+            for event in stream.text_stream:
+                chunks += 1
+                text_parts.append(event)
+                if chunks % 50 == 0:
+                    print(f"  ...{chunks} chunks, {time.time()-t0:.1f}s elapsed", flush=True)
+            final = stream.get_final_message()
+        dt = time.time() - t0
+        full_text = "".join(text_parts)
+        print(f"SUCCESS in {dt:.1f}s — {chunks} chunks, output_tokens={final.usage.output_tokens}, text_len={len(full_text)}", flush=True)
+        print("tail of text:", full_text[-200:], flush=True)
+    except Exception as e:
+        dt = time.time() - t0
+        print(f"FAILED in {dt:.1f}s after {chunks} chunks: {type(e).__name__}: {str(e)[:500]}", flush=True)
+    ```
+    If this succeeds without hitting `APITimeoutError`, streaming is confirmed viable and
+    the design can proceed on that assumption. If it ALSO times out, that changes the
+    whole plan — streaming alone wouldn't be a sufficient fix, and this must be reported
+    back before designing anything (don't silently fall back to a different approach
+    without surfacing it first, per the same live-verification discipline).
+    For reference, the NON-streaming version of this same call (already run, already
+    confirmed failing) was:
+    ```python
+    client = anthropic.Anthropic(timeout=120.0)
+    resp = client.messages.create(
+        model="claude-sonnet-4-6", max_tokens=12000, system=_SYSTEM,
+        messages=[{"role": "user", "content": prompt}],
+        output_config={"format": {"type": "json_schema", "schema": _OUTPUT_SCHEMA}},
+    )  # → APITimeoutError after 362.7s, confirmed 2026-10-08
+    ```
   - **Resume steps, in order:** (1) run the streaming+schema compatibility test; (2) if
     compatible, write a scoped design for converting interview-kit generation to
     streaming (retry/circuit-breaker/fallback interaction, how a timeout is detected
