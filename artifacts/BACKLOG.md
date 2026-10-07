@@ -327,6 +327,96 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   cleanup pass (soft-delete all `FT-%` positions/candidates with `deleted_at IS NULL`)
   next time anyone is in this DB for other reasons — low urgency, local-dev-only, zero
   production impact.
+- 🔴 **`gemini-fallback-and-degradation-visibility` (branch `dev/gemini-fallback-and-
+  degradation-visibility`, WIP, NOT merged) — the shared per-provider circuit breaker
+  pre-empts the Gemini model-level fallback this change exists to add, for 3 of its 5
+  target pipelines (matching, candidate extraction, JD extraction).** Found 2026-10-06 by
+  two independent opus-tier reviews (`principal-reviewer` + `principal-reliability-
+  engineer`), both confirmed by actually running the real gateway code against fakeredis
+  (not just read). Mechanism: `llm_gateway.py`'s breaker trips after `LLM_CIRCUIT_BREAKER_
+  THRESHOLD=3` consecutive failures (60s cooldown); the 3 affected pipelines' own
+  retry/backoff attempts (0-7s total) trip the breaker well before the final/fallback
+  attempt runs. Once tripped, `complete()`/`complete_with_tokens()` returns `None` instead
+  of raising `TransientProviderError` — so the new fallback logic's
+  `except TransientProviderError:` branch is structurally unreachable; callers silently
+  degrade to the existing non-AI fallback exactly as before this change, with zero actual
+  improvement for the scenario (a sustained primary-model outage) it was built for. Only
+  interview-kit (bypasses the shared gateway/breaker entirely — separately tracked
+  architectural split, see this section's own earlier entries) and screening-question
+  generation (single attempt, degrades on any failure) actually exercise the fallback as
+  designed. A secondary Major finding in the same review: `_matching_tasks.py`'s new
+  nested `except TransientProviderError:` block can let a malformed fallback-model
+  response (bad JSON item — missing `position_id`, wrong type, etc.) escape BOTH the inner
+  and outer exception handlers, leaving a candidate with no match stamp and no recorded
+  error (pre-change, the last attempt always produced an explicit offline result). Fix
+  (per both reviewers, convergent, already scoped with example code in the review
+  reports): give the fallback model its own circuit-breaker key (scope by `model_id`, not
+  just provider string) and switch matching/extraction/JD extraction to SWAP the model on
+  the final attempt (same shape JD/interview-kit already use) instead of ADDING a second
+  call — this removes the doubled worst-case latency, closes the malformed-response
+  escape, and closes two secondary exposure windows (extraction reconciler false-positive
+  re-drive; ECS `stopTimeout=120` exposure) the "add" shape introduced. **RESOLVED
+  2026-10-07, commit `7dbc81d`** — `llm_gateway.py` now scopes the breaker by
+  provider+model (`_breaker_scope`), and matching/extraction swap-not-add exactly like
+  JD/interview-kit. Independently re-verified (diff read, ruff/mypy, full test re-run) and
+  confirmed closed by a FOCUSED `principal-reviewer` re-review, which also caught one new
+  small gap — see next item.
+- 🟡 **Fallback-model usage is not distinguishable from primary-model success in logs/DB
+  for matching, candidate extraction, OR JD extraction** — found 2026-10-07 by the focused
+  re-review of the breaker fix above. The breaker fix's swap-not-add shape means
+  `effective_provider`/`screening_provider`/`extraction_provider` resolve to the bare
+  provider string ("gemini") whether the primary or the swapped fallback model actually
+  produced the result — this was ALREADY true for JD extraction before this session
+  (`jd_extractor.py::provider_label()` computes the label from the primary
+  `GEMINI_MODEL_ID` once, before the retry loop, and never updates it if a later iteration
+  swaps models) and is now also true for matching/extraction, which previously at least had
+  a (differently, also-imperfectly labeled) log line for a fallback success under the old
+  "add" shape. **Partially fixed same session (commit `c045aa7`):** matching/extraction now
+  log `matching_fallback_model_used`/`extraction_fallback_model_used` when the swap fires —
+  closes the log-level visibility gap for those 2 pipelines. **Still open:** (a) the
+  DB/audit field itself (`screening_provider`/`extraction_provider`) still doesn't
+  distinguish primary vs fallback for any of the 3 pipelines — would need a schema-level
+  change (new column or encoded value like `"gemini:fallback"`) per
+  `docs/SCHEMA_EVOLUTION.md`'s decision tree, out of scope for a quick logging fix; (b) JD
+  extraction's own pre-existing `provider_label()` gap was not touched (not introduced by
+  this session's work, tracked here for the first time).
+- 🟡 **Gemini transient-error classification: a network-level timeout (`httpx.
+  TimeoutException`/`NetworkError`) is misclassified as `PermanentProviderError`, not
+  `TransientProviderError`** — found 2026-10-06 by `principal-reliability-engineer`
+  (confirmed by executing `wrap_gemini_error` against a real `httpx.ReadTimeout`, which has
+  no `.code` attribute and falls through to the Permanent branch). Pre-existing, NOT
+  introduced by `gemini-fallback-and-degradation-visibility` — affects every Gemini-path
+  pipeline, independent of that change. Consequences: a genuine hang/timeout never counts
+  toward the circuit breaker (defeating `llm_gateway_providers.py`'s own stated intent of
+  using the breaker to detect exactly this), candidate extraction marks a row terminally
+  `failed` on a single Gemini timeout instead of retrying, and matching degrades to offline
+  on attempt 0 with no retry. Fix (small, ~3 lines): in `wrap_gemini_error`
+  (`shared/llm_provider_errors.py`), add `if isinstance(exc, (httpx.TimeoutException,
+  httpx.NetworkError)): return TransientProviderError(str(exc))` before the `.code`-based
+  classification. `httpx` is already a declared dependency.
+- 🟡 **Interview-kit's native Gemini client (`level_kit_agent.py::_call_gemini`) has no
+  HTTP timeout configured at all** — found 2026-10-06, same review pass as above
+  (confirmed live: a call against a non-responding server was still blocked past 8s with no
+  timeout set). Means the existing `_RETRY_DELAYS` code comment's "~247s worst case, ~23s
+  headroom under the 270s Celery soft-time-limit" claim is not an actual bound — a single
+  hung call has no ceiling. Also, `_level_kit_gemini.py`'s broad `except Exception` swallows
+  `SoftTimeLimitExceeded` (a subclass of `Exception`), so a hang runs to the full 300s hard
+  kill rather than failing gracefully at the 270s soft limit. Fix: pass
+  `http_options=genai_types.HttpOptions(timeout=_GEMINI_TIMEOUT_MS)` on client construction
+  (mirrors the shared gateway's own existing Gemini client config) and add
+  `except SoftTimeLimitExceeded: raise` ahead of the broad except. Recommend measuring real
+  P95 generation time first (thinking budget 8192 + 24000 output tokens may legitimately run
+  close to 60s) before picking the exact timeout value.
+- 🟡 **Possible contradiction of CR#1 "AI matching is on-demand only": the matching
+  reconciler (`_reconciler_tasks.py`) appears to pick up every consented, extracted
+  candidate with `last_matched_at IS NULL` once 60s has passed** — flagged, NOT verified,
+  2026-10-06 by `principal-reliability-engineer` as an observation outside its assigned
+  scope. If accurate, this would mean every consented candidate upload gets auto-matched
+  60s later regardless of the "manual-only AI Job Match trigger" consolidation (CR#1,
+  2026-08-18). Needs a `cavecrew-investigator` lookup to confirm before treating as a real
+  defect — may be intentional reconciler behavior for a different failure class (e.g.
+  re-driving a candidate whose FIRST manually-triggered match attempt never completed) that
+  was misread as "automatic matching for every upload."
 - ✅ **`positions/_service_writes.py`'s create-position write path passes a caller-supplied
   `organization_id` straight into `PositionRepository.set_org_scope()`, which moves
   `app.current_org` to whatever org the request claims — so for a non-internal (org-scoped)

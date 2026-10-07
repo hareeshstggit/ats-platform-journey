@@ -10,59 +10,108 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-06 (still later) — RESUME HERE FIRST: **two linked, in-flight threads.**
-  **Thread 1 — `dev/gemini-fallback-and-degradation-visibility` (PAUSED, NOT merge-ready).**
-  Full Rule 8 build complete and committed as WIP (`6a0b90c`): Gemini model-level fallback
-  (new `GEMINI_FALLBACK_MODEL_ID` config) across all 5 AI pipelines — "swap on final
-  attempt" for the 2 in-process-retry-loop features (JD extraction, interview kit, zero
-  added latency) and "one bounded extra attempt on the final Celery retry" for the 3
-  Celery-`autoretry_for` features (matching, candidate extraction, screening questions) —
-  plus degradation-visibility notices + recovery actions for the 2 remaining AI surfaces
-  (AI Job Match section notice BR-047, interview-kit-drawer honest attribution + Regenerate
-  button BR-P20-014). Both backend and frontend halves independently verified clean
-  (ruff/mypy/1045 backend tests; tsc/eslint/39 frontend tests) — but **BLOCKED, not sent to
-  review**, because this build's own binding live-verification step surfaced a more
-  foundational, pre-existing bug (see Thread 2). Do NOT resume this thread until Thread 2
-  is merged — then: (1) merge/rebase Thread 2's fix into this branch, (2) RE-RUN the
-  latency-budget arithmetic in the design (tasks.md section 7) — it was built on the WRONG
-  ~60s-per-call assumption, needs redoing on the corrected number, (3) RE-RUN the live
-  verification (tasks.md section 10) end-to-end now that real calls should actually
-  complete in ~seconds instead of ~170s, (4) only then dispatch `principal-reviewer`
-  (ESCALATED TO OPUS/HIGH per design.md's own Model-tier note — this touches Celery retry
-  behavior in 3 pipelines) + `principal-reliability-engineer` for the latency-budget deep
-  dive, per tasks.md section 12.
-  **Thread 2 — the SDK-retry bug itself (not yet branched/built at time of writing — next
-  action on resume).** Found DURING Thread 1's own live-verification (not assumed, not
-  read-only — reproduced identically on the real dev machine, not just a sandbox): a real
-  Gemini call via `llm_gateway_providers.py::call_gemini_with_tokens` took ~170s to
-  fail/succeed, not the documented `LLM_PROVIDER_TIMEOUT_SECONDS=60s`. Root-caused via
-  reading the actual `google-genai` SDK (v2.16.0) source
-  (`.venv/Lib/site-packages/google/genai/_api_client.py:506-510`): the SDK has its OWN
-  default internal retry policy (5 total attempts, 1s/2s/4s/8s backoff, retries on
-  408/429/500/502/503/504) — `llm_gateway_providers.py`'s own code comment claims
-  "SDK-level retries OFF — Celery owns retries at the task level" but the code never
-  actually sets `retryOptions` on the `HttpOptions`/client construction to disable this
-  default. Every Gemini call in this codebase has been silently retrying up to 5x
-  internally this whole time, invisible to Celery's own retry logic — meaning EVERY
-  documented latency-budget claim in this codebase (including `level_kit_agent.py`'s own
-  "~23s headroom under the 270s Celery soft-time-limit" comment) has never actually been
-  true. This is a genuine, confirmed, PRE-EXISTING production reliability risk, independent
-  of Thread 1's feature work — under a real sustained Gemini outage, JD extraction and
-  interview-kit generation have likely already been silently exceeding their documented
-  safety margins. **User's explicit direction: fix this first, as its own Rule-8 change,
-  merge it, THEN resume Thread 1 on the corrected foundation.** The fix itself is narrow
-  and well-understood: set `retryOptions=genai_types.HttpRetryOptions(attempts=1)` on the
-  Gemini client construction in `llm_gateway_providers.py::call_gemini_with_tokens` (the
-  ONLY call site needing this — confirmed single implementation, shared by all gemini-path
-  features except interview-kit's own separately-split `_level_kit_gemini.py`, which ALSO
-  needs the same fix since it makes its own native SDK call, not routed through the shared
-  gateway — check both). Live-verify (binding) by re-running the exact same timed real-call
-  script used to find this bug, confirming the primary model now fails/succeeds in ~seconds
-  (bounded by the real `LLM_PROVIDER_TIMEOUT_SECONDS=60s`), not ~170s. Update
-  `openspec/specs/pipeline-reliability/spec.md` and `interviews/spec.md`'s BR-P20-010/011
-  "~23s headroom" claim to reflect the corrected, now-actually-true latency numbers once
-  fixed. **Next action on resume: create a new branch off `main` (NOT off the Thread-1
-  branch) for this fix, since it's independent/more foundational and should merge first.**
+- 2026-10-07 (later) — **Thread 1 MERGED. `gemini-fallback-and-degradation-visibility`,
+  PR #266, squash, branch `dev/gemini-fallback-and-degradation-visibility` deleted**
+  (merge commit `71784de`). All CI checks green on first try (backend-ci.yml +
+  frontend-ci.yml — lint/typecheck/test/build/component-test/e2e/dependency-drift). Local
+  `main` synced, Alembic confirmed `(head)` — `0066_org_artifacts`, no migration in this
+  change. User reviewed the PR directly before approving merge. This closes out BOTH
+  threads from this session: Thread 2 (SDK-retry-disable) abandoned as misdiagnosed
+  (see entry below), Thread 1 built → latency-verified → live-verified → reviewed
+  (CHANGES-REQUESTED) → fixed → independently re-verified → focused re-reviewed → merged.
+  Full Gemini model-level fallback now live across all 5 AI pipelines + degradation
+  notices on interview-kit and AI Job Match surfaces.
+- 2026-10-07 — Thread 1 CHANGES-REQUESTED finding fixed, independently re-verified,
+  READY FOR MERGE (superseded by the MERGED entry above). Breaker-pre-emption defect (see
+  entry below) fixed in commit `7dbc81d`: `llm_gateway.py` now scopes the circuit breaker
+  by provider+model, matching/candidate-extraction swap-not-add exactly like
+  JD/interview-kit. Independently re-verified (re-read the diff, re-ran ruff/mypy, re-ran
+  the full affected test suite). Focused `principal-reviewer` re-review confirmed the
+  breaker fix and the malformed-response-escape fix both genuinely close yesterday's
+  Major-1/F2 findings, but caught one new small gap: the swap removed the only log signal
+  distinguishing "fallback model used" from "primary succeeded." Fixed via `cavecrew-
+  builder` (commit `c045aa7`, 2 log lines). Logged 2 BACKLOG items: the resolved breaker
+  defect (marked RESOLVED inline) and a new, smaller, explicitly-still-open item (DB/audit
+  field itself still doesn't distinguish primary vs fallback model for any of the 3
+  pipelines — needs a schema-level decision, out of scope for a logging fix; JD extraction
+  has an identical pre-existing gap).
+- 2026-10-06 (still later) — RESUME HERE FIRST: **Thread 2 abandoned (misdiagnosed),
+  Thread 1 resumed as originally designed.**
+  **Thread 2 — `dev/gemini-sdk-internal-retry-disable` — ABANDONED, not merged, branch left
+  dormant (not deleted).** Original theory ("google-genai SDK silently retries 5x
+  internally, inflating every Gemini call to ~170s instead of ~60s") was built, reviewed,
+  and then DISPROVEN by direct execution, twice over: (1) `principal-reviewer` executed
+  `google.genai._api_client.retry_args(None)` against the installed SDK and found the SDK's
+  OWN docstring says "if None, the 'never retry' stop strategy will be used" —
+  `stop_after_attempt(1)`, i.e. the pre-fix code was ALREADY issuing exactly 1 attempt, not
+  5; (2) a follow-up investigation's alternate theory ("wait_exponential_jitter overhead
+  even with attempts=1") was ALSO directly disproven — `tenacity.Retrying` with
+  `stop_after_attempt(1)` against an always-failing function took 0.000s, not ~170s. The
+  REAL root cause, found by timing a raw `httpx.get()` with no genai SDK involved at all,
+  against TWO unrelated domains (`generativelanguage.googleapis.com` AND
+  `www.google.com`): both took ~120.7s, nearly identical, regardless of success/404/domain.
+  **This is a dev-machine/network-level artifact (corporate proxy, VPN, or TLS-inspection
+  middlebox adding a fixed ~120-170s tax to every outbound HTTPS connection from this
+  specific machine) — not a Gemini SDK bug, not a bug in this codebase, and not something
+  any application code change can fix.** It explains why even trivial successful calls were
+  slow. User's decision on report: abandon `gemini-sdk-internal-retry-disable`, revert its
+  uncommitted code diff (done — `git checkout --` on the 4 touched files), leave the branch
+  dormant (artifacts stay in its own history, never merged). **Practical implication: do
+  NOT assume this dev machine's observed call timings (~120-195s) reflect real
+  Gemini/production latency — production (AWS ECS Fargate, ap-south-1) does not have this
+  machine's corporate network path. The documented `LLM_PROVIDER_TIMEOUT_SECONDS=60s` bound
+  remains the correct assumption for latency-budget arithmetic; it was never actually
+  disproven for production, only confounded for live-verification runs ON THIS MACHINE.**
+  **Thread 1 — `dev/gemini-fallback-and-degradation-visibility` — BLOCKED at review gate,
+  CHANGES-REQUESTED, NOT merged. Branch left as-is (sections 1-11 done, pushed).** Full
+  Rule 8 build (sections 1-9), latency-budget verification (section 7, PASS), live
+  verification (section 10, PASS for the scenario tested), and spec-sync/checklist
+  close-out (section 11) all completed and pushed (`6a0b90c`, `aac51ac`, `ba32fab`). Section
+  12 review (`principal-reviewer` opus/high + `principal-reliability-engineer` opus/xhigh,
+  dispatched in parallel) returned **CHANGES-REQUESTED from both**, independently
+  converging on the SAME root defect — confirmed by both reviewers actually EXECUTING the
+  real gateway code against fakeredis (not just reading it), and independently
+  re-confirmed by me via direct code read before accepting either report.
+  **The core finding:** the shared per-provider Redis circuit breaker
+  (`LLM_CIRCUIT_BREAKER_THRESHOLD=3`, 60s cooldown, `llm_gateway.py`) trips on the primary
+  model's own retry attempts BEFORE the final/fallback attempt runs, for the 3 pipelines
+  using 4-attempt retry chains (matching, candidate extraction, JD extraction) — the
+  backoff between attempts (0-7s total) is far shorter than the 60s breaker window. Once
+  tripped, `complete()`/`complete_with_tokens()` returns `None` instead of raising
+  `TransientProviderError`, so this change's own `except TransientProviderError:` fallback
+  branch is structurally unreachable on the final attempt. **Net effect: the fallback this
+  entire change was built to add silently never fires for matching/extraction/JD, exactly
+  in the sustained-outage scenario it exists for** — only interview-kit (bypasses the
+  shared gateway/breaker entirely) and screening (single attempt) actually benefit as
+  designed. Secondary Major finding: `_matching_tasks.py`'s new nested exception handler can
+  let a malformed fallback-model response escape BOTH exception handlers, leaving a
+  candidate with no match stamp and no recorded error (a real regression from the
+  pre-change behavior, where the last attempt always produced an explicit offline result).
+  **Fix, convergent across both reviewers, already scoped with example code in their full
+  reports (see `docs/BACKLOG.md` §4's new entries for the summary):** give the fallback
+  model its own circuit-breaker key (scope by `model_id`, not just provider string), and
+  switch matching/extraction/JD to SWAP the model on the final attempt (same shape
+  JD/interview-kit already use) instead of ADDING a second call — removes the doubled
+  latency, closes the malformed-response escape, and closes 2 secondary exposure windows
+  (extraction-reconciler false-positive re-drive, ECS stop-timeout) the "add" shape
+  introduced. **2 more Major findings, pre-existing (NOT introduced by this change, logged
+  separately in `docs/BACKLOG.md` §4):** Gemini network timeouts are misclassified as
+  `PermanentProviderError` (defeats the breaker's own stated purpose AND this change's
+  fallback, on a hang specifically); interview-kit's native Gemini client has no HTTP
+  timeout configured at all (its own "~247s/23s headroom" code comment is not a real
+  bound). User's explicit decision (given today's cumulative cost across 2 opus reviews +
+  2 opus investigations): **log findings, stop for today — do NOT dispatch the fix in this
+  session.** **Next session, resume by: (1) re-reading both full review reports (only
+  summarized here, not reproduced in full — if this summary isn't enough, the reports
+  themselves are not separately saved anywhere else, so re-running a focused review may be
+  needed if the detail is insufficient); (2) dispatching `backend-engineer` with the
+  convergent fix (per-model breaker key + swap-not-add for matching/extraction/JD,
+  `_matching_tasks.py`'s exception-handling fix folds out naturally once the nested block
+  is removed); (3) adding the fakeredis-backed breaker test both reviewers recommended
+  (confirms the fallback model is actually invoked through a real breaker trip, not just
+  mocked); (4) a FOCUSED re-review of only the changed lines (not a full re-review) —
+  likely sonnet/high is sufficient this time since the fix is narrow and well-understood,
+  unless the re-review's own risk read finds something unanticipated.**
 - 2026-10-06 (even later) — `interview-kit-position-skill-grounding` **MERGED, PR #265,
   squash, branch `dev/interview-kit-position-skill-grounding` deleted** (merge commit
   `1752f9a`). Local `main` synced, Alembic confirmed `(head)` (no migration in this
