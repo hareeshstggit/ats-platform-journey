@@ -10,6 +10,49 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-07 (latest) — **`screening-role-briefing-simplification` (BR-048) MERGED, PR #267,
+  squash, branch `dev/screening-role-briefing-simplification` deleted** (merge commit
+  `5d9c120`). Local `main` synced, Alembic confirmed `(head)` at `0067_screening_role_briefing`.
+  `principal-reviewer` returned CHANGES-REQUESTED (2 Major, both mechanical — stale "10
+  questions" docs, a missing null-briefing regression test), fixed and independently
+  re-verified, no further review round needed. CI then caught 2 real failures on first push
+  (an integration test's stale hardcoded question count, and `docs/ci_schema_snapshot.sql`
+  missing the new column) — both root-caused to the SAME underlying gap: the stale snapshot
+  also broke a real-DB e2e test (INSERT against a column CI's snapshot-bootstrapped DB didn't
+  have), confirmed by checking whether that e2e test passed on `main` the day before (it did)
+  before assuming anything. Fixed via the documented marker-anchored snapshot-regeneration
+  procedure (`docs/BACKLOG.md`'s own tribal-knowledge notes on this exact file), verified with
+  an explicit control run that reproduced the original failure on the unmodified file before
+  trusting the fix — then independently re-verified by me a 2nd time via a fresh scratch-DB
+  load. All CI green on re-run, confirming the single root-cause fix closed both failures with
+  no separate frontend change needed.
+  New shared `role_briefing` panel per screening (bulleted summary, must-have/good-to-have
+  skills grouped by the LLM into functional categories with a zero-hallucination guard against
+  the position's real extracted skills — any hallucinated skill dropped, any omitted real skill
+  caught by a catch-all "Other" group, never silently lost); question count now variable (3-10,
+  driven by actual JD complexity, not fixed); questions short/direct with no embedded concept
+  explanation; `expected_answer` now a scannable keyword/scenario-cue list, not a sentence. New
+  nullable `role_briefing` JSONB column (Alembic `0067_screening_role_briefing`).
+  **Took 3 real browser-tested iteration rounds** (user's own hands-on testing each time) before
+  landing on the current shape — each round caught something the prior round's own "done" claim
+  got wrong: round 1's build claimed "1-2 sentence, verbatim-askable" questions,
+  independently disproven by me via a fresh-process live call (questions were 2 long compound
+  sentences re-explaining the concept inline) — root-caused to the prompt's own few-shot example
+  teaching the wrong pattern, fixed and re-verified; round 2 was the user's real browser feedback
+  (summary→bullets, skills→functionally grouped, questions shorter still, expected_answer→
+  keywords) — built and independently re-verified by me on fresh data (different domain,
+  zero-hallucination programmatically asserted); round 3 was a FALSE ALARM — a real browser
+  error ("Objects are not valid as a React child... {category, skills}") turned out to be a
+  stale Next.js dev-server process (running since before all 3 rounds of frontend changes) +
+  stale `.next` build cache, not a real code bug — confirmed by reading the actual component
+  code (genuinely correct) before concluding anything, then a clean kill+cache-clear+restart
+  resolved it. **This stale-process pattern has now bitten this session 3 times across 2
+  different changes** (Celery twice, uvicorn once via a silently-failed `--reload`, now Next.js
+  once) — treat "the running process reflects the latest code" as NEVER assumed, always
+  independently confirmed (via `/openapi.json`, a fresh direct-process call, or an explicit
+  kill+restart) before trusting any live/browser verification result, on EITHER the backend OR
+  frontend dev server, going forward.
+
 - 2026-10-07 (later) — **Thread 1 MERGED. `gemini-fallback-and-degradation-visibility`,
   PR #266, squash, branch `dev/gemini-fallback-and-degradation-visibility` deleted**
   (merge commit `71784de`). All CI checks green on first try (backend-ci.yml +
