@@ -10,7 +10,75 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-07 (latest) — **Interview-kit Generate-action follow-up MERGED, PR #272, squash,
+- 2026-10-08 (latest) — **SESSION PAUSED mid-investigation, no code changes, nothing
+  uncommitted — repo is clean on `main`, PR #272 (previous entry) is the last real merge.**
+  User reported two new bugs on the interview-kit drawer (PR #272's follow-up): (1) the
+  generated kit for "Lead Product Security Engineer_Yodlee" showed generic
+  software-engineer content (Core Language Proficiency/Data Structures/etc.) instead of
+  position-specific security-engineering content; (2) clicking "Regenerate" appeared to
+  hang indefinitely. **Root cause found and confirmed via direct, live reproduction (not a
+  guess) — this is a bigger, systemic finding, not a one-off:**
+  - Every LLM provider call in this codebase shares one hardcoded constant,
+    `LLM_PROVIDER_TIMEOUT_SECONDS = 60.0` (`backend/app/core/constants.py:54`).
+  - Interview-kit generation (`_level_kit_anthropic_bedrock.py::_invoke_anthropic_impl`)
+    calls Anthropic with `max_tokens=12000` AND a JSON-schema-constrained structured
+    output (`output_config={"format": {"type": "json_schema", ...}}`) — a genuinely large,
+    slow generation. Reproduced the EXACT real call directly (same model `claude-sonnet-
+    4-6`, same system prompt, same schema, 120s client timeout) and it still failed after
+    **362.7 seconds** with Anthropic's own `APITimeoutError` (their docs explicitly flag
+    this failure mode for large structured generations — see "long requests" in their API
+    error docs). A real kit generation structurally CANNOT complete inside a 60s timeout.
+  - This means every real AI attempt times out, all 3 retries burn through it, and the
+    task silently falls back to the generic `local_kit` offline question bank —
+    **every single time, deterministically, not intermittently.** This retroactively
+    invalidates several earlier "fell back to local_kit — sandboxed env, no outbound
+    network" explanations given across multiple PRs this session (scorecard export,
+    gemini-fallback-and-degradation-visibility, the Oct 7 interview-kit fixes) — direct
+    network access to Anthropic actually works fine (confirmed: a small plain call
+    succeeds in ~1.2s); the real cause was always this timeout being too short for
+    this specific large-schema call shape, not a network limitation.
+  - **Separate, smaller bug confirmed in the same investigation:** the kit drawer's
+    header/subtitle (`interview-kit-drawer.tsx:85`) is a hardcoded static string,
+    `"{interviewLabel} — AI-generated kit (internal only)"` — it is NEVER conditional on
+    the real `provider` field, unlike the body's already-correct honest-attribution
+    banner (BR-P20-014). So even when a kit genuinely IS the offline fallback, the
+    drawer's own title still falsely claims "AI-generated." This is a clean, small,
+    separate fix (should branch on `isOfflineKitProvider(query.data?.provider)` the same
+    way the body banner already does) — not yet built, trivial to do next session.
+  - **User's explicit direction, asked via AskUserQuestion:** fix the timeout properly via
+    **streaming** (Anthropic's own recommended approach for large structured outputs),
+    not just a quick timeout-bump. This is the bigger, more-correct option — requires its
+    own design pass (how the existing 3x-retry/circuit-breaker/fallback logic interacts
+    with a streamed response, timeout semantics under streaming, whether the other 3
+    AI-calling features — JD extraction `max_tokens=2000`, candidate matching/profile
+    extraction `max_tokens=4096` default — share the same risk at their smaller sizes;
+    NOT yet checked whether they actually hit this same wall, only sized up as plausibly
+    lower-risk given their much smaller `max_tokens`). Per CLAUDE.md Rule 8 (full spec+
+    design+regression-mapping sequence for a change to an existing shipped AI feature's
+    core generation mechanism), this is NOT a same-day surgical fix — needs its own
+    requirement/design pass next session before building.
+  - **Live-verification in progress when paused:** was about to test, live, whether
+    Anthropic's streaming API (`client.messages.stream(...)`) is actually compatible with
+    the `output_config` JSON-schema structured-output parameter this call already uses —
+    this must be confirmed BEFORE designing the fix (per the binding live-verification
+    mandate — never assume a third-party API capability). The test script is saved at
+    `backend`'s scratch dir reference in this session's transcript but was NOT run before
+    pausing — **re-run this check FIRST next session**, before writing any design doc.
+  - **Resume steps, in order:** (1) run the streaming+schema compatibility test; (2) if
+    compatible, write a scoped design for converting interview-kit generation to
+    streaming (retry/circuit-breaker/fallback interaction, how a timeout is detected
+    mid-stream vs today's single-shot timeout); (3) check whether JD extraction/candidate
+    matching/profile extraction share this same risk at their own `max_tokens` sizes
+    (quick direct measurement, not assumed) — log as a BACKLOG follow-up if they do;
+    (4) separately, fix the drawer header mislabeling (small, independent, can land first
+    as its own quick PR without waiting on the streaming work); (5) full Gate 5 + Rule 8
+    sequence for the streaming change once designed.
+  - No code was written or committed this session beyond PR #272 (already merged,
+    previous entry). Backend/frontend/Celery/Redis/Postgres were all running locally when
+    paused — restart the stack fresh next session per standing practice, don't assume
+    these processes are still alive.
+
+- 2026-10-07 — **Interview-kit Generate-action follow-up MERGED, PR #272, squash,
   branch `dev/interview-kit-generate-empty-state-action` deleted** (merge commit
   `1ab5364`), no migration, frontend-only. Closed the gap PR #271 left: once the backend
   stopped silently skipping kit generation, the user asked why they couldn't just generate
