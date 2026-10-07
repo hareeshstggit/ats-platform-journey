@@ -10,6 +10,28 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-07 (even later) — **`ai-job-match-stale-empty-state` bug fix MERGED, PR #268,
+  squash, branch `fix/ai-job-match-stale-empty-state` deleted** (merge commit `df01dd4`).
+  All CI green (frontend-only, no migration — `backend-ci.yml` correctly didn't trigger).
+  User-reported:
+  re-triggering AI Job Match could show "no positions meet the threshold" even when a real
+  qualifying match already existed. Routed through full Gate 5 (binding, no exceptions —
+  confirmed as a bug fix on already-shipped/merged code, not an in-flight feature):
+  `cavecrew-investigator` confirmed exact fix locations → `ux-ui-engineer` built bounded
+  polling (3s/60s, mirrors `useJd`'s existing pattern) so the matches query waits for
+  `last_matched_at` to actually advance instead of invalidating once right after the 202
+  response → `principal-reviewer` found one real Major (the "no new matches" detection used
+  a `matched_at` timestamp comparison, which misclassifies a dismissed-then-reactivated
+  match since `matched_at` is set once at INSERT and never touched by `dismiss_match`/
+  `upsert_match`) → fixed via an id-snapshot diff instead (baseline = set of active match
+  ids at trigger time; a dismissed match is excluded from that baseline, so reactivation
+  correctly registers as new) → focused re-review: APPROVE-WITH-NITS → one optional nit
+  applied (refetch before baseline capture, closes a narrow dismiss-then-immediate-retrigger
+  race). Every step independently re-verified by me directly (diff reads, tsc/eslint/vitest
+  re-run myself, the backend invariants this logic depends on confirmed via direct source
+  read, not trusted from any agent's self-report) — this is frontend-only, no backend/schema
+  change.
+
 - 2026-10-07 (latest) — **`screening-role-briefing-simplification` (BR-048) MERGED, PR #267,
   squash, branch `dev/screening-role-briefing-simplification` deleted** (merge commit
   `5d9c120`). Local `main` synced, Alembic confirmed `(head)` at `0067_screening_role_briefing`.
