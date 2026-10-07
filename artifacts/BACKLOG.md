@@ -317,6 +317,18 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
+- 🟡 **`GET /api/v1/applications?status=shortlisted` 500s — no such `applications.status`
+  enum value** — found 2026-10-07, `functional-test-engineer`, during the interview-kit
+  create-with-schedule fix's live verification (unrelated to that fix, flagged per the
+  project's proactive-inconsistency-flagging practice). "Shortlisted" is a
+  `screening_decisions.status` concept (screening-stage), not an `applications.status`
+  lifecycle value — BR-001's shortlist gate actually allows a NULL screening status too
+  (no screening decision yet recorded), so any caller passing `status=shortlisted` to this
+  endpoint hits an invalid-enum 500 instead of a graceful 422 or the intended filter
+  semantics. Not blocking (no real caller found passing this value today — the dev DB's
+  `screening_decisions` table is empty, so this wasn't exercised in practice); needs a
+  decision on intended behavior (validate+422 on this value vs. translate it to the real
+  screening-decision join) before fixing.
 - 🟢 **7 pre-BR-048-round-3 `candidate_screenings` rows carry a permanent dual-shape read
   shim, not a one-time backfill** — found 2026-10-07, `principal-reviewer`, on the
   candidate-detail bug fix (legacy `expected_answer`/`must_have_skills` read-compat).

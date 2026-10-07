@@ -10,7 +10,31 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-07 (latest) — **Candidate-detail live bug fixes MERGED, PR #270, squash, branch
+- 2026-10-07 (latest) — **Interview-kit create-with-schedule fix MERGED, PR #271, squash,
+  branch `dev/interview-kit-enqueue-on-create-with-schedule` deleted** (merge commit
+  `afced3b`). Alembic confirmed `(head)`, no migration. User-reported: an interview
+  created via the real create-interview UI flow (its own built-in schedule step submits
+  `scheduled_at` in the same POST) showed "Scheduled" but had zero AI kit — kit generation
+  only ever enqueued from the separate `PATCH .../schedule` endpoint (BR-P20-006,
+  2026-08-19), a design that assumed create and schedule were always two distinct actions,
+  which the UI never guaranteed. Fixed: `POST .../interviews` now also enqueues
+  `generate_level_interview_kit` when the create payload carries a non-null
+  `scheduled_at`; unscheduled-create path unchanged (regression-guarded). Double-enqueue
+  race against a later reschedule confirmed safe via the pre-existing unique-constraint +
+  OCC claim/skip logic — no new hazard. `principal-reviewer` round 1: CHANGES-REQUESTED
+  (spec.md BR-P20-006/AC-014 + `tasks.py` module docstring were stale, contradicting the
+  new two-site enqueue rule) — fixed inline, re-reviewed to APPROVE. Functional-tested
+  end-to-end: real interview created with a schedule, Celery task polled to a genuine
+  `completed` kit row (Anthropic timed out in this sandboxed env, correctly fell back to
+  `local_kit`). One unrelated pre-existing defect found along the way
+  (`GET /applications?status=shortlisted` 500s on an invalid enum value) logged to
+  `docs/BACKLOG.md` §4 as non-blocking tech debt. **Note: the specific interview that
+  surfaced this bug live (`interview_id=bebd6002-83cf-4da1-a041-10e2bf23b7db`, application
+  `945c02cd-b6a5-4d70-9095-ddfb6f083258`, candidate "Dandu Mahidhar Reddy") still has no
+  kit — the code fix only prevents the bug going forward; that specific row needs a manual
+  kit-generation trigger (existing "Regenerate" action) if the user wants it.**
+
+- 2026-10-07 — **Candidate-detail live bug fixes MERGED, PR #270, squash, branch
   `dev/candidate-screening-legacy-data-fixes` deleted** (merge commit `107f597`). Alembic
   confirmed `(head)`, no migration. Two bugs the user hit live on the Candidate Detail
   page: (1) `GET .../screenings/{id}` 500'd for any `candidate_screenings` row generated
