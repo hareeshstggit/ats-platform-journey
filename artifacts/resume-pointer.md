@@ -10,7 +10,29 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-07 (latest) — **`interview-scorecard-xlsx-export` (BR-P20-015) MERGED, PR #269,
+- 2026-10-07 (latest) — **Candidate-detail live bug fixes MERGED, PR #270, squash, branch
+  `dev/candidate-screening-legacy-data-fixes` deleted** (merge commit `107f597`). Alembic
+  confirmed `(head)`, no migration. Two bugs the user hit live on the Candidate Detail
+  page: (1) `GET .../screenings/{id}` 500'd for any `candidate_screenings` row generated
+  before the same-day BR-048 round-3 prompt-shape change (`expected_answer` str→list,
+  `must_have_skills`/`good_to_have_skills` flat-list→grouped `SkillGroup`, no back-compat
+  read path) — fixed via `field_validator(mode="before")` coercions in
+  `candidate_screenings/schemas.py`, read-time only, no backfill (7/8 and 2/3 affected
+  rows respectively in local dev DB, confirmed live); (2) AI Job Match's empty-state
+  message implied zero positions matched when a real active 85%-match existed but was
+  filtered out because the candidate already has a screening for it — fixed via a
+  `hasScreenedMatch` branch in `candidate-matches-section.tsx`. Full Gate 5 pipeline:
+  `cavecrew-investigator`'s first hypothesis for bug 1 (role_briefing null-handling) was
+  wrong — caught by independently reproducing the crash in-process against the real DB
+  row BEFORE dispatching a fix, which is what surfaced the real cause. `principal-reviewer`
+  APPROVE-WITH-NITS (both nits fixed inline: genericized `position(s)` wording for the
+  multi-match case, `docs/BACKLOG.md` note so the dual-shape shim isn't later mistaken for
+  dead code). Caught and corrected a process gap mid-task: all investigation/fix-dispatch
+  work had started directly on `main`'s working tree before a branch existed — created
+  `dev/candidate-screening-legacy-data-fixes` and moved the uncommitted work onto it before
+  any commit landed, per the binding branch-before-edit rule.
+
+- 2026-10-07 — **`interview-scorecard-xlsx-export` (BR-P20-015) MERGED, PR #269,
   squash, branch `dev/interview-scorecard-xlsx-export` deleted** (merge commit `0d5827e`).
   Local `main` synced, Alembic confirmed `(head)` at `0067_screening_role_briefing` — no
   migration in this PR. All CI green. Change archived at

@@ -317,6 +317,16 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
+- 🟢 **7 pre-BR-048-round-3 `candidate_screenings` rows carry a permanent dual-shape read
+  shim, not a one-time backfill** — found 2026-10-07, `principal-reviewer`, on the
+  candidate-detail bug fix (legacy `expected_answer`/`must_have_skills` read-compat).
+  `schemas.py`'s `field_validator(mode="before")` coercions must stay in place
+  indefinitely (7 of 8 non-empty `screening_questions` rows, 2 of 3 non-null
+  `role_briefing` rows, confirmed live) since there is no richer source to backfill real
+  question-answer-keyword or skill-category data from — the original narrative
+  sentence/flat skill list IS the only version that ever existed for these rows. Trivial
+  volume, no action needed; noted so the shim isn't mistaken for dead code and deleted
+  later.
 - 🟡 **Pre-fix level kits may still mis-key scorecard xlsx rows if AI output order ever
   diverged from `sequence`** — found 2026-10-07, `principal-reviewer`, on the
   `interview-scorecard-xlsx-export` fix (BR-P20-015). `level_kit_generator.py::
