@@ -10,7 +10,28 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-08 (latest) — **SESSION PAUSED mid-investigation, no code changes, nothing
+- 2026-10-08 (latest) — **Interview-kit streaming-generation fix MERGED, PR #273, squash,
+  branch `dev/interview-kit-streaming-generation` deleted** (merge commit `3550a11`). Alembic
+  confirmed `(head)`, no migration. This closes the BACKLOG §1 item 12 Gate 2 user-visible
+  failure from the prior session pause (below) — full root-cause/fix/review history already
+  captured there and in `openspec/changes/archive/2026-10-08-interview-kit-streaming-
+  generation/`, not repeated here. Summary: interview-kit AI generation was deterministically
+  falling back to the generic `local_kit` offline bank on every real attempt (shared 60s LLM
+  timeout too short for this call's `max_tokens=12000` structured output, confirmed failing
+  at 362.7s; `max_tokens=12000` independently too low, confirmed truncating at ~14,137 needed
+  tokens). Fixed via streaming the one shared Anthropic provider call (zero impact on the
+  other 3 AI-calling features) + raising `max_tokens` to 24000. `principal-reviewer` found
+  and closed a real Major in the process (a mid-stream network failure surfaces as a raw
+  `httpx.TransportError`, not an `anthropic.*` type — confirmed by reading the installed
+  SDK's actual source — `wrap_anthropic_error()` now classifies it transient too). Live-
+  verified end-to-end against the real Anthropic API (this machine's own network — the
+  "sandboxed env, no network" explanation from several earlier PRs this session was wrong):
+  real regeneration completed in 7m45s, `provider="anthropic"`, genuinely position-specific
+  content, 50/50 questions complete. **Separately still open, not part of this fix:** the kit
+  drawer's header mislabeling bug (`interview-kit-drawer.tsx:85`, hardcoded "AI-generated
+  kit" regardless of real provider) — small, independent, not yet built.
+
+- 2026-10-08 — **SESSION PAUSED mid-investigation, no code changes, nothing
   uncommitted — repo is clean on `main`, PR #272 (previous entry) is the last real merge.**
   User reported two new bugs on the interview-kit drawer (PR #272's follow-up): (1) the
   generated kit for "Lead Product Security Engineer_Yodlee" showed generic
