@@ -10,7 +10,30 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-08 (latest) — **Interview-kit streaming-generation fix MERGED, PR #273, squash,
+- 2026-10-08 (latest) — **Local-storage Content-Type fix MERGED, PR #274, squash, branch
+  `dev/local-storage-mimetype-fix` deleted** (merge commit `36c6636`), no migration,
+  frontend-unaffected. Found live-testing PR #273: the interview-scorecard `.xlsx` download
+  (PR #269) downloaded as `.docx` and wouldn't open. Root cause: the SHARED local-storage
+  presigned-URL serving route (`local_storage.py::serve_local_object`) hardcoded a binary
+  Content-Type choice — `.pdf` → `application/pdf`, else ALWAYS the Word MIME type,
+  regardless of the file's actual type — affecting every non-PDF file served through it
+  (resumes, JDs, offer PDFs, org artifacts, and now the scorecard). Fixed via stdlib
+  `mimetypes.guess_type(key)`, no new dependency; traced every real caller (resumes/JDs
+  constrained to pdf/docx, offers always .pdf, org artifacts always .docx, scorecard always
+  .xlsx) and confirmed none relied on the old wrong branch — zero regression for any
+  existing caller. `principal-reviewer` round 1: CHANGES-REQUESTED, procedural only, no code
+  change — flagged that `mimetypes`' xlsx/docx resolution on Python 3.12 depends on the OS
+  mime database (confirmed by reading the pinned stdlib directly: not hardcoded on 3.12,
+  unlike 3.14), and this exact diff hadn't yet run on the real Linux CI runner per the
+  binding live-verification mandate; design confirmed fail-closed either way. Resolved by
+  pushing and reading the real Linux CI run (all green, including the 4 new `.xlsx`/`.docx`
+  regression-guard tests) — per the reviewer's own stated condition ("re-approve immediately
+  on green CI"), no second review round needed. Live-verified end-to-end before AND after
+  the fix: real scorecard download confirmed broken (Word content-type) pre-fix, confirmed
+  correct (spreadsheet content-type, `file` command recognizes genuine "Microsoft Excel
+  2007+") post-fix.
+
+- 2026-10-08 — **Interview-kit streaming-generation fix MERGED, PR #273, squash,
   branch `dev/interview-kit-streaming-generation` deleted** (merge commit `3550a11`). Alembic
   confirmed `(head)`, no migration. This closes the BACKLOG §1 item 12 Gate 2 user-visible
   failure from the prior session pause (below) — full root-cause/fix/review history already
