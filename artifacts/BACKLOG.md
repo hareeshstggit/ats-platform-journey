@@ -319,6 +319,20 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
+- 🟢 **`_service_kits.py::do_get_level_kit` (the GET /level-kit backend endpoint) has no
+  `level_category`/`level_type` guard** — found 2026-10-09, `principal-reviewer`, while
+  reviewing the "hide View Questions for Organization-level interviews" UI fix (PR
+  pending). The fix is UI-only (both real frontend doors — the Applications-pipeline
+  card and the panelist My Interviews page — now gate "View Questions" on
+  `level_type === "stg_labs"`), so the backend endpoint itself remains technically
+  reachable by a direct/crafted request. Assessed as low-priority: no path exists today
+  that could ever populate an interview_level_kits row for an Organization-level
+  interview (`tasks.py`'s generation task already exits silently on
+  `level_category != "stg_labs"`, BR-P20-001), so there is no real data this gap could
+  expose in practice — tracked for defense-in-depth only. Cheap fix if ever prioritized:
+  mirror `do_generate_interview_kit`'s existing `level_category != "stg_labs"` 400 guard
+  (already present at that sibling function, ~line 93-97 of the same file) onto
+  `do_get_level_kit` too.
 - 🟡 **Interview-kit progressive generation's worst-case retry math across 3 sequential
   phases can exceed the Celery `task_soft_time_limit` (270s, `celery_app.py:179` — same
   global budget already flagged as a constraint for the separate `llm-provider-failover-
