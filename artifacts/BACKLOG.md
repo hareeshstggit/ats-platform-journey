@@ -319,6 +319,68 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
+- 🟡 **Interview-kit progressive generation's worst-case retry math across 3 sequential
+  phases can exceed the Celery `task_soft_time_limit` (270s, `celery_app.py:179` — same
+  global budget already flagged as a constraint for the separate `llm-provider-failover-
+  chain` proposal, §9).** Found 2026-10-08, `backend-engineer`, building
+  `interview-kit-progressive-generation` (BR-P20-017). The old single-call design had one
+  retry round with a tracked ~23s margin (4×60s+7s≈247s vs 270s). The new naming→batch1→
+  batch2 flow has THREE such rounds in sequence; pathological worst case (every phase
+  exhausting its full retry budget) ≈741s, well past 270s. Not a crash risk — the existing
+  `SoftTimeLimitExceeded` handling re-raises cleanly and the reconciler re-drives — just a
+  "won't complete in one attempt" risk under sustained transient failures, which real
+  production use has not yet exercised. Cheapest fix if this ever matters: shorten
+  `_RETRY_DELAYS`/attempt count specifically for the smaller per-area calls (each is
+  individually faster than the old whole-kit call, so a tighter budget per area is
+  reasonable) — not changed now since it's speculative without a live failure-rate
+  measurement.
+- 🟠 **`run_async` (`app/workers/celery_app.py`) leaves an orphaned coroutine on the
+  worker's persistent event loop when Celery's `SoftTimeLimitExceeded` signal fires while
+  the loop is mid-await — it resumes during the NEXT task that child runs.** Found
+  2026-10-08, `principal-reliability-engineer`, while building the interview-kit lease
+  interlock (reconciler race fix, BR-P20-017 follow-up) — confirmed via live repro
+  (`pending tasks left on loop: 1`, then `ORPHAN RESUMED`), pre-existing, not introduced by
+  this session's work. Effect: an abandoned generation can write to the DB later (after its
+  owning task already "finished" from Celery's perspective) and holds a pooled DB
+  connection meanwhile. The new kit-lease's lifetime cap (`_kit_lease.py`,
+  `task_time_limit`-bounded) already limits the blast radius for interview-kit specifically
+  — this entry tracks the underlying `run_async` defect itself, which affects every async
+  Celery task in this codebase, not just interview-kit. Cheapest fix (not yet applied):
+  wrap the coroutine in `asyncio.Task`; on `BaseException` from the signal handler, call
+  `task.cancel()`, `run_until_complete(task)` with the cancellation error suppressed, then
+  re-raise — this lets the task's own `finally` blocks (lease release, session close) run
+  before the worker moves to its next task.
+- 🟡 **Reconciler's generic terminal-fail message can still outlive a batch's real
+  per-area error if the batch-failure write ITSELF loses its OCC race for a reason other
+  than the lease interlock (e.g. two independent manual-trigger dispatches for the same
+  interview_id racing each other, not just task-vs-reconciler).** Found 2026-10-08,
+  `principal-reliability-engineer`, same investigation as the lease interlock above. The
+  lease fix (`_kit_lease.py`) closes the task-vs-reconciler race specifically; it does not
+  make the task itself respect another task's lease (F3 in that agent's report) — during
+  Celery's `TransientProviderError` autoretry wait (lease released on raise), the
+  reconciler can still re-drive the row, creating a duplicate execution alongside the
+  pending retry. Rarely hit today (autoretry path is defensive/future-proofing per the
+  existing code comment, not commonly exercised). Follow-up: have the task itself respect
+  the lease using the Celery task id as the token, so retries/redeliveries can take over
+  ownership explicitly rather than racing. Also closes the pre-existing "two concurrently-
+  live executions" gap already documented in `celery_app.py` (create-time + schedule-time
+  enqueues both firing for the same interview).
+- 🟢 **`pipeline_oldest_pending_age_seconds` gauge still counts leased (live-but-slow) kit
+  rows toward its age metric** — found 2026-10-08, `principal-reliability-engineer`, same
+  investigation. A live attempt with >150s between its own writes (real provider
+  timeout/backoff, not a stuck row) still trips the existing 150s alarm threshold. Net
+  effect is fewer false alarms than before the lease fix (retry_count no longer inflates a
+  live row's apparent age via reconciler bumps), so this is a note, not a regression — no
+  action needed unless real-world alarm noise says otherwise.
+- 🟢 **Generation-lease interlock pattern (`_kit_lease.py`, Redis-backed, heartbeated,
+  reconciler-checked) does not yet generalize to `candidates/_reconciler_tasks.py`**, which
+  has the identical time-based-staleness race in principle. Found 2026-10-08,
+  `principal-reliability-engineer`. Not trivial to share as-is: the lease helper lives in
+  `interviews/_kit_lease.py` (module boundary — candidates can't import it) and would need
+  to move to `app/shared/` with a key-prefix parameter first; Redis matters even more there
+  since `candidates.version` is also the token recruiter-UI edits are OCC-checked against,
+  so a DB-column heartbeat would be actively wrong, not just redundant. Needs a deliberate
+  follow-up change, not a quick port.
 - 🟡 **Frontend `INTERVIEW_WRITE_ROLES` (`super_admin`/`hr_admin`/`recruiter`) is a superset
   of the backend's actual role gate on interview-kit regenerate/generate
   (`_router_level_kit.py`'s `_MUTATE_ROLES = ("recruiter", "hr_admin")`)** — found
@@ -1681,6 +1743,21 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
   failed, no stash-and-rerun pre-existing-failure isolation was needed. `tsc --noEmit` and `eslint`
   clean on all 4 touched/created files. **This is the last remaining item in the entire 48-file
   Tier 1-4 code-hygiene decomposition sweep — Tier 4, and the sweep as a whole, is now complete.**
+
+- 🟢 **New size-cap residuals from `interview-kit-progressive-generation` (2026-10-09,
+  principal-reviewer round 2, Minor 5 — tracked, not blocking).** `interviews/repository.py`
+  (382 lines per the Tier 4 entry above) is now 393 after a `populate_existing=True` OCC fix
+  + its docstring explaining the real bug it closes — the extra lines are documentation of a
+  genuine root-cause fix, not scope creep; no split needed for this PR. Functions that grew
+  past the 40-line cap (docstrings included) during the same change: `_run_reconcile_interview_kits`
+  (`_reconciler_tasks.py`) 71→88 lines (the lease-interlock check added inline);
+  `_breaker_record_result` (`llm_gateway.py`) 52→64 (the `run_id` dedup branch);
+  `complete`/`complete_with_tokens` (`llm_gateway.py`) 42→46/43 (the `run_id` passthrough).
+  New functions landing over 40 lines: `_generate_and_persist` (`tasks.py`) 66 (mostly
+  comments), `run_progressive` (`agents/_level_kit_progressive.py`) 41, `_parse_area` (same
+  file) 41. None of these are correctness risks — all are thin orchestration/logging growth
+  around a real fix, not tangled logic — but track here per this doc's own convention so a
+  future hygiene sweep catches them.
 
 ## 7. Tech debt — dependencies & secrets
 

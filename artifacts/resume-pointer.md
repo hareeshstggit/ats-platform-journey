@@ -10,7 +10,150 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-08 (latest) — **Local-storage Content-Type fix MERGED, PR #274, squash, branch
+- 2026-10-08 (latest) — **SESSION PAUSED mid-fix, user's explicit choice after a cost
+  check-in, on branch `dev/interview-kit-progressive-generation` (HEAD still `6a9cdee` =
+  PR #274 merge; everything below is UNCOMMITTED working-tree changes, nothing pushed, no
+  PR yet).** This is the interview-kit-progressive-generation change (6+4 batched area
+  generation + expected_answer-as-keywords) from the prior entry below — it moved from
+  "fully built, functional-test found a [BLOCK MERGE] reconciler-race bug" to "4 real,
+  independently-verified-by-me bugs found and fixed in sequence, 1 bug still open; change is
+  NOT ready for `principal-reviewer` yet."
+
+  **Bugs found and FIXED this session (all 4 independently verified by me — diffs read line
+  by line, not trusted from agent self-reports; full `app/modules/interviews/` unit suite
+  re-run myself after each one, 358-365 passed/168-175 skipped every time, `ruff`/`mypy`
+  clean):**
+  1. **Shared global circuit breaker cross-contamination.** `app/shared/llm_gateway.py`'s
+     breaker was keyed just `"anthropic"` — one shared Redis counter for ALL 4 AI features.
+     The new design's 6-then-4 concurrent `asyncio.gather` calls per kit could have 2-3 of
+     them hit a real transient blip and trip the breaker for the WHOLE batch plus any
+     immediately-following call. Fixed: `complete()`/`complete_with_tokens()` gained an
+     optional `run_id` param; `_breaker_record_result` dedupes same-run-id concurrent
+     failures to at most 1 counted failure via a short-lived Redis `SET NX` marker, while
+     `_breaker_is_open`'s global open/closed state is untouched (real sustained outages still
+     trip normally for everyone). `agents/_level_kit_progressive.py`'s `run_progressive`
+     generates one `run_id` per kit generation, threaded into every call. Zero behavior
+     change for the other 3 AI features (`run_id=None` default, byte-identical code path).
+  2. **Reconciler lease interlock** (`_kit_lease.py`, new — Redis key `kit_lease:{kit_id}`,
+     TTL=60s=`STUCK_ROW_SLA_SECONDS`, heartbeat every 20s, hard lifetime cap=Celery's
+     `task_time_limit`=300s). `_reconciler_tasks.py` now skips (no bump, no redrive, no
+     terminal-fail) any stale-looking row with a live lease. **Turned out NOT to be the
+     actual cause of the originally-reported incident** (live-verified: Celery runs
+     `--pool=solo`, strictly one task at a time, so the reconciler physically cannot race a
+     live task — confirmed via log timestamps, every `kit_reconciler_redrive` line fires
+     strictly AFTER the generation task's own "succeeded" line). Kept anyway as correct,
+     independently-useful engineering (still closes a genuine dead-owner-vs-live-owner
+     ambiguity), but it was bug #3 below that actually mattered.
+  3. **Regenerate endpoint unconditionally stomping a live kit.**
+     `_service_kits.py::do_request_level_kit_regeneration` called
+     `update_level_kit(kit.id, status="pending", ...)` with NO `expected_version` — an
+     unconditional UPDATE that still bumps `version` via the `trg_ivw_level_kits_upd`
+     trigger (migration 0056). If called while a kit was genuinely mid-generation, this
+     silently reset the row and invalidated the live task's OCC chain. Fixed: new
+     `_reset_in_flight_kit` helper checks `live_kit_leases([kit.id])` first — live lease
+     exists -> raises new `LevelKitGenerationInProgressError` (409,
+     `LEVEL_KIT_GENERATION_IN_PROGRESS`, added to `exceptions.py`, surfaced in
+     `openspec/specs/interviews/spec.md` as BR-P20-016); no lease (genuinely dead/stuck kit)
+     -> proceeds with the reset, but NOW OCC-guarded (`expected_version=kit.version`); if
+     that itself loses a race, raises the same 409 instead of silently no-opping. The
+     completed/failed regenerate path (the common case) is untouched. Frontend
+     (`interview-kit-drawer.tsx`) gained an `onError` toast handler for regenerate — it had
+     NONE before (a failed regenerate just silently stopped spinning).
+  4. **THE ACTUAL ROOT CAUSE of the original "always ends in generic terminal-fail"
+     symptom — a stale SQLAlchemy identity-mapped object.**
+     `repository.py::update_level_kit` executes an ORM-enabled bulk
+     `update(InterviewLevelKit).where(...).values(**changes).returning(InterviewLevelKit)`.
+     When `kit_id` is already identity-mapped in the session (true on EVERY call in this
+     flow — the caller always loads the row first), SQLAlchemy 2.0.51 returns the SAME
+     pre-existing Python object rather than a fresh one from the RETURNING row.
+     `interview_level_kits.version` is bumped server-side by the `trg_ivw_level_kits_upd`
+     BEFORE-UPDATE trigger — a value `.values()` never sets directly — so the returned
+     object's `.version` attribute was silently left at its PRE-update value. A caller
+     chaining `expected_version = written.version` across the claim -> batch-1 'processing'
+     commit -> final 'completed'/'failed' write sequence (`_kit_progressive_commit.py`) then
+     sent a WHERE clause that could NEVER match the DB's real version — permanently losing
+     the final write's OCC claim, EVERY SINGLE TIME, with ZERO concurrent writers involved.
+     This is why bugs #1-3 above, while all real, never actually fixed the user-visible
+     symptom on their own. Fixed: added `.execution_options(populate_existing=True)` to the
+     one statement in `update_level_kit`. **Confirmed via live Postgres reproduction AND
+     independently mutation-tested BY ME** (I reverted the fix, re-ran the new regression
+     test `app/modules/interviews/tests/test_integration_level_kit_occ_chain.py` (renamed
+     from `test_repro_version_bug.py` during principal-reviewer's M3 round — now builds its
+     own FK chain instead of depending on a pre-existing interview row) — failed at exactly the
+     predicted assertion with `AssertionError` at the batch-1 write; restored the fix,
+     re-ran, passed; full suite re-confirmed green after restoring). This test is a
+     PERMANENT regression guard (not throwaway) — run under `RUN_DB_TESTS=1`, zero Anthropic
+     API cost, creates+hard-deletes one throwaway `interview_level_kits` row.
+
+  **Bug #5 — STILL OPEN, this is where to resume:** a final, tightly-scoped live
+  end-to-end test (one `POST .../level-kit/regenerate` call, no repeats, on interview
+  `674a7549-b56c-47eb-b9bc-f45f3a51ba77` / kit `107dc0fb-3e8f-4011-8113-bb45ce0d40fa` /
+  application `40fce694-78a1-4ba7-9eba-61c03ebc0eec`, position "Lead Product Security
+  Engineer_Yodlee") confirmed bugs #1/#2/#4 all hold clean under real load — version
+  chained 39->41->42 with NO spurious conflict, and bug #3's fix correctly surfaced a REAL
+  per-area error message instead of a generic one. But the run still did not reach
+  `status='completed'`: one area's LLM response failed JSON parsing —
+  `generation_error = "area 'SAST/DAST/IAST Tooling & CI/CD Security Integration' failed:
+  area parse failed: ValueError"`, logged as `level_kit_area_parse_failed error_type=
+  ValueError` at `ordinal=5` in one log line and `ordinal=4` in another (0- vs 1-indexed
+  inconsistency between two log sites — itself worth a quick check, not yet investigated).
+  The other 9 areas' calls completed fine; only this one area's response failed
+  `json.loads`/field-extraction in `_parse_area` (`agents/_level_kit_progressive.py`).
+
+  **I pulled the actual raw response from the log myself (free — `grep`, no new live
+  Anthropic call) before pausing, so this doesn't depend on a `$TEMP` log file surviving to
+  next session.** Two `level_kit_area_parse_failed` lines logged at 22:09:03 (the
+  `raw_response=raw[:2000]` field added earlier this session, working as intended):
+  `ordinal=4` and `ordinal=5`, each a `"questions":[...]` array. Both are cut off by OUR
+  OWN 2000-char log slice (`raw[:2000]`) mid-way through the 4th question's `question_text`
+  — e.g. one ends `"...designing the end-to-end application security testing architecture
+  for a new microserv` (mid-word), the other `"...migrating a critical financial data API
+  from API-key authentication to OAuth 2.0 with PKCE for mobile clients and client-cred`
+  (mid-word). Both show exactly 4 fully/partially-formed questions where 5 are required
+  (`_AREA_SCHEMA`/`_parse_area` requires `len(questions) == 5`) — question 5 never appears
+  before the slice cuts off.
+  **This is NOT yet conclusive** — it could be (a) our own `[:2000]` log slice cutting off a
+  genuinely-complete, valid full response before question 5 (meaning no real bug in the
+  model's output, the log line just doesn't show enough), or (b) the actual model output
+  itself getting cut short by `_AREA_MAX_TOKENS=4000` (`agents/_level_kit_progressive.py`)
+  before finishing question 5 — i.e. the EXACT SAME truncation-at-max-tokens pattern already
+  found and fixed once this session for the whole-kit call (`interview-kit-streaming-
+  generation`, `max_tokens=12000` too low, truncating at exactly 12000 tokens). Given that
+  prior precedent, (b) is the more likely hypothesis, but NOT yet confirmed — the fix-before-
+  confirming mistake this project's own RCA-completeness mandate exists to prevent.
+  **First action on resume: temporarily bump the log slice (`raw[:2000]` → `raw[:8000]` or
+  log the full string once) and re-run ONE regenerate call** (same interview/kit as above) to
+  see the FULL raw response and `stop_reason` if available — this confirms (a) vs (b) before
+  deciding whether the fix is simply raising `_AREA_MAX_TOKENS` (cheap, matches precedent) or
+  something else (a genuine schema/prompt issue). Do not raise `_AREA_MAX_TOKENS` blind
+  without seeing the full response first.
+
+  Clean wall-clock for `tasks.md` task 7 (still blocked): this run's Celery task itself ran
+  52.875s dispatch-to-final-write (NOT a clean completion — ended in the parse failure above,
+  so this is not yet the real "task 7 done" number).
+
+  Current repo state: branch `dev/interview-kit-progressive-generation`, nothing committed,
+  nothing pushed. `docs/BACKLOG.md` already has 5 new tracked-debt entries from this session
+  (§4, a `run_async` orphaned-coroutine finding F1, the autoretry-vs-lease-race F3, the
+  pending-age-gauge note F4, the candidates-reconciler lease-generalization follow-up, and
+  the tasks.md 3.2/3.3 update) — read those for detail rather than repeating here.
+  `openspec/changes/interview-kit-progressive-generation/tasks.md` 3.2/3.3 already updated to
+  reflect the real reconciler-lease fix (no longer says "no reconciler change needed").
+  Celery worker/beat were last restarted 2026-10-08 22:05 IST with ALL 4 fixes above live —
+  if resuming in a fresh session, restart the stack anyway per standing practice rather than
+  trusting these PIDs are still alive.
+
+  **Next step on resume:** root-cause bug #5 (the JSON parse failure on one specific area) —
+  start by reading the Celery log's `raw_response` field for THIS exact failure (already
+  captured in the log from the run above, no new live call needed to see it) before deciding
+  whether it's a token-truncation issue (`_AREA_MAX_TOKENS=4000` too low for this specific
+  area's content) or a schema/prompt mismatch. Once fixed and one clean end-to-end completion
+  is confirmed (single regenerate call, no retries), proceed to `principal-reviewer`, then the
+  standard close-out sequence (spec sync already partially done via BR-P20-016; GO_LIVE
+  checklist + resume-pointer update inline with the PR; GH Actions usage check; PR creation;
+  present for explicit user merge approval).
+
+- 2026-10-08 — **Local-storage Content-Type fix MERGED, PR #274, squash, branch
   `dev/local-storage-mimetype-fix` deleted** (merge commit `36c6636`), no migration,
   frontend-unaffected. Found live-testing PR #273: the interview-scorecard `.xlsx` download
   (PR #269) downloaded as `.docx` and wouldn't open. Root cause: the SHARED local-storage
