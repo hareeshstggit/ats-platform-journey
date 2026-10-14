@@ -10,6 +10,94 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-14, evening — **interview-scorecard-coverage-fixes BUILT, REVIEWED, SYNCED,
+  ARCHIVED. Branch `dev/interview-scorecard-coverage-fixes`, HEAD `d6d35db` (NOT pushed,
+  NOT yet PR'd as of this entry — that's the only remaining step).**
+
+  User reported 5 real gaps in the scorecard feature that had just merged (PR #282,
+  `interview-scorecard-tab-entry`): (1) non-technical interview criteria could never be
+  rated by a panelist at all — confirmed via code read, the xlsx builder already
+  reserved rows for them but `ScorecardField` never offered a picker for them; (2)
+  `code_debug` question code snippets silently dropped from the downloadable xlsx
+  despite the data already existing in `scorecard_template`, just never read; (3) final
+  interview outcome buried at the bottom of the sheet, unstyled; (4)+(5) single sheet
+  mixing evaluated/unevaluated questions and the rubric, user wanted 3 separate
+  worksheets (Scorecard/Question Bank/Rubric). I presented this understanding back to
+  the user before building (Quality Gate Rule 1) — one judgment call explicitly flagged:
+  "evaluated" could mean "scored by ANY one panelist" (my first guess) or something
+  genuinely per-panelist-segmented; user confirmed "I meant per panelist," which I read
+  as confirming the any-one-panelist semantics (not requiring consensus/all-panelists) —
+  NOT a request to redesign the shared per-question-row/per-panelist-column table shape.
+  This reading was explicitly flagged as the one assumption most likely to need
+  correcting, and nothing in review contradicted it.
+
+  Full Rule 8 sequence run: new OpenSpec change `interview-scorecard-coverage-fixes`
+  (proposal/design/delta-spec/tasks all written directly, not via the interactive
+  skill — scope was already fully formed from the understanding-confirmation exchange).
+  Backend (`backend-engineer`) and frontend (`ux-ui-engineer`) dispatched in PARALLEL
+  (independent file scopes, zero overlap) — both finished clean:
+  - Backend: `_scorecard_xlsx.py` rewritten (298 lines) + new `_scorecard_xlsx_rows.py`
+    (row-building/evaluated-split, extracted to stay under the 300-line cap) +
+    `test_unit_scorecard_xlsx.py` rewritten for the 3-sheet structure (22 tests). Code
+    snippet column added, reading `scorecard_template`'s already-present `code_snippet`
+    field. Evaluated/unevaluated split: a row counts as evaluated the moment ANY one
+    assigned panelist scored it (not consensus) — non-scoring panelists on an evaluated
+    row still show blank, unchanged from before. Final result moved into the header
+    block as a 7th row, `Font(bold=True, size=13)` (openpyxl default is 11, so +2pt).
+    Rule-6 dependency re-verification done by the agent itself (not just trusted from
+    design.md): `_router_scorecard.py`/`_service_scorecard.py` confirmed to have zero
+    sheet-count/sheet-name dependency.
+  - Frontend: `feedback-scorecard-field.tsx` (217→285 lines) gained a 3rd picker
+    section, "Add from Non-Technical," reusing `source: "kit"` (zero schema change —
+    `ScorecardItem.source` stays the existing 2-value `Literal["kit","custom"]`) with
+    `question_id: "non_technical:{name}"`. Extracted a shared `PickerSection`
+    sub-component (used by both the kit-question and non-technical lists) to avoid
+    duplicating markup and to stay under the 300-line cap. I caught and fixed one
+    trivial cosmetic nit myself before running tests (the shared loading-state copy
+    always said "Loading kit questions…" even for the non-technical section) — added a
+    `loadingText` prop, cheap enough to fix inline rather than wait for review to flag it.
+  - Independently re-verified both diffs against actual `git diff` (not just the
+    agents' self-reports) before running Gate 1: backend 22 unit tests + ruff + mypy
+    clean, frontend `tsc --noEmit` + 6 vitest tests clean.
+  - `functional-test-engineer` ran all 7 of design.md's regression scenarios against the
+    real stack (new permanent suite:
+    `backend/app/modules/interviews/tests/test_functional_scorecard_coverage_fixes.py`)
+    — **7/7 PASS, zero bugs found**: non-technical rating end-to-end proof, code-snippet
+    present/blank proof, mixed-evaluated-across-2-panelists routing proof (the
+    `per-panelist` semantics specifically verified), custom-questions-post-relocation
+    proof, final-result-once-styled proof, zero-feedback-still-generates proof,
+    accessibility code-inspection pass. Real DB, real HTTP, real downloaded xlsx bytes,
+    full FK-safe cleanup verified (0 stale `FT-%` rows before and after).
+  - `principal-reviewer` (sonnet/high — correctly not escalated, reviewer itself
+    confirmed no uncertainty on any of the 10 mandate dimensions): **APPROVE-WITH-NITS**
+    first round. 1 Minor (a copy-pasted stale "design.md Decision 5" docstring citation
+    in `_scorecard_xlsx_rows.py` that actually pointed at the WRONG decision — fixed
+    inline, self-verified, no re-review per this project's own nit-handling rule). 2
+    Nits logged as non-blocking awareness-only (a `question_id`'s docstring example
+    list not yet including the new `non_technical:` key format; a vanishingly unlikely
+    theoretical key-collision if a focus area were ever literally named
+    `"non_technical"`). Reviewer independently re-verified (not trusted on faith): the
+    evaluated/unevaluated split's any-one-panelist semantics, the Rule-6 dependency
+    claim, that `source: "kit"` reuse creates no downstream `question_id`-parsing
+    ambiguity anywhere in the codebase, and that the Live-verification mandate's
+    execution-not-just-reasoning bar was already met by the functional suite's real
+    `Font`/`sheetnames` assertions against the actually-installed openpyxl version.
+
+  Close-out done: spec synced (BR-P20-015 re-amended again — 3-sheet structure, the old
+  "No feedback submitted yet" scenario replaced since its text described the OLD
+  single-sheet layout, 6 new scenarios added; BR-P20-019 amended with the non-technical
+  picker + 2 new scenarios), change archived to
+  `openspec/changes/archive/2026-10-14-interview-scorecard-coverage-fixes/`,
+  `docs/GO_LIVE_CHECKLIST.md`'s Interviews row updated. **Not yet done: GH Actions usage
+  check, push, PR, CI, human merge approval** — standard close-out, pick up from there
+  on resume if this session ends first (check `git log`/`gh pr list` — this may already
+  be done by the time you read this if the session continued).
+
+  Separately, still pending from the PRIOR change (`interview-scorecard-tab-entry`,
+  merged as PR #282): the likely-real Applications/Candidates pagination bug tracked in
+  `docs/BACKLOG.md` §4 (🟠) — NOT started, user has not yet picked it up as the next
+  task. Surface it again once this scorecard-coverage-fixes PR is merged.
+
 - 2026-10-14, later same day, UPDATE 2 — **M1/M2/m1/m2 fixed, committed, round 3 opus
   review dispatched and in flight. Branch `dev/interview-scorecard-tab-entry`, HEAD is
   commit `1c88c24` (NOT pushed). If this session ends before round 3 reports back, a
