@@ -10,6 +10,83 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-14, night — **PR #283 (interview-scorecard-coverage-fixes) MERGED
+  (`571c5ab`). applications/candidates pagination fix BUILT, REVIEWED
+  (APPROVE), committed. SESSION PAUSED at user's explicit request (hard
+  deadline 11:30pm IST, resume tomorrow 11:00am IST from office). Branch
+  `dev/applications-candidates-pagination-fix`, HEAD `109dda0` (NOT pushed,
+  NOT yet PR'd — that's the next, and only remaining, step).**
+
+  **PR #283 close-out, fully done**: merged via squash (`571c5ab`), local main
+  synced (`alembic upgrade head` — no-op, no migration in that PR), external
+  mirror (`ats-platform-journey`) re-synced for `memory/resume-pointer.md`
+  (the only mirrored file that PR touched).
+
+  **Then started the next task the user explicitly queued**: the 🟠
+  Applications/Candidates pagination bug tracked in `docs/BACKLOG.md` §4 (same
+  root cause already fixed in `interviews` — `ORDER BY updated_at DESC` with no
+  tie-breaker, non-deterministic skip/duplicate under OFFSET/LIMIT pagination).
+  Ran the full Gate 5 bug-fix pipeline, fast (user gave an 11:30pm IST hard
+  stop with ~70 minutes remaining at the time this task started):
+  1. `cavecrew-investigator` — confirmed live: `candidates` has 546/554
+     non-deleted rows sharing one identical `updated_at` timestamp
+     (`2026-10-05 12:42:57.882323+00`); a real pagination walk at page size 20
+     found only 536/554 distinct (18 skipped). `applications` shares the exact
+     same 546-row tie group (546/570 total) — same root cause confirmed, though
+     the walk-proof at a small single-position scope wasn't large enough to
+     reproduce the skip at page size 20 (the tie group is spread across many
+     positions). No stale "ordered by" doc claims found in either module's
+     router/spec (unlike `interviews`, which needed a docstring fix too).
+  2. `cavecrew-builder` — applied the 2 one-line tie-breaker fixes
+     (`candidates/_repository_crud.py:90`, `applications/repository.py:135`,
+     both `, id DESC` appended to the `ORDER BY`) — **but this agent has NO
+     Bash tool** (its toolset is Read/Edit/Write/Grep/Glob only), so it could
+     not create the branch or run any verification; it correctly flagged this
+     explicitly instead of silently skipping Rule 7. I (main loop) then did it
+     myself directly: created `dev/applications-candidates-pagination-fix` off
+     `main` (carrying the uncommitted edits cleanly), ran ruff/mypy (clean),
+     ran the full unit suite for both modules (**471 passed**), and ran a live
+     `EXPLAIN (ANALYZE, BUFFERS)` before/after for both queries via the
+     backend's own `asyncpg` directly (no `psql` CLI available in this
+     environment — noted for future sessions) — identical plan shape both
+     times (same Seq Scan → Sort → Limit, no new SubPlan, only the Sort Key
+     gains the tie-breaker). Then re-walked `candidates` WITH the fix applied:
+     **554/554 distinct, 0 skipped** (was 536/554, 18 skipped) — the direct
+     functional proof the fix works, done directly rather than via a
+     dispatched functional-test-engineer (time-constrained, and this Gate-5
+     bug-fix path doesn't mandate that stage the way the heavier module-build
+     loop does).
+  3. `principal-reviewer` (sonnet/high — correct tier, no migration/auth/
+     cross-module-contract change) — **APPROVE**, first round, zero findings.
+     Independently re-verified: exact 2-line diff scope, caller mapping (both
+     are single-consumer, nothing depends on a specific tie-order), spot-
+     checked both modules' functional tests for any order-dependent assertion
+     that could now break (found none — the 2 candidates it checked either
+     return exactly 1 row or don't assert a fixed expected id), re-ran
+     ruff/mypy itself rather than trusting the report.
+  4. `docs/BACKLOG.md` §4 updated — the 7-file tracked item is now 5 remaining
+     (positions/interview_panelists/organizations/offers/screening_decisions,
+     all much smaller tie-skew or 0 rows today, correctly lower priority);
+     applications+candidates marked fixed with the commit hash and the
+     before/after walk numbers. Severity downgraded 🟠→🟡 since the two
+     highest-risk files are now resolved.
+
+  **DONE: pushed, PR #284 opened, all 5 CI checks green** (`dependency-drift`,
+  `lint`, `test`, `typecheck`, `PR merge-readiness summary` — backend-ci only,
+  correctly no frontend-ci run since this PR touches only backend files).
+  PR: https://github.com/hareeshstggit/ats-platform-project/pull/284
+
+  **Only remaining step: the user's explicit merge approval.** No code work
+  remains — this is purely waiting on the user. If this session ends before
+  that happens: `gh pr view 284` first — if still open and green, it's just
+  waiting on the user, nothing to re-derive or re-verify.
+
+  **Note for future sessions**: no `psql` CLI is installed in this
+  environment — use the backend's own `./.venv/Scripts/python.exe` with
+  `asyncpg` directly for any ad-hoc live DB check (connection string in
+  `backend/.env`'s `DATABASE_URL`, swap `postgresql+asyncpg://` prefix to
+  plain `postgresql://` for direct `asyncpg.connect()`).
+
 - 2026-10-14, evening — **interview-scorecard-coverage-fixes BUILT, REVIEWED, SYNCED,
   ARCHIVED. Branch `dev/interview-scorecard-coverage-fixes`, HEAD `d6d35db` (NOT pushed,
   NOT yet PR'd as of this entry — that's the only remaining step).**

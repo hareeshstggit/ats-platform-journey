@@ -474,47 +474,40 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
-- 🟠 **7 repository files (not 5 — corrected 2026-10-14 round 3, see below) share
-  the same unstable-`ORDER BY updated_at DESC` + OFFSET/LIMIT-pagination pattern
-  already confirmed to cause real row skip/duplicate bugs in `interviews`; 2 of
-  the 7 (applications, candidates) are now measured as very likely to have the
-  same live bug today** — found 2026-10-14, `principal-reviewer` (opus round 2),
-  while reviewing `interview-scorecard-tab-entry`; file list corrected and
-  per-table tie counts added by the same reviewer's round-3 re-check. Root
-  pattern, live-verified on `backend/app/modules/interviews/
-  _repo_my_interviews.py`: 1,359 of 1,367 `interviews` rows share one identical
-  bulk-updated timestamp, so an `ORDER BY updated_at DESC` with no tie-breaker
-  lets OFFSET/LIMIT paging non-deterministically skip some rows and repeat
-  others (confirmed empirically — a 189-assignment panelist at page size=20 got
-  only 186 distinct rows). That file was fixed (`ORDER BY updated_at DESC, id
-  DESC`). The other 7 files with the textually identical ordering pattern, with
-  each table's actual tie-skew measured live (largest group of rows sharing one
-  `updated_at` value, out of total rows):
+- 🟡 **5 remaining repository files share the same unstable-`ORDER BY
+  updated_at DESC` + OFFSET/LIMIT-pagination pattern already confirmed and
+  fixed in `interviews`, `applications`, and `candidates`** — found 2026-10-14,
+  `principal-reviewer` (opus round 2/3), while reviewing
+  `interview-scorecard-tab-entry`. Root pattern, live-verified on
+  `backend/app/modules/interviews/_repo_my_interviews.py`: 1,359 of 1,367
+  `interviews` rows share one identical bulk-updated timestamp, so an
+  `ORDER BY updated_at DESC` with no tie-breaker lets OFFSET/LIMIT paging
+  non-deterministically skip some rows and repeat others (confirmed
+  empirically — a 189-assignment panelist at page size=20 got only 186
+  distinct rows). **`applications` and `candidates` FIXED 2026-10-14** (commit
+  `e3d227e`, branch `dev/applications-candidates-pagination-fix`) —
+  live-confirmed the same 546-row tie group on both tables (546/570 for
+  applications, 546/554 non-deleted for candidates), live-walked `candidates`
+  before/after (536/554 distinct → 18 skipped, fixed to 554/554 → 0 skipped),
+  live-`EXPLAIN`-verified identical plan shape on both queries before/after.
+  5 files remain, each table's actual tie-skew measured live (largest group of
+  rows sharing one `updated_at` value, out of total rows):
 
   | File | Largest tie group / total rows |
   | --- | --- |
-  | `backend/app/modules/applications/repository.py:135` | 546 / 570 |
-  | `backend/app/modules/candidates/_repository_crud.py:90` | 546 / 1,015 |
   | `backend/app/modules/positions/repository.py:155` | 37 / 716 |
   | `backend/app/modules/interview_panelists/repository.py:90` | 10 / 396 |
   | `backend/app/modules/organizations/repository.py:73` | 5 / 18 |
   | `backend/app/modules/offers/repository.py:197` | 0 rows (N/A today) |
   | `backend/app/modules/screening/repository.py:170` | 0 rows (N/A today) |
 
-  **applications and candidates are the priority** — their tie-skew is as
-  severe as the confirmed `interviews` bug, so their list pages (`GET
-  /applications`, candidate list views) very likely skip/duplicate rows across
-  pages TODAY; not yet walked/confirmed the way `interviews` was, but per Gate
-  2 ("tech debt tagged user-visible failure fixed next session, not deferred")
-  this should be the first thing confirmed (walk `GET /applications` at page
-  size 20 and look for duplicates/gaps) and fixed next session, not left at a
-  tracking-only priority. positions/interview_panelists/organizations have much
-  smaller tie groups (lower but nonzero risk); offers/screening_decisions have
-  0 rows today so the pattern is dormant, not yet exercised. Cheap fix per
-  file, same as the `interviews` fix: add `, <table_alias>.id DESC` as a
-  tie-breaker to each `ORDER BY ... updated_at DESC` clause; live-`EXPLAIN`
-  each before/after per this project's Rule 7 (pagination-grain changes
-  require it).
+  Lower priority than the fixed pair — positions/interview_panelists/
+  organizations have much smaller tie groups (lower but nonzero risk);
+  offers/screening_decisions have 0 rows today so the pattern is dormant, not
+  yet exercised. Cheap fix per file, same as the 3 already-fixed files: add
+  `, <table_alias>.id DESC` as a tie-breaker to each `ORDER BY ... updated_at
+  DESC` clause; live-`EXPLAIN` each before/after per this project's Rule 7
+  (pagination-grain changes require it).
 - 🟢 **`GET /interviews/my` filters on `LOWER(ipa.email)` but the only index on
   that column (`0023_interviews.py:191`) is on plain `email`, so the filter
   can't use it** — found 2026-10-14, `principal-reviewer` (opus round 3), while
