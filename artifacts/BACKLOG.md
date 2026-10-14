@@ -89,6 +89,161 @@ narrative, only current state.
    **Separately flagged, NOT part of the gate math but a real gap**: `app/modules/offers/
    tasks.py` is 0% covered (89 statements) — a Celery task file, genuinely untested, touching
    Reliability/Observability. Tracked in §5 below, not blocking, needs its own pass.
+5. **Offer process completeness audit (2026-10-12) — user asked to track as BACKLOG, reminder
+   requested, decision on what to build NOT yet made.** Full audit (shortlist → offer creation →
+   approval → letter → candidate acceptance → onboarding handoff) found the internal flow is
+   solid (eligibility gate, create/submit/approve, docx+LibreOffice letter generation all work)
+   but the process is **NOT actually "fully online"** — 6 gaps, none previously tracked:
+   - ✅ **RESOLVED 2026-10-14 (`offer-sent-candidate-email`) — E1 — "Send to Candidate" now
+     actually sends something real.** `render_offer_sent` now names the candidate and position
+     (graceful fallback on either lookup failing, never blocks), and the candidate's copy
+     carries the actual generated offer PDF as a real attachment (mirrors `offer.approved`'s
+     existing attachment pattern) — skipped+logged, never faked, if the PDF is genuinely
+     missing from storage. **Still not fully "online" without E2/E3** (below, deliberately out
+     of scope for this fix, confirmed with the user): no link to a candidate-facing page (none
+     exists yet), no e-signature — the email states the recruiter will follow up for next
+     steps. Verified live against the real stack (5/5 regression scenarios); `NOTIFICATIONS_
+     ENABLED=True`'s real-AWS-send path was verified only up to the boto3 SES-call boundary —
+     no AWS credentials exist in this local environment (confirmed via isolated repro to be an
+     environment gap, not a code defect) — full real-send verification still needs doing once
+     SES is actually provisioned (same precondition as every other `NOTIFICATIONS_ENABLED`
+     go-live item already tracked).
+   - 🔴 **E2 — no candidate-facing page exists.** Every frontend route is under `(auth)`/
+     `(dashboard)` only (confirmed: `frontend/src/app` has no public/link-based route). Accept/
+     decline endpoints require internal roles — "acceptance" is an internal user clicking a
+     button on the candidate's behalf, not the candidate doing anything themselves.
+   - 🔴 **E3 — no e-signature integration.** Nothing built (DocuSign or similar). Already a known
+     open decision (D5 below, GO_LIVE line 82) but now concretely blocking "fully online."
+   - 🟠 **E4 — no acceptance evidence kept.** Only `accepted_at` + which internal user clicked —
+     no candidate signature, consent record, IP, or signed copy.
+   - 🟠 **B2 — no re-offer possible once declined/withdrawn.** `UNIQUE(application_id)` on
+     `offers` (`alembic/versions/0025_offers.py`, confirmed no partial-relax) with no versioning/
+     negotiation history — a declined or withdrawn offer permanently blocks that application
+     from ever getting another one.
+   - 🟠 **D1 — a failed PDF generation is a permanent dead end.** No regenerate endpoint; "Send"
+     stays disabled forever; the only escape is Withdraw, which then triggers B2's permanent
+     block.
+   Two structural issues, lower urgency but worth tracking:
+   - 🟡 **A2 — offer and application status are two unlinked sources of truth.** Accept DOES sync
+     (`offer_accepted` written to the application) but decline/send do not touch the application
+     at all, and the application's own status can be hand-set independent of any real offer
+     record.
+   - 🟡 **F1 — no onboarding handoff after acceptance.** No `offer.accepted`/`offer.declined`
+     outbox event wired (HR/hiring manager get no signal), no onboarding module exists at all.
+   Secondary/polish-tier gaps also found (not detailed here — see the full audit transcript if
+   resuming this): missing joining-date/employment-type/location on the offer record and letter
+   merge (B1/D4); single hardcoded India/Karnataka compensation formula for every org, the
+   org-specific comp-structure upload table exists but is completely unused (B4); no approver
+   in-app queue (C3, partly overlaps D2 above); `valid_until` never enforced, no expiry job
+   (B5); `openspec/specs/offers/spec.md` badly out of sync with shipped code (BR-002/BR-017's
+   "shortlisted" gate text, the removed separate attest step, TC-018's "hired" status — spec
+   last synced 2026-09-10, the `offers-org-templates-and-approval-workflow` change itself was
+   never archived, tasks.md §11.1-11.3 still unchecked). `docs/GO_LIVE_CHECKLIST.md` lines
+   51/66/80/82/121 also found stale/overstated by this audit — not corrected here (that file
+   wasn't the ask), flagging for whoever next touches it.
+   **E1 shipped 2026-10-14 (see above). E2/E3/E4/B2/D1/A2/F1 and the secondary/polish items
+   below remain undecided** — user chose E1 specifically from this list; no build decision made
+   on the rest. Re-assess this entry's priority the next time BACKLOG is reviewed, per the
+   user's own standing instruction that priorities here are
+   dynamic, not fixed.
+6. **🟠 Re-screen cooldown + admin/lead-recruiter override + different-panelist requirement
+   (2026-10-12) — user-requested, NOT YET SPECCED OR BUILT, cross-module scope.** Raised
+   alongside the (separately shipped, see `candidate-screening-no-redundant-regeneration`)
+   no-redundant-regeneration fix. Full policy as stated by the user:
+   - A regular recruiter CANNOT re-screen a candidate for the same position for 6 months
+     from the reject date, if that candidate was either **screen-rejected** (a
+     `CandidateScreening.outcome == "rejected"`) OR **interview-rejected** (rejected during
+     the later interview/evaluation process for that position — exact application/interview
+     status value(s) that count as "interview rejected" not yet confirmed against the
+     `applications`/`interviews` modules' actual status model).
+   - Admin and lead-recruiter roles CAN override this and re-screen the same candidate for
+     the same position, but **only once ever per (candidate, position) pair** — a one-time
+     override, not a repeatable bypass.
+   - The override re-attempt, once it reaches the interview stage, MUST use a **different
+     panelist** than the earlier (rejected) attempt used.
+   - User referred to this as "already built in BR-035" — it is NOT; BR-035 today only says
+     "re-screen on reject creates a new row, old row preserved." All of the above (cooldown,
+     override, panelist-difference) is net-new policy, not yet specced anywhere.
+   **Why not built tonight**: spans 3 modules — `candidate_screenings` (where the block/
+   override check must run, at re-screen time), `applications` (likely the authoritative
+   source for an "interview rejected" timestamp — need to confirm against
+   `application_status_history` vs. the screening's own `outcome`), and `interviews`
+   (panelist assignment happens at interview-SCHEDULING time, not at screening-creation
+   time, so "different panelist" cannot be enforced in `candidate_screenings` at all — it's
+   a constraint on whichever module assigns panelists, checked against the prior rejected
+   attempt's panelist record). Needs its own Rule-8 proposal + design.md with a full
+   cross-module dependency map (CLAUDE.md Rule 6) before any code — explicitly out of scope
+   for the no-redundant-regeneration change (see that change's proposal.md "Explicitly Out
+   of Scope" section).
+   **Open questions for whoever specs this**: exact DB field(s) that mark "interview
+   rejected" and its timestamp; where the one-time-override-used flag is durably stored
+   (new column on `candidate_screenings`? a join table keyed by (candidate_id,
+   position_id)?); whether the 6-month window is checked at screen-creation time only, or
+   also blocks earlier UI affordances (e.g. hide the "Screen Candidate" button entirely vs.
+   let the call through and 403/422 it); whether "different panelist" means different from
+   ALL panelists across every interview level of the prior attempt, or just the specific
+   level that produced the rejection.
+7. **Full-backlog re-prioritization (2026-10-14) — every open item in this file re-read and
+   re-tiered per the user's own standing instruction that priorities here are dynamic, not
+   fixed.** This does not replace any item's own detailed entry below — it's a triage layer
+   on top, pointing at where each item already lives. User asked for this list specifically
+   to decide what to build next; **no build decision made yet** on anything in Tier 1/2/3
+   below — re-assess again next time this file is reviewed, same as every other PRIORITY
+   item's standing rule.
+
+   **Tier 1 — real correctness/security bugs, not yet fixed, recommended first (cheap-to-
+   moderate effort, several are one-line-to-small fixes):**
+   - `departments/service.py`'s `set_org_scope`-without-actor-check gap (§4, Security/RLS) —
+     same bug class already confirmed and fixed in `positions/service.py`, deliberately left
+     out of that fix.
+   - Screening revert (shortlisted→screen_rejected) doesn't invalidate existing interviews,
+     orphaning pending records (§3, item 2).
+   - BR-SYNC-005 auto-sync is fire-and-forget with a bare exception swallow, no retry (§3,
+     item 6).
+   - Interview feedback outcome submittable with no `scheduled_at` (§3, item 4).
+   - Interview kit regen on reschedule has no idempotency guard (§3, item 5).
+   - `wrap_bedrock_error` classifies `NoCredentialsError` as Transient, burning retry budget
+     and tripping the breaker on a permanent config error (§9) — one-line fix.
+   - `GET /applications?status=shortlisted` 500s on an invalid enum value (§4) — needs a
+     quick decision (422 vs. translate), then a small fix.
+
+   **Tier 2 — test/CI debt with high leverage, cheap, unblocks future verification:**
+   - Dead-UUID fixture class across 19 files (6 hardcoded position UUIDs, none exist in the
+     DB anymore) + hardcoded DB password across 31 files (§5) — one fix resolves a
+     recurring class of false test failures everywhere at once.
+   - `test_functional_notifications_fanout.py` (§5) — now has 3 bundled issues (dead
+     fixture, stale `/attest` call, a teardown race), recurring for the 3rd time
+     (2026-09-17, then again, then 2026-10-14) — worth a dedicated fixture-repair pass
+     instead of deferring a 4th time.
+   - BR-056 offer-pipeline gate spec-vs-code drift — code accepts Org L1 alone, spec
+     requires Org L2 (§5) — needs a decision (tighten code or amend spec) then a small fix.
+   - Trivial stale-assertion fixes: `test_functional_p24`/`p23b_position_status.py`
+     expecting removed auto-`portco_deferred` behavior (§5) — 5-minute fixes, never
+     circled back to.
+
+   **Tier 3 — bigger, needs its own design/spec before building (not a quick pick-up):**
+   P6 (re-screen cooldown, above); remaining offer-process gaps E2-E4/B2/F1/A2 (PRIORITY
+   item 5); Onboarding module (stub only, §0.4/§9); Consent/DPDP module (stub only — note
+   `enforce_data_retention` is a literal no-op, real go-live compliance weight, §0.4/§9);
+   Reporting (9 of 11 endpoints still stub, §9); Integrations module (stub only, §0.4/§9);
+   LLM provider failover chain (design fully done, blocked on 4 open questions in its own
+   `tasks.md`, §9); CR#1.A NFR response-time SLO validation (k6 harness, new capability).
+
+   **Not dev-priority-rankable — needs the user's decision or external/infra action, not
+   code:** every G1-G19/§0.5 go-live infra blocker (AWS account, OIDC, Terraform IAM/API-
+   service/RDS, SES production access, Bedrock access pending legal/DPO sign-off on G9's
+   India-data-residency question) — these are procurement/ops/legal items; the D1-D5 scope
+   decisions (phased-vs-full go-live scope, notification completeness at launch, AI backend
+   plan A/B/C, reporting completeness, which integrations ship at launch); a few product
+   judgment calls (panelist auto-assign for slots 2-3 given STG's 2-cap vs Org's 3-cap
+   contradiction, §4; recruiter-fallback silently picking one of multiple active assignees,
+   §9; departments/organizations list-ordering inconsistency, §4).
+
+   **Lower priority — cosmetic, accepted, or already deferred by the user:** line-length
+   lint not enforced (§6); several files still slightly over the 300/40-line caps, tracked
+   non-blocking residuals (§6); 2 flaky webkit e2e tests, already accepted (§5); a few
+   quarantined mobile e2e tests needing a UX pass (§5); index-tuning opportunities with no
+   measured pain yet (§4/§8).
 
 ---
 
@@ -208,7 +363,7 @@ Next up per the user's confirmed execution order: whatever the user selects next
 | # | Decision | Status | What it moves |
 |---|---|---|---|
 | D1 | Phased vs. full-scope go-live for Onboarding/Consent(DPDP)/Data-Privacy | ❓ Awaiting user | `data_privacy.enforce_data_retention` is a literal no-op today — a live DPDP compliance gap if launch requires it live, not cosmetic. Likely the single biggest date-mover. |
-| D2 | Notifications completeness at launch | ❓ Awaiting user | Only 2 events (interview.scheduled/offer.sent) wired via SES, feature-flagged OFF pending SES provisioning. SMS/task-center/digests/escalation/failed-delivery-retry all unbuilt — spec itself requires failed-delivery handling before production enablement. |
+| D2 | Notifications completeness at launch | ❓ Awaiting user | **CORRECTED 2026-10-12** (was "only 2 events," stale): `interview.scheduled`, `offer.sent`, `offer.submitted`, `offer.approved`, `offer.rejected`, plus a field-completion reminder are wired via SES — all feature-flagged OFF pending SES provisioning (`NOTIFICATIONS_ENABLED=False`). `offer.accepted`/`offer.declined` are NOT wired (no onboarding/HR handoff signal on acceptance — see offer-audit entry below, F1). SMS/task-center/digests/escalation/failed-delivery-retry all unbuilt — spec itself requires failed-delivery handling before production enablement. |
 | D3 | AI-backend Plan A/B/C (2026-08-08) — replaces the earlier "Bedrock-vs-Gemini" framing (Gemini is an explicit local-testing-only stopgap on the user's own key, not a real production candidate) | ❓ Awaiting legal/DPO on A+B | See §0.3 table below. Recommended sequencing: build toward A now, get G9's legal answer in parallel, keep C tested as the safety net. |
 | D4 | Reporting completeness at launch | ❓ Awaiting user | Positions-ageing + Interview-Pipeline-Progress are live; 9 other report endpoints (candidate-uploads, screening, pipeline lifetime matview, etc.) are still stub. |
 | D5 | Integrations (SSO, HRIS, calendar, job boards, vendors, e-signature) at launch | ❓ Awaiting user | None built. Likely all post-launch, but needs an explicit confirm. |
@@ -243,7 +398,7 @@ hand.
 | 7 | Applications (pipeline, stage transitions) | ✅ | ✅ | ✅ | ✅ | Live — full 26-status lifecycle. |
 | 8 | Screening (knockout, AI match/rank) | ✅ | ✅ | ✅ | ✅ | Live — full UI (`screening-detail.tsx`, role-briefing panel, question cards, regenerate action, start dialog) confirmed built via direct filesystem check 2026-10-07; this row previously read "UI not built," stale since before PR #223 (CR#1 consolidation, 2026-08-18). |
 | 9 | Interviews (scheduling, scorecards, feedback) | ✅ | ✅ | ✅ | ✅ | Live — all phases, AI kit generation included. |
-| 10 | Offers / Approvals | ✅ | ✅ | ✅ | ✅ | Live — state machine, compliance engine, PDF+S3. |
+| 10 | Offers / Approvals | ✅ | ✅ | 🟡 | ✅ | Internal flow live (create→submit→approve→letter→send-flip). **CORRECTED 2026-10-12** (was blanket ✅✅✅✅, overstated): "fully online" claim does NOT hold — see the "Offer process completeness audit" entry below (new, same date) for the full gap list. Candidate-facing delivery, e-signature, and acceptance evidence are ALL unbuilt; "Send" only flips a status with no real delivery. |
 | 11 | Onboarding / Preboarding | ⬜ | ⬜ | ⬜ | ⬜ | Nothing built — only an enum marker on `positions`/`applications`. No dedicated table. |
 | 12 | Consent (DPDP) | ⬜ | ⬜ | ⬜ | 🟡 | Spec written; tables (`candidate_consents`, `consent_purposes`) exist in schema — **unused**, no backend wired. |
 | 13 | Data-Privacy (retention/deletion/export/legal hold) | ⬜ | ⬜ | ⬜ | 🟡 | `data_subject_requests` table exists; retention-enforcement task is a literal no-op — live DPDP gap, feeds D1. |
@@ -319,6 +474,58 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
+- 🟠 **7 repository files (not 5 — corrected 2026-10-14 round 3, see below) share
+  the same unstable-`ORDER BY updated_at DESC` + OFFSET/LIMIT-pagination pattern
+  already confirmed to cause real row skip/duplicate bugs in `interviews`; 2 of
+  the 7 (applications, candidates) are now measured as very likely to have the
+  same live bug today** — found 2026-10-14, `principal-reviewer` (opus round 2),
+  while reviewing `interview-scorecard-tab-entry`; file list corrected and
+  per-table tie counts added by the same reviewer's round-3 re-check. Root
+  pattern, live-verified on `backend/app/modules/interviews/
+  _repo_my_interviews.py`: 1,359 of 1,367 `interviews` rows share one identical
+  bulk-updated timestamp, so an `ORDER BY updated_at DESC` with no tie-breaker
+  lets OFFSET/LIMIT paging non-deterministically skip some rows and repeat
+  others (confirmed empirically — a 189-assignment panelist at page size=20 got
+  only 186 distinct rows). That file was fixed (`ORDER BY updated_at DESC, id
+  DESC`). The other 7 files with the textually identical ordering pattern, with
+  each table's actual tie-skew measured live (largest group of rows sharing one
+  `updated_at` value, out of total rows):
+
+  | File | Largest tie group / total rows |
+  | --- | --- |
+  | `backend/app/modules/applications/repository.py:135` | 546 / 570 |
+  | `backend/app/modules/candidates/_repository_crud.py:90` | 546 / 1,015 |
+  | `backend/app/modules/positions/repository.py:155` | 37 / 716 |
+  | `backend/app/modules/interview_panelists/repository.py:90` | 10 / 396 |
+  | `backend/app/modules/organizations/repository.py:73` | 5 / 18 |
+  | `backend/app/modules/offers/repository.py:197` | 0 rows (N/A today) |
+  | `backend/app/modules/screening/repository.py:170` | 0 rows (N/A today) |
+
+  **applications and candidates are the priority** — their tie-skew is as
+  severe as the confirmed `interviews` bug, so their list pages (`GET
+  /applications`, candidate list views) very likely skip/duplicate rows across
+  pages TODAY; not yet walked/confirmed the way `interviews` was, but per Gate
+  2 ("tech debt tagged user-visible failure fixed next session, not deferred")
+  this should be the first thing confirmed (walk `GET /applications` at page
+  size 20 and look for duplicates/gaps) and fixed next session, not left at a
+  tracking-only priority. positions/interview_panelists/organizations have much
+  smaller tie groups (lower but nonzero risk); offers/screening_decisions have
+  0 rows today so the pattern is dormant, not yet exercised. Cheap fix per
+  file, same as the `interviews` fix: add `, <table_alias>.id DESC` as a
+  tie-breaker to each `ORDER BY ... updated_at DESC` clause; live-`EXPLAIN`
+  each before/after per this project's Rule 7 (pagination-grain changes
+  require it).
+- 🟢 **`GET /interviews/my` filters on `LOWER(ipa.email)` but the only index on
+  that column (`0023_interviews.py:191`) is on plain `email`, so the filter
+  can't use it** — found 2026-10-14, `principal-reviewer` (opus round 3), while
+  re-verifying the `interview-scorecard-tab-entry` ORDER BY fix above. The
+  query plan scans all `interviews` rows and evaluates the email filter
+  per-row; cheap today (~6-10ms at 1,367 rows), but grows with total interview
+  volume, and the new scorecard page's pagination walk can now issue up to 10
+  of these queries per page load. Cheap fix if prioritized: add an expression
+  index on `lower(email)` — needs its own small schema change + a
+  `docs/SCHEMA_CHANGE.md` entry per this project's schema-evolution rule, not
+  bundled into an unrelated PR.
 - 🟢 **`_service_kits.py::do_get_level_kit` (the GET /level-kit backend endpoint) has no
   `level_category`/`level_type` guard** — found 2026-10-09, `principal-reviewer`, while
   reviewing the "hide View Questions for Organization-level interviews" UI fix (PR
@@ -866,6 +1073,30 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   above, since none of those modules expose a service-layer method for these specific reads
   yet. Not a blocker; route through each module's `service.py` next time one of these call
   sites is touched for other reasons (m9, §9 review).
+- 🟠 **`backend/app/modules/candidates/candidate_screenings/tests/test_functional_21de_golden_path.py`
+  is broken (pre-existing, found 2026-10-13 during candidate-screening-no-redundant-regeneration's
+  review, NOT caused by that change) and has zero test cleanup (Rule 5 violation).** Two separate
+  issues:
+  1. **Broken assertion, schema/test drift.** Line 217 does
+     `q.get("expected_answer", "").strip()`, assuming a string — but
+     `schemas.py`'s `expected_answer` has been `list[str]` since commit `5d9c120` (BR-048 round 3,
+     same commit that touched this test file, meaning it was never actually run live since and the
+     break went unnoticed). Fix: `assert any(a.strip() for a in q.get("expected_answer", []))` or
+     equivalent.
+  2. **No fixture/teardown/cleanup of any kind** (confirmed via grep — zero matches for fixture/
+     teardown/finally/cleanup/yield in the whole file). Reuses a real, non-FT-prefixed, shared
+     candidate/position pair across runs with nothing ever soft-deleting what it creates — same
+     root-cause class already fixed this same PR in `test_functional_p21a_screening.py` and
+     `test_functional_21b_question_generator.py` (an autouse module-scoped cleanup fixture + a
+     distinct position for any test needing guaranteed freshness). Confirmed leaving multiple
+     orphaned `candidate_screenings` rows on the shared pair across past runs (07:09-07:20 UTC,
+     2026-10-13) — one from this session's own verification run (id `3e535418-...`) was already
+     found soft-deleted by the time it was checked, so no manual cleanup was needed for that one,
+     but the underlying gap (no cleanup mechanism at all) remains.
+  Not blocking candidate-screening-no-redundant-regeneration's merge — confirmed via `git log` +
+  live reproduction that this predates and is unrelated to that change. Fix next time this file is
+  touched: apply the same cleanup-fixture pattern as the two sibling files above, and fix the
+  `.strip()` assertion.
 - 🟡 **`notifications/_median_hike.py`'s comparable-offer query has no supporting index**
   (m10, §9 review, 2026-09-23) — `_COMPARABLE_SQL` filters `offers` by `LOWER(p.title)` +
   `o.status IN ('sent','accepted')` + non-null CTC fields with no index covering that shape;
@@ -881,6 +1112,28 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 5. Tech debt — tests/CI
 
+- 🟡 **`test_functional_matching_bugs.py::test_retrigger_extraction_on_completed_returns_409`
+  fails (got 202, expected 409) — found 2026-10-13 during screening-jd-gaps-grounding's
+  functional regression sweep, confirmed unrelated to that change (candidate-extraction
+  retrigger logic, not screening/JD-readiness). Not investigated further — root cause and
+  fix needed next time this test or candidate-extraction retrigger logic is touched.
+
+- 🟡 **`tests/integration/test_candidate_ai_match_screen_flow.py`'s AI-job-match test asserts
+  `screening_provider in ("gemini", "offline")` but the live env now runs it through
+  `anthropic`** — found 2026-10-13, same sweep as above. Pre-existing env/test-expectation
+  mismatch (local `.env` has moved `CANDIDATE_SCREENING_PROVIDER` to `anthropic` as primary
+  since this test's assertion was written) — update the assertion to match current provider
+  precedence next time this file is touched, or make it provider-agnostic.
+
+- 🟡 **The project's own stale-data-check command (CLAUDE.md, Quality Gate Rule 5) is silently
+  blind when run as the `ats_app` role** — found 2026-10-13, functional-test-engineer. `ats_app`
+  is RLS-bound and `positions` is RLS-protected, so `SELECT COUNT(*) FROM positions WHERE
+  title ILIKE 'FT-%'...` run as `ats_app` ALWAYS returns 0, even with real stale rows present —
+  the check silently never catches anything. Must run as `atsplatformuser` (the RLS-bypass
+  admin role already used by this project's own FT suites, e.g. `_ADMIN_DSN`) to be meaningful.
+  Fix: update the documented command in `.claude/CLAUDE.md`'s Quality Gate Rule 5 to specify the
+  admin role explicitly.
+
 - 🟡 **2 sibling `test_functional_*`-named files still gated on `RUN_DB_TESTS=1` instead of
   `RUN_FUNCTIONAL_TESTS=1`** (m1, §9 review, 2026-09-23) — `test_functional_stakeholder_users.py`
   had this exact defect (silently skips under the functional-test gate, false confidence it ran)
@@ -890,6 +1143,25 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   `security/tests/test_functional_multi_role_and_approver_repo.py` and
   `interviews/tests/test_functional_calendar_invite_panelist_query.py`. Rename both to `test_db_*`
   next time either is touched.
+
+- 🟡 **`interviews/tests/test_functional_19c_panelists_feedback.py` has stale hardcoded
+  `POSITION_ID`/`LEVEL_*`/`RECRUITER_USER_ID` constants, found 2026-10-14 during
+  interview-scorecard-tab-entry's functional verification — same dead-fixture class as the
+  19-file entry directly below, not yet confirmed whether it's one of those 19 or a 20th
+  carrier.** Would error at fixture setup if run today, independent of any code defect.
+  Not fixed (out of scope for that change). Confirm whether this file is already covered by
+  the 19-file sweep below or needs adding to it, next time either is touched.
+
+- 🟡 **Direct-DB-insert test fixtures reusing the legacy `applications.status='active'` enum
+  value get a generic 500 (`LookupError`) instead of a clean error, found 2026-10-14.** The
+  DB enum type still permits `'active'` (additive-only schema evolution, migration never
+  dropped it) but the ORM-side Python enum no longer includes it
+  (`app/modules/applications/models.py:31`, "default changed from 'active' to
+  'new_application'"). Not a bug in any shipped code path (only reachable via a hand-written
+  fixture copying an old test's pattern, not via the real API) — but if `'active'` rows ever
+  exist in a real environment for any reason, reading them would hit the same landmine. Low
+  priority; worth a cheap observability improvement (a clearer error on an unmapped enum
+  value) next time this area is touched, not urgent enough for its own pass.
 
 - 🔴 **Same dead-UUID class as bucket (b) — NOT scope-closed at 2, an earlier version of this
   entry claimed that without independently re-deriving it and was wrong.** Live-verified against
@@ -931,6 +1203,21 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   setup, but the file still cannot run at all until the dead `c180a718-...` position is
   resolved — out of scope for the offers-eligibility-gate change, tracked here per the
   existing scoped-pass item above (now 9 confirmed files, not 8).
+  **STILL UNRESOLVED, recurred a 2nd time 2026-10-14** (`offer-sent-candidate-email` functional
+  verification) — same `ForeignKeyViolation` on the same dead position, ~1 month after first
+  found. A throwaway fixture was built to verify that session's actual feature instead
+  (not committed). Two more, separate defects found in the SAME file during this recurrence,
+  logged as their own entries below since they're a different root cause each:
+  1. `test_offer_sent_fanout_disabled` calls `POST /offers/{id}/attest` — this endpoint no
+     longer exists (offers' own approve+attest merge, §8.5) — the test was never updated after
+     that merge, independent of the dead-fixture issue above.
+  2. `test_candidate_decrypt_failure_isolated_from_recruiter`'s teardown deletes
+     `interview_level_kits` by subquery, racing the async Celery-generated kit
+     (`interviews.generate_level_interview_kit`) still being inserted — causes an FK violation
+     on the following `interviews` delete when the race loses.
+  This file needs a proper fixture-repair pass (fresh position/recruiter + the two fixes
+  above) before it can run at all — not surgical enough to bundle into whichever small change
+  next happens to touch it; needs its own scoped pass.
 - 🔴 **Live 2026-09-17 recurrence of the venv→system-Python re-exec quirk (item (b) in the
   dev-stack-watchdog entry above) actively caused false-negative functional-test failures —
   not just "believed harmless."** Found during `dev/offers-eligibility-gate` C1 verification:
@@ -1041,7 +1328,7 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   branch's diff, which only touched this file's resume-download rename) — same fix shape when
   picked up: narrow to an allowlist (`if provider != "local_nlp": skip`) and scope the fixture
   to only the tests that actually need an offline provider, not `autouse=True` module-wide.
-- ✅ `offers/tests/test_functional_hiring_uniqueness.py` — 3 of 6 tests failed against the live stack (drove hire-uniqueness via a manual status PATCH to `hired`, blocked by the applications-manual-status-lockdown feature) — **FIXED 2026-09-15**. Traced BR-012's originally-specified 409 `CANDIDATE_ALREADY_HIRED` code and found it's no longer reachable from ANY endpoint: `applications/_status_rules.py`'s `_MANUAL_TARGET_BLOCKED` blocks `hired` as a manual PATCH target unconditionally, and `do_update_status` never runs a hire-uniqueness check on that path by design. The only reachable route into `offer_accepted`/`onboarded` (what `has_hired_application_for_candidate` checks) is `offers.do_accept`, which simultaneously satisfies `has_accepted_offer_for_candidate` for the same offer — so the 2 tests built to isolate the "hired-only" disjunct in isolation would collapse into byte-identical duplicates of already-existing tests if rewritten; retired rather than kept as artificial copies (with a documented explanation in the file). The remaining test (error-shape/no-SQL-leak check) rewritten through the real accept-offer flow. File went from 6 tests/3 failing to 4 tests/4 passing, live-verified twice independently. Also added full Rule-5 cleanup (the file had ZERO teardown before this fix, a separate real gap found mid-task) and fixed an unrelated pre-existing blocker (`_create_position`'s fixture was missing the now-mandatory Org L1/L2 interview levels, D9). **Follow-up flagged, not fixed here**: `openspec/specs/applications/spec.md`'s BR-012 (lines ~500-512) still describes the old `update_status`-guard/`CANDIDATE_ALREADY_HIRED` wording — real spec-vs-code drift, needs its own spec-sync pass.
+- ✅ `offers/tests/test_functional_hiring_uniqueness.py` — 3 of 6 tests failed against the live stack (drove hire-uniqueness via a manual status PATCH to `hired`, blocked by the applications-manual-status-lockdown feature) — **FIXED 2026-09-15**. Traced BR-012's originally-specified 409 `CANDIDATE_ALREADY_HIRED` code and found it's no longer reachable from ANY endpoint: `applications/_status_rules.py`'s `_MANUAL_TARGET_BLOCKED` blocks `hired` as a manual PATCH target unconditionally, and `do_update_status` never runs a hire-uniqueness check on that path by design. The only reachable route into `offer_accepted`/`onboarded` (what `has_hired_application_for_candidate` checks) is `offers.do_accept`, which simultaneously satisfies `has_accepted_offer_for_candidate` for the same offer — so the 2 tests built to isolate the "hired-only" disjunct in isolation would collapse into byte-identical duplicates of already-existing tests if rewritten; retired rather than kept as artificial copies (with a documented explanation in the file). **CORRECTION 2026-10-12**: the "only reachable route" claim above is WRONG as a general statement about the system today — it was true only for this test file's own narrow fixture setup. The 2026-10-12 offer-process audit (see entry below) confirms `applications/_status_rules.py` allows `offer_accepted`/`onboarded` to be set by hand on the application directly, with no offer record required at all (A2) — a real, separate gap this test's scope never covered. The remaining test (error-shape/no-SQL-leak check) rewritten through the real accept-offer flow. File went from 6 tests/3 failing to 4 tests/4 passing, live-verified twice independently. Also added full Rule-5 cleanup (the file had ZERO teardown before this fix, a separate real gap found mid-task) and fixed an unrelated pre-existing blocker (`_create_position`'s fixture was missing the now-mandatory Org L1/L2 interview levels, D9). **Follow-up flagged, not fixed here**: `openspec/specs/applications/spec.md`'s BR-012 (lines ~500-512) still describes the old `update_status`-guard/`CANDIDATE_ALREADY_HIRED` wording — real spec-vs-code drift, needs its own spec-sync pass.
 - ✅ **`positions/tests/test_functional_p6_4_closed_lockdown_e2e.py` — stale since 2026-07-31 — FIXED 2026-09-17** (found again independently during `offers-eligibility-gate` C1 verification; root cause confirmed identical to the 2026-08-27 diagnosis below). `_create_position`'s Org L1/L2 `levels_payload` never carried `panelist_ids`, so BOTH `closed_fixture` (line ~438) and `test_auto_close_persists_exact_remark_text` (line ~346) hit `LEVEL_HAS_NO_PANELISTS` at the FIRST interview-create call — pre-existing, unrelated to BR-018/the eligibility-gate change, confirmed by reproducing on this branch's `_create_position` code unchanged from main. Fixed: `_create_position` now takes an optional `panelist_id` param, passed as `panelist_ids: [panelist_id]` on both Org levels via the same `POST .../interview-levels` API call (not a raw `interview_level_panelists` INSERT as originally proposed below — the API param achieves the same outcome without bypassing validation); both callers that create real interviews (`closed_fixture`, `test_auto_close_persists_exact_remark_text`) now call `_make_panelist` BEFORE `_create_position` and pass its id through; `test_manual_close_with_free_text_reason` (never creates an interview) passes no panelist_id, unaffected. Re-verified live: `5 passed` (was `1 failed, 1 passed, 24 errors`) for the file's non-BR-056-affected tests — see the NEW scenario-2-class finding below for the one remaining unrelated stale-test gap this surfaced.
 - 🔴 **`positions/tests/test_functional_p24_position_status.py` + `test_functional_p23b_position_status.py` — stale since 2026-07-04, same review.** Both assert that open→closed with no reason auto-sets `portco_deferred` — that behavior was deliberately removed 2026-07-04 (`d1d003e`, "enforce user reason on open→closed"; `positions/validation.py:85` now raises `CLOSE_REASON_REQUIRED`). Tests last touched 2026-07-28 without updating this assertion. Deterministic, reproduces in isolation. Fix: update both to expect `CLOSE_REASON_REQUIRED` instead of the auto-set behavior.
 - 🟡 **The backend functional test suite is skip-by-default (`RUN_FUNCTIONAL_TESTS=1` gated) — the above 2 stale-test defects sat undetected for 4-8 weeks as a direct result**, since Gate 1's routine unit runs never exercise them. No action proposed here beyond flagging the systemic risk; a periodic scheduled functional-suite run (not gated on a specific PR touching the file) would catch this class of drift proactively instead of waiting for an unrelated review to stumble into it.

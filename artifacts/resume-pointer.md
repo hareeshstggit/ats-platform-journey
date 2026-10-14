@@ -10,7 +10,554 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
-- 2026-10-08 (latest) — **SESSION PAUSED mid-fix, user's explicit choice after a cost
+- 2026-10-14, later same day, UPDATE 2 — **M1/M2/m1/m2 fixed, committed, round 3 opus
+  review dispatched and in flight. Branch `dev/interview-scorecard-tab-entry`, HEAD is
+  commit `1c88c24` (NOT pushed). If this session ends before round 3 reports back, a
+  fresh session should check `git log -1` on this branch — if it's still `1c88c24`, round
+  3 either hasn't finished or its result wasn't acted on; re-check or re-dispatch.**
+
+  Both background fix agents from UPDATE 1 (below) finished; their diffs were
+  independently re-verified against actual `git diff` output (not just their self-reports)
+  before committing. Commit `1c88c24` ("fix(interviews): stable pagination order +
+  scorecard page under 300 lines") bundles all 4 fixes: M1 (ORDER BY tie-breaker +
+  router.py/spec.md doc correction), M2 (new `frontend/src/lib/hooks/
+  use-find-my-interview.ts`, 68 lines, `page.tsx` down to 275 lines), m1 (deleted the
+  redundant reset effect), m2 (new cap-path test, `page.test.tsx` now 5 tests). Commit
+  trailers written correctly this time (no blank line breaking the `Agent:`/
+  `Reviewed-by:`/`Co-Authored-By:` block). The 5-other-repos proactive flag from round 2
+  is now logged as its own entry in `docs/BACKLOG.md` §4 ("Tech debt — data/query
+  correctness"), not bundled into this fix. m3 (hardcoded functional-test fixture IDs) and
+  m4 (the 2000-cap comment's stated-but-wrong justification) were NOT fixed — reviewer
+  said both are lower-priority, non-blocking for this round.
+
+  **Round 3** (`principal-reviewer`, opus/high) result: **APPROVE-WITH-NITS.** All of
+  M1/M2/m1/m2 independently re-checked and confirmed fixed (live `EXPLAIN` re-run against
+  real Postgres: tie-breaker preserves the same plan shape; the top panelist's 189-row
+  list walked 3× at page size 20, 189/189 distinct every time, vs. 186/189 in round 2;
+  `wc -l` confirmed `page.tsx`=275, hook=68; 119 backend unit tests + ruff + mypy +
+  `tsc --noEmit` + 5/5 vitest all green). One new Minor (m5): the BACKLOG entry for the
+  5-other-repos finding actually undercounted — it's 7 files, not 5 (missed 2 ORDER BY
+  sites embedded in concatenated SQL strings: `applications/repository.py:135`,
+  `positions/repository.py:155`), and the reviewer additionally measured each table's
+  real tie-skew live. **Already fixed inline, no round 4 needed** (per review-round
+  discipline: APPROVE-WITH-NITS → fix inline + self-verify):
+  - `docs/BACKLOG.md` §4 entry corrected to 7 files + a tie-count table; severity raised
+    to 🟠 because 2 of the 7 (`applications`, `candidates` — 546/570 and 546/1,015 rows
+    sharing one timestamp, same severity of skew as the confirmed `interviews` bug) are
+    now flagged as a likely-real, user-visible Gate-2 candidate — **recommended first
+    task next working session**: walk `GET /applications` at page size 20 and look for
+    duplicate/missing rows the same way `interviews` was confirmed, then apply the same
+    one-line `id DESC` tie-breaker fix to all 7 files if confirmed.
+  - New separate 🟢 BACKLOG entry added for a proactive perf flag (P2, not blocking):
+    `GET /interviews/my`'s `LOWER(ipa.email)` filter can't use the existing plain-`email`
+    index — cheap fix is an expression index on `lower(email)`, tracked as its own future
+    schema change, not urgent today (~6-10ms at current volume).
+  - N1/N2 (stale code comments in `page.tsx` referencing logic that moved into the hook)
+    and N3 (two unused hook exports) fixed — `page.test.tsx` now imports and uses
+    `MAX_SEARCH_PAGES`/`MY_INTERVIEWS_FETCH_SIZE` from the hook instead of hardcoding them.
+  - Self-verified after the nit fixes: `tsc --noEmit` clean, `page.test.tsx` 5/5 still pass.
+  - **m6 (not yet done — applies at merge time, not now)**: when this branch's commits are
+    squash-merged, do NOT accept GitHub's default squash message (it would concatenate the
+    branch's earlier broken trailer blocks) — compose the squash message so
+    `Agent:`/`Reviewed-by:`/`Co-Authored-By:` are three consecutive lines with no blank
+    line breaking them, same as this session's corrected format.
+  - **m3/m4 (carried over as tracked debt, not fixed, not blocking)**: m3 = hardcoded
+    fixture IDs in `test_functional_scorecard_tab_entry.py` (same class as an
+    already-tracked BACKLOG item); m4 = the `MAX_SEARCH_PAGES` cap's code comment states a
+    reasoning the reviewer proved wrong (cap itself is still fine, for a different, real
+    reason — see round 2 notes above). Neither blocks merge.
+  **Committed as commit `ff54841`**, then resumed and closed out fully: spec synced
+  (BR-P20-015 amended + new BR-P20-019 added to `openspec/specs/interviews/spec.md`),
+  `tasks.md` all 8 sections flipped to `[x]` (were never updated incrementally during
+  the build, all genuinely done), change archived to
+  `openspec/changes/archive/2026-10-14-interview-scorecard-tab-entry/`,
+  `docs/GO_LIVE_CHECKLIST.md`'s Interviews row updated with the full feature + the
+  pagination-bug finding. GH Actions usage checked before push: October cycle at 848/2000
+  Linux minutes, `netAmount: 0.0` (still inside included allotment) — safe to trigger CI.
+  **DONE: pushed, PR #282 opened, CI green, ready for merge.** Hit a real CI-triggering
+  snag closing this out — logged as its own playbook entry
+  (`docs/TOKEN_OPTIMIZATION_PRACTICE.md` v1.9) since it's a genuinely new wrinkle: the
+  close-out commit's tip was `[skip ci]` (pure docs), which GitHub's skip-ci check
+  suppresses for the WHOLE push (push-level, keyed on tip commit — this repo's own
+  workflow-file comments already document this exact incident twice, PR #255/#260, now
+  recurred a 3rd time here); the first retrigger commit then ALSO failed silently because
+  its own message quoted the bracketed `[skip ci]` phrase in prose, and GitHub's detection
+  is a substring match over the WHOLE commit message, not just a directive position — a
+  second, careful retrigger (message avoiding the literal bracket text) finally worked.
+  Both `backend-ci` and `frontend-ci` passed (`success`) against commit `466f981`; current
+  HEAD `aac6d5b` differs from that validated commit by exactly one docs-only line (the
+  playbook entry itself, confirmed via `git diff --stat`), so the CI result still fully
+  covers the real code. PR #282: https://github.com/hareeshstggit/ats-platform-project/pull/282
+
+  **Only remaining step: the user's explicit merge approval** (no auto-merge for
+  feature/code changes per standing rule). If this session ends before that happens:
+  `gh pr view 282` first — if still open and green, it's just waiting on the user.
+
+  Separately, not part of this PR: the 🟠 applications/candidates pagination finding
+  (`docs/BACKLOG.md` §4) should be surfaced to the user as a Gate-2 candidate for next
+  session's first task — a likely-real, user-visible pagination bug in the main
+  Applications/Candidates list screens, not yet confirmed by an actual walk the way
+  `interviews` was.
+
+  --- (original pause-point entry below, now superseded by the above but kept for the
+  finding details it recorded) ---
+
+- 2026-10-14, later same day, UPDATE 1 (superseded, see UPDATE 2 above) — **SESSION PAUSED
+  at user's request (~2.5hr away from keyboard). On branch
+  `dev/interview-scorecard-tab-entry` (NOT merged, NOT pushed).
+  Mid-fix-cycle on `principal-reviewer` round 2's CHANGES-REQUESTED verdict — 2 background
+  fix agents dispatched and in flight as of this entry; check their actual git-diff state
+  on resume, don't trust this entry's "in flight" framing if time has passed.**
+
+  **What this change is**: `interview-scorecard-tab-entry` — replaces the old
+  `FeedbackFormDrawer` modal with a dedicated browser tab
+  (`frontend/src/app/(focused)/interviews/[interviewId]/scorecard/page.tsx`) for panelists
+  to submit interview feedback, shows each kit question's `expected_answer` (never shown
+  before), and fixes a real pre-existing bug where custom (non-kit) scorecard questions
+  were silently dropped from the downloadable `.xlsx` scorecard. OpenSpec artifacts at
+  `openspec/changes/interview-scorecard-tab-entry/` (proposal.md/design.md/specs/tasks.md),
+  NOT yet archived — archive happens only after review passes. Full BR text already added
+  as delta spec (BR-P20-015 amendment + new BR-P20-019) at
+  `openspec/changes/interview-scorecard-tab-entry/specs/interviews/spec.md` — not yet
+  synced into the main `openspec/specs/interviews/spec.md` (sync happens at archive time,
+  per the standing `/opsx:archive` flow).
+
+  **Round 1** (sonnet/high `principal-reviewer`): CHANGES-REQUESTED — a Major: the new
+  page only checked page 1 of `GET /interviews/my` to find the target interview, so a
+  panelist with the target interview past page 1 would see a false permission-denied.
+  Fixed by adding a bounded pagination walk (`MAX_SEARCH_PAGES = 10`, scans up to 2,000
+  interviews) in `page.tsx`.
+
+  **Round 2** (opus/high, escalated per this project's own model-tier mandate — a repeat
+  CHANGES-REQUESTED round always escalates): the round-1 fix is INSUFFICIENT because it
+  rests on an unstable foundation. Findings, all addressed in this fix pass:
+  - **M1 (Major, REAL PRE-EXISTING BUG, independent of this change)**:
+    `backend/app/modules/interviews/_repo_my_interviews.py` line 55's
+    `ORDER BY i.updated_at DESC` has no tie-breaker. Live-verified against the real local
+    Postgres DB: 1,359 of 1,367 `interviews` rows share one identical bulk-updated
+    timestamp, so OFFSET/LIMIT paging non-deterministically skips/repeats rows. Empirically
+    confirmed: a 189-assignment panelist, paged at size=20, got only 186 distinct rows (3
+    missing, 3 duplicated). This silently affects the real "My Interviews" list in
+    production TODAY, and it's also why round 1's pagination-walk fix can't be trusted —
+    the walk assumes paging is stable/complete. Reviewer live-verified the fix via
+    `EXPLAIN (ANALYZE, BUFFERS)`: adding `i.id DESC` as a tie-breaker produces the same
+    query plan shape (no new SubPlan/SeqScan, 7.5ms→6.9ms). Fix also requires correcting a
+    stale "Ordered by scheduled_at ASC" docstring claim (always inaccurate, predates this
+    change) in `router.py` and `openspec/specs/interviews/spec.md` (~line 488) to describe
+    the real `updated_at DESC, id DESC` ordering.
+  - **M2 (Major)**: `page.tsx` grew to 309 lines, over this project's 300-line-per-file
+    cap, after the pagination-walk code was layered onto an earlier
+    `FeedbackRatingField` extraction. Fix: extract the walk logic (searchPage state,
+    totalPages/hasMorePages, the advance effect, MAX_SEARCH_PAGES/MY_INTERVIEWS_FETCH_SIZE
+    constants) into a new `frontend/src/lib/hooks/use-find-my-interview.ts` hook returning
+    `{ query, interview, hasMorePages, searchPage }`.
+  - **m1 (Minor)**: an unneeded/incomplete reset-on-`interviewId`-change effect at
+    `page.tsx` lines 74-76 (`setSearchPage(1)` on `params.interviewId` change) — App
+    Router already remounts a fresh subtree on segment change, and the effect doesn't
+    reset `prefilledRef`/form fields anyway. Fix: delete it.
+  - **m2 (Minor)**: no committed test for the `MAX_SEARCH_PAGES` cap path (runaway
+    `total`, target never found, must stop at exactly 10 fetches and show
+    permission-denied, not loop forever). Fix: add this test to
+    `page.test.tsx` alongside the existing 4 tests.
+  - **m3 (Minor, NOT yet fixed, not blocking this round)**: hardcoded
+    `POSITION_ID`/`LEVEL_STG_R1`/`RECRUITER_USER_ID` constants in
+    `backend/app/modules/interviews/tests/test_functional_scorecard_tab_entry.py` lines
+    48-51 — same stale-fixture-ID class already tracked elsewhere in `docs/BACKLOG.md`.
+    Lower priority per reviewer; pick up opportunistically.
+  - **m4 (Minor, NOT yet fixed, not blocking this round)**: the 2000-interview
+    `MAX_SEARCH_PAGES` cap's code comment justifies itself as "no one accumulates 2000
+    lifetime interviews" — reviewer proved this wrong (real panelists can exceed it over
+    time) but the cap itself is still fine for a DIFFERENT correct reason: the list is
+    sorted most-recently-updated-first, so a wrongly-denied panelist would need 2000+
+    *even-more-recently-updated* interviews ahead of their target, which is the actually
+    load-bearing justification. Fix the comment's stated reasoning, not the cap value.
+  - **3 Nits**: not individually tracked here: self-contained per reviewer's report, apply
+    opportunistically if re-reviewing the same files, otherwise skip.
+  - **Proactive flag (logged separately, NOT bundled into this PR, NOT yet logged as of
+    this entry — do on resume if not already done)**: reviewer found 5 other repository
+    files share the same unstable-`ORDER BY updated_at DESC`-with-OFFSET-pagination
+    pattern: `backend/app/modules/candidates/_repository_crud.py:90`,
+    `backend/app/modules/interview_panelists/repository.py:90`,
+    `backend/app/modules/offers/repository.py:197`,
+    `backend/app/modules/organizations/repository.py:73`,
+    `backend/app/modules/screening/repository.py:170`. Needs a new `docs/BACKLOG.md`
+    entry (reviewer's own words: "log in BACKLOG, don't bundle").
+  - **Git-trailer format bug** (affects commits `6575408`, `b7e164c`, `f55897f` on this
+    branch): `Agent:`/`Reviewed-by:` lines have been written with a BLANK LINE before
+    `Co-Authored-By:`, which breaks git's trailer parser (trailers must be consecutive,
+    no blank line). Fix going forward (no retroactive history rewrite): write
+
+    ```text
+    Agent: <producing-agent>
+    Reviewed-by: <reviewer-agent> — <verdict>
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+    ```
+
+    as one unbroken trailer block, no blank line anywhere inside it.
+
+  **In flight as of this entry** — 2 background agents dispatched in parallel to fix all
+  of M1/M2/m1/m2 (bundled per the reviewer's own suggestion):
+  1. `backend-engineer` — M1: the 3-file ORDER BY + router.py + spec.md fix described
+     above. Briefed to report back only, no self-dispatch, no commit/push/PR.
+  2. `ux-ui-engineer` — M2 + m1 + m2: the hook extraction + effect deletion + cap test
+     described above. Same reporting constraints.
+
+  **On resume, in order**:
+  1. Run `git status` and `git diff` on this branch FIRST — these two agents may have
+     already finished and their edits may be sitting uncommitted; don't re-dispatch
+     blindly, read what's actually there.
+  2. If both are done and look complete: independently verify (Gate 1 — backend
+     `pytest`/`ruff`/`mypy` for the ordering change; frontend `tsc --noEmit`/`vitest` for
+     the hook extraction) — don't just trust each agent's own self-report.
+  3. Log the 5-other-repos proactive-flag finding into `docs/BACKLOG.md` (not yet done).
+  4. Commit the bundled fix with CORRECTED trailer formatting (see above) — this is a new
+     commit on top of `f55897f`, not an amend.
+  5. Dispatch `principal-reviewer` round 3 at **opus/high** (the reviewer's own explicit
+     instruction: "Re-review can stay at opus... this is round 3"). Reviewer expects
+     APPROVE-WITH-NITS once M1/M2/m1/m2 land.
+  6. If round 3 passes: standard close-out — `/opsx:sync` the BR-P20-015/BR-P20-019 delta
+     into main `openspec/specs/interviews/spec.md`, `/opsx:archive` the change, update
+     this file, flip the relevant `docs/GO_LIVE_CHECKLIST.md` row, GH Actions usage check,
+     push, PR, wait for CI, present for the user's explicit merge approval (no auto-merge
+     for feature/code changes).
+  7. Separately, not part of this change: m3/m4 above remain optional lower-priority
+     pickups, not blocking.
+
+  (Also from earlier this same session, already fully resolved: `docs/BACKLOG.md` got a
+  full re-prioritization — PRIORITY item 7, Tier 1/2/3 triage of the whole backlog — PR
+  #281, merged directly as pure docs/`[skip ci]` per standing merge-authorization rule.
+  Nothing pending from that piece.)
+
+- 2026-10-14 (latest) — **offer-sent-candidate-email FINISHED, ready for merge.** User picked
+  gap E1 from the offer-process audit's tracked list (BACKLOG PRIORITY item 5) to build first —
+  "Send to Candidate" was a placeholder sentence (raw UUIDs, no name, no attachment) despite the
+  delivery pipeline already working end to end. Confirmed scope with user upfront: E2 (candidate
+  page)/E3 (e-signature) explicitly out of scope, so no link in the email — just a real
+  candidate name/position + the actual offer PDF attached (mirrors the already-proven
+  `offer.approved`→recruiter attachment pattern). `principal-reviewer`: APPROVE first round, no
+  fix cycle needed. Functional verification found the delivery logic fully correct (5/5 design.md
+  regression scenarios live-confirmed) but surfaced 3 PRE-EXISTING, unrelated test-infra defects
+  in `test_functional_notifications_fanout.py` (a recurring dead-fixture position, a stale
+  `/attest` call to a removed endpoint, a teardown race) — logged in `docs/BACKLOG.md`, not
+  fixed. Real-AWS send path verified only to the `boto3` SES-call boundary (no AWS credentials in
+  this local environment — confirmed via isolated repro to be an environment gap, not a code
+  defect). Spec synced (NR-007 added to `openspec/specs/notifications/spec.md`, BR-016 amended
+  in `openspec/specs/offers/spec.md`), change archived. **Next step on resume (if this session
+  ends before the PR lands)**: GH Actions usage check, push `dev/offer-sent-candidate-email`,
+  create PR, wait for CI, human merge approval — check `git log main`/`gh pr list` first if
+  resuming after this point, this may already be done.
+
+- 2026-10-13, evening — **screening-jd-gaps-grounding FINISHED, ready for merge.**
+  Resumed from the commute pause (prior entry below) exactly as planned. 3rd diagnostic round
+  (re-dispatched after the 2nd stalled with no output) ran 11 live Anthropic calls across 5
+  domains, including 6 reps on the specific domain that had failed — 11/11 came back grounded,
+  confirming the already-committed prompt (`ce559fc`) was adequate and the earlier failure was
+  a low-probability sampling-tail event, not a systematic bias. No further prompt change made.
+  Added one safety net per user's choice: a non-blocking observability warning
+  (`_check_jd_gaps_grounding`) logging suspected generic-fallback drift, since `jd_gaps` has no
+  hard content validation. `principal-reviewer` round 1: CHANGES-REQUESTED — 2 Major (a real
+  `job_descriptions`-row cleanup leak in the fixture fix from the prior review round; the new
+  observability warning had zero dedicated test, only accidentally covered) + 3 Minor, one of
+  which (`match-card.tsx`'s error-handling gap) turned out to be a REAL gap the fixing agent
+  found and correctly refused to paper over with a false "done" claim — fixed inline. Reviewer
+  explicitly said fixing the 2 Majors converts this to APPROVE-WITH-NITS; self-verified (256
+  unit tests, ruff, mypy, frontend `tsc --noEmit`) rather than dispatching a 3rd review round,
+  consistent with this project's review-round discipline. Spec synced (BR-048 amendment in
+  place near its existing text; new BR-054 added alongside its sibling BR-034/035/036 in §11.5
+  — both are now in `openspec/specs/candidates/spec.md`, change archived). Next: GH Actions
+  usage check, push, PR, CI, human merge approval (standard close-out, not yet done as of this
+  entry — check `git log main`/`gh pr list` first if resuming after this point).
+
+- 2026-10-13, ~6:20 PM IST — **SESSION PAUSED MID-BUILD at user's request (commute
+  home). On branch `dev/screening-jd-gaps-grounding` (NOT merged, NOT pushed, 3 commits:
+  `b9ef2a2` spec, `6314d90` implementation, `ce559fc` 2 fixes). `main` is at `af86e79`
+  (candidate-screening-no-redundant-regeneration PR #278, merged earlier this session —
+  fully done, closed out).**
+
+  **What this branch is for**: user reported that PR #277's AI recommendation feature
+  seemed not to work (false alarm — root cause was `SCREENING_RECOMMENDATION_PROVIDER`
+  unset in local `.env`, now set to `anthropic`, confirmed working live, no PR needed —
+  that was resolved earlier this session, nothing pending there). Then user separately
+  flagged the role-briefing's "Clarify with hiring manager" section (`jd_gaps`, BR-048)
+  reads nearly identically across different positions — confirmed root cause: the prompt
+  never received the position's actual JD content, only title+skills+experience band,
+  and named 4 fixed example categories (team size, reporting line, remote/hybrid,
+  on-call) the model just echoed. User chose (via AskUserQuestion) to both (a) ground
+  `jd_gaps` in the position's real `roles_responsibilities` text and (b) add a new gate
+  blocking screening-creation entirely (422 `POSITION_JD_NOT_READY`) when a position's JD
+  extraction hasn't completed — full scope confirmed before building, spec written
+  (BR-048 amendment + new BR-054), Rule-6 dependency map done (10 functional test files +
+  1 integration test + every frontend caller checked).
+
+  **State of each piece, exactly**:
+  - **BR-054 (JD-readiness gate): DONE, SOLID, fully confirmed.** `_service_create.py`'s
+    `_assert_jd_ready` helper gates exactly 2 of 5 create-screening branches (brand-new
+    row; error-retry reuse) — NOT the 2 pure-reuse branches, by design. All 5 branch
+    scenarios + the full regression sweep across the 10+1 existing test files
+    independently re-verified live, twice, by functional-test-engineer. One real
+    regression this change caused (`test_functional_no_redundant_regeneration.py`'s
+    `_create_position` helper created JD-less positions) found and fixed — 7/7 scenarios
+    confirmed passing live, twice.
+  - **BR-048 (jd_gaps grounding in `roles_responsibilities`): NOT YET RELIABLE, actively
+    being fixed — this is the one open thread.** Wiring is confirmed correct (the real
+    JD text does reach the prompt). But the prompt's OUTPUT quality is not reliable
+    across domains: a warehouse/WMS-domain live test came back cleanly grounded; an
+    independent re-verification on a 4th domain (veterinary-clinic practice management —
+    EMR, IDEXX/Antech lab integration, prescription/controlled-substance logging,
+    boarding/kennel management, client portal) came back with 0 of 7 `jd_gaps` entries
+    referencing ANYTHING in that text, and 4 of 7 being verbatim recurrences of the exact
+    generic themes (team size/reporting line/remote-hybrid/on-call, plus 2 new ones:
+    industry/domain, seniority level) the fix was supposed to eliminate. User explicitly
+    chose "keep iterating until genuinely reliable" over shipping a known-unreliable
+    version or dropping this half of the change.
+  - **3rd backend-engineer round FAILED — stalled 600s, no progress, before producing any
+    data.** Dispatched just before the pause; its own stream shows it got only as far as
+    confirming its Anthropic key was present, then hung before writing its live-call test
+    harness — it never ran a single one of the 6 Step-1 calls, so there is NO new data
+    from this round, not even a partial result. On resume: just re-dispatch an equivalent
+    round from scratch (the brief below is still fully valid) — nothing to salvage or
+    reconcile from this failed attempt. Original brief: (1) run the SAME warehouse/WMS and
+    vet-clinic texts 3x each
+    (6 live Anthropic calls) to separate pure randomness from a systematic domain bias,
+    (2) form and test a hypothesis (candidates given: the bad-vs-good example pair added
+    last round may be anchoring the model toward a templated generic shape rather than
+    generalizing; the "ground it in the text" instruction may be too soft/abstract vs. a
+    harder mechanical constraint like requiring each entry to literally reference a named
+    system/process from the given text; the vet-clinic text's higher topic-count — 5
+    distinct sub-systems — vs. WMS's single-topic focus may be overwhelming the model),
+    (3) verify any fix on a 5th, brand-new domain, 2 runs, before declaring done. Capped
+    at 3 genuine prompt iterations — told to stop and report data + best remaining
+    hypothesis rather than open-endedly continue if still unreliable after that.
+
+  **Exact next steps on resume (in order)**:
+  1. `git checkout dev/screening-jd-gaps-grounding` (already has all 3 commits above).
+  2. Check whether the in-flight backend-engineer agent (dispatched ~6:15 PM IST, before
+     this pause) has reported back yet — if its SubagentHandback message is already in
+     the conversation history above this entry, read it. If not, it may still be running
+     in the background; check for its task-notification or just re-dispatch a fresh
+     equivalent round if too much time has passed to trust it's still alive (verify real
+     process state per this project's own standing practice — don't just trust a "still
+     running" assumption).
+  3. Based on that agent's data: if it found a genuinely reliable fix (confirmed across
+     multiple domains × multiple runs, not a single anecdote — do not accept anecdotal
+     "it worked once" as sufficient, that's exactly the mistake made twice already this
+     thread), commit it, independently re-verify Gate 1 (unit tests/ruff/mypy) yourself,
+     then do one more functional-test-engineer pass focused specifically on re-confirming
+     jd_gaps reliability across 2-3 fresh domains before trusting it.
+  4. If it's still unreliable after this 3rd round: surface that honestly to the user
+     with the full data table, and revisit the 3-way choice (keep iterating / ship with
+     documented limitation / drop jd_gaps prompt rewrite entirely and keep only BR-054)
+     — do not silently keep trying a 4th/5th round without checking in again, per this
+     project's cost-discipline mandate (Agent-dispatch cost discipline, 3-round-same-
+     concern pattern).
+  5. Once jd_gaps is genuinely confirmed reliable (or the user decides to ship/drop it):
+     full close-out — tasks.md section 7/8 checkboxes, `/opsx:sync` (BR-048 amendment +
+     new BR-054 into `openspec/specs/candidates/spec.md`) + `/opsx:archive`, GO_LIVE_CHECKLIST
+     row update (same "AI: screening question generation" row as the prior 2 changes),
+     GH Actions usage check, push, PR, CI, explicit user merge approval (standard, no
+     auto-merge).
+
+- 2026-10-13 (earlier same day) — **candidate-screening-no-redundant-regeneration FINISHED and
+  ready for merge, branch `dev/candidate-screening-no-redundant-regeneration`, NOT yet
+  pushed/PR'd as of this entry.** Resumed from last night's pause exactly as planned:
+  dispatched functional-test-engineer (hard gate, CLEAR) then principal-reviewer —
+  round 1 CHANGES-REQUESTED (1 Critical: a SECOND pre-existing functional test file,
+  `test_functional_21b_question_generator.py`, broken by the same reuse-behavior class
+  already fixed in p21a the night before — same fix applied: cleanup fixture + distinct
+  position for the test needing guaranteed freshness; 2 Major: a missing test-cleanup
+  call, zero unit coverage on the router's new conditional-enqueue branch; 1 Minor: a
+  narrow race in the error-retry reuse path, closed with a guarded atomic UPDATE). All
+  fixed, independently re-verified live (twice each, no flakes), round 2 **APPROVE**.
+  While verifying, also ran 3 functional test files the round-1 reviewer flagged as
+  "never actually run live" — 2 clean, 1 (`test_functional_21de_golden_path.py`) has a
+  genuinely pre-existing, unrelated defect (confirmed via `git log`: broke when
+  `expected_answer` became `list[str]` in an earlier commit, never run live since) —
+  logged in `docs/BACKLOG.md`, not fixed (out of scope).
+  **Separately found and fixed during close-out**: the PRIOR change
+  (`candidate-screening-view-partial-save-ai-recommendation`, PR #277, merged
+  2026-10-12) had shipped real behavior (BR-049-053) but was never `/opsx:sync`'d or
+  archived — genuine spec drift on an already-merged feature. Synced both changes'
+  delta specs into `openspec/specs/candidates/spec.md` in this same close-out pass
+  (BR-049-053 added; BR-035/036 amended in place for the reuse behavior) and archived
+  both change directories under `openspec/changes/archive/2026-10-13-*`.
+  **Next step on resume (if this session ends before the PR lands)**: GH Actions usage
+  check, push `dev/candidate-screening-no-redundant-regeneration`, create PR, wait for
+  CI, present for the user's explicit merge approval (no auto-merge). If already merged
+  by the time you read this, this paragraph is stale — check `git log main` first.
+
+- 2026-10-12, 9:15 PM IST — **SESSION PAUSED MID-BUILD, logically at the user's
+  request (back ~11 AM IST tomorrow). On branch `dev/candidate-screening-no-redundant-
+  regeneration` (NOT merged, NOT pushed, 3 commits: `c36de74` spec, `88bb909` BACKLOG,
+  `129dc26` implementation+unit-tests). `main` is at `81d1023` (candidate-screening-view-
+  partial-save-ai-recommendation PR #277, merged earlier this session — fully done, closed
+  out, local main + DB already synced to this).**
+
+  **What this new branch is for**: user reported a real bug — `POST /candidates/{id}/
+  screenings` always creates a new row and always calls the AI generator, even when a
+  screening for the exact same (candidate, position) pair already has questions generated.
+  Pure token waste since role briefing/questions depend only on position+candidate, neither
+  of which changed. Fix confirmed with user across 3 AskUserQuestion rounds (see full spec
+  for the exact decisions) — scoped NARROWLY: reuse an existing non-rejected prior screening
+  (no new row, no AI call); retry generation on the SAME row if the prior attempt errored;
+  a REJECTED prior screening is explicitly unaffected (still creates a new row, BR-035's
+  existing behavior, unchanged on purpose).
+
+  **A much bigger ask came out of the same conversation and was deliberately NOT bundled
+  in**: a 6-month re-screen cooldown after a screen- or interview-reject, with a one-time
+  admin/lead-recruiter override requiring a different panelist on the override attempt. This
+  spans `candidate_screenings` + `applications` + `interviews` and needs its own Rule-8
+  proposal. Full policy, open questions, and why it was split out are written in full in
+  `docs/BACKLOG.md` PRIORITY item 6 — read that before scoping it, nothing further to add
+  here.
+
+  **State of the narrow fix, exactly**:
+  - Spec: `openspec/changes/candidate-screening-no-redundant-regeneration/` — proposal.md,
+    design.md (has the Rule 6 dependency map + 6 regression scenarios), tasks.md (sections
+    1-5 checked off), delta spec at `specs/candidates/spec.md` (BR-035 amendment + BR-036
+    amendment, 5 Given/When/Then scenarios). NOT yet synced to the main spec
+    (`openspec/specs/candidates/spec.md`) — that happens at `/opsx:archive` time, after
+    review passes.
+  - Code (all committed, nothing uncommitted): `backend/app/modules/candidates/
+    candidate_screenings/_repository_pair_lookup.py` (new, 42 lines, `get_latest_for_pair`),
+    `_service_create.py` (new, 124 lines, `do_create_screening` — the 5-way branch),
+    `repository.py` (290→297 lines, one bound-method line), `service.py` (299→281 lines,
+    `create_screening` now a thin wrapper returning `tuple[CandidateScreeningDetail, bool]`
+    — the bool is `needs_generation`), `router.py` (enqueue now conditional on that bool).
+    Tests updated in `test_repository.py` (+4 new), `test_service.py` (+4 new, class
+    `TestCreateScreeningReuse`), `test_router.py` (3 existing mocks updated for the new
+    tuple return).
+  - **Gate 1 independently re-verified by the main loop (not just trusted from the
+    implementing agent's report)**: `cd backend && .venv/Scripts/python.exe -m pytest
+    app/modules/candidates/candidate_screenings/tests/ -k "not functional" -q --no-cov` →
+    237 passed. `ruff check app/modules/candidates/candidate_screenings/` → clean.
+    `mypy app/modules/candidates/candidate_screenings/` → clean, 20 files.
+
+  **Exact next steps on resume (in order, nothing else needed first)**:
+  1. `git checkout dev/candidate-screening-no-redundant-regeneration` (branch already
+     exists locally with all 3 commits above — no need to recreate anything).
+  2. Confirm local stack is up (backend/Celery/frontend/DB/Redis — Podman machine may need
+     `podman machine start` if stopped between sessions, same as earlier this week).
+  3. Dispatch `functional-test-engineer` (hard gate, has NOT run yet) against the 6
+     regression scenarios already written out in design.md's "Regression scenarios to cover
+     in functional tests" section — don't re-derive them, they're already fully specified:
+     (a) no-prior → new row + generation, (b) re-create mid-generation → reuse, no 2nd
+     enqueue, (c) re-create after questions populated → reuse, no enqueue, no duplicate
+     `screening_created` audit, (d) re-create after a generation error → reuse SAME row,
+     re-enqueue, (e) different position same candidate → new row + generation (must be
+     unaffected), (f) re-create after rejected outcome → new row + generation (BR-035
+     unchanged, explicit regression check this didn't get broken).
+  4. If functional-test-engineer is clean: `principal-reviewer` (no migration in this
+     change — sonnet/high default tier is fine, no risk-criteria match for opus escalation
+     unless the reviewer's own uncertainty says otherwise).
+  5. Fix any findings, re-verify, then `/opsx:sync` + `/opsx:archive` the openspec change,
+     commit, push, PR, GH Actions usage check, wait for CI, ask user for explicit merge
+     approval (standard close-out, same as every other change this project).
+
+- 2026-10-12 (earlier same day) — **No code changes. Offer-process completeness audit done at the
+  user's request, tracked in `docs/BACKLOG.md` PRIORITY item 5 — REMINDER, no build decision
+  made yet.** Localhost confirmed fully up this session (Podman machine needed a manual
+  `podman machine start` first — stopped between sessions, not a crash; DB/Redis containers,
+  backend, Celery worker+beat, frontend all healthy after). Full audit: shortlist → offer
+  creation → approval → letter → candidate acceptance → onboarding handoff. Internal flow
+  works (eligibility gate, create/submit/approve, docx+LibreOffice letter). The process is
+  **NOT actually "fully online"** — read `docs/BACKLOG.md`'s PRIORITY item 5 for the full,
+  already-tracked gap list (6 gaps rated 🔴/🟠, 2 more at 🟡, plus secondary/polish items) —
+  do not re-derive this from scratch, it's already written up there in full with file:line
+  evidence. Headline: "Send to Candidate" doesn't send anything (no real email/link/PDF —
+  confirmed by reading the actual template text), there's no candidate-facing page anywhere
+  in the frontend, no e-signature, and a declined/withdrawn offer permanently blocks that
+  application from ever getting another one (hard `UNIQUE(application_id)` constraint, no
+  versioning). Also corrected 3 pre-existing BACKLOG entries this audit found stale/wrong
+  (the module-completion matrix's "Offers ✅✅✅✅" row, D2's notification-event count, and a
+  2026-09-15 entry's wrong "only reachable route" claim) — per the user's own standing
+  instruction that BACKLOG priorities get reassessed, not just appended to, every time the
+  file is touched. **Next session: ask the user what they want to build from this list** —
+  they explicitly deferred the build decision this session ("track these as important
+  backlog items and remind me").
+
+- 2026-10-09 — **SESSION PAUSED cleanly, nothing uncommitted, nothing in flight.**
+  `main` @ `1724d14` (PR #276 merge). Two things closed this session, both fully merged:
+
+  1. **Interview-kit-progressive-generation (prior entry below) resumed and FINISHED —
+     bug #5 (duplicate-question parse failure) root-caused and fixed, PR #275 merged.**
+     The prior pause entry's own "first action on resume" (bump the raw-response log
+     slice from `raw[:2000]` to `raw[:8000]`, re-run once) was followed exactly as
+     written and worked: the full raw model response showed a well-formed, COMPLETE
+     6-item JSON array where one question (sequence 3) was repeated byte-identical —
+     NOT the suspected token-truncation at all. Fixed in `agents/_level_kit_progressive.
+     py::_parse_area`: dedupe by `sequence` (keep-first) before the exact-5 count check,
+     plus a one-clause prompt tightening in `_level_kit_prompts.py`'s `_AREA_SYSTEM`
+     ("each of the 5 genuinely distinct — never repeat..."). Live-reconfirmed end to end:
+     clean regenerate completed in **55.8s** (was 4-8 min originally), 10×5 questions,
+     keyword-list `expected_answer` on every question. `principal-reviewer` round 1
+     CHANGES-REQUESTED (4 Major: frontend never polled so the new progress UI was
+     invisible to real users — `useLevelKit` had no `refetchInterval` at all, fixed with
+     a 3s poll while pending/processing; spec left unsynced and self-contradicting;
+     the round-4 regression test silently skipped in CI because its fixture depended on
+     a pre-existing `interviews` row CI's seed script never creates; several reliability
+     paths untested) — all fixed and independently re-verified live. Round 2
+     APPROVE-WITH-NITS (5 Minor — `llm_gateway.py`/`interview-kit-drawer.tsx` both
+     pushed back over the 300-line cap by this session's own fixes, a missing frontend
+     toast test, bookkeeping) — all fixed and self-verified, no 3rd review round needed.
+     `docs/GO_LIVE_CHECKLIST.md`/`docs/BACKLOG.md`/`openspec/.../tasks.md` all updated in
+     the same PR. External GitHub Pages mirror (`ats-platform-journey`) re-synced
+     (`BACKLOG.md`+`resume-pointer.md` both touched).
+
+  2. **New bug found live-testing, fixed same session, PR #276 merged:** "View
+     Questions" (opens the AI interview-kit drawer) was shown unconditionally on every
+     interview regardless of level type — interview-kit generation has ALWAYS been
+     STG-Labs-only on the backend (BR-P20-001), so clicking it on an Organization-level
+     interview opened a drawer that 404'd and showed the same misleading "not yet
+     generated — Generate Kit" prompt a legitimate not-yet-generated STG-Labs kit would
+     show. User's explicit instruction: hide the option entirely for Org-level
+     interviews, not just disable/explain it. Fixed BOTH real entry points into the kit
+     drawer (confirmed via grep — exactly 2 consumers in the whole frontend, both now
+     gated): the Applications-pipeline card (`interview-card.tsx`, mirrors the existing
+     `canRedo` gate pattern) and the panelist "My Interviews" page
+     (`my-interviews-columns.tsx`) — the latter needed `level_type` added to
+     `GET /interviews/my`'s response end-to-end (repository SELECT, response builder,
+     Pydantic schema, frontend type) since `interview_levels` was already joined in the
+     query but the column wasn't selected; no new join, no migration.
+     `principal-reviewer` round 1 CHANGES-REQUESTED (Critical) — the first fix attempt
+     only closed the Applications-pipeline door, missing the My Interviews page
+     entirely; closed same session, round 2 APPROVE. One non-blocking debt item logged
+     (`docs/BACKLOG.md` §4): the backend `GET /level-kit` endpoint itself
+     (`_service_kits.py::do_get_level_kit`) still has no `level_category` guard — UI-only
+     fix, defense-in-depth gap only, no real exposure today since no path can ever
+     populate a kit row for an Org-level interview. External mirror re-synced again
+     (`BACKLOG.md` only this time).
+
+  **Not yet decided — genuinely open, raised but not chosen this session:** the user
+  asked to "focus on other functionalities" and I surveyed current state
+  (`docs/GO_LIVE_CHECKLIST.md`'s module matrix) before getting pulled into the two bugs
+  above. Flagged then, still true now: the checklist's "Business screens ⬜" and "Wire
+  UI off MSW ⬜" rows look stale/wrong (contradicted by everything actually shipped —
+  PRs #261-276 alone touch candidates/screening/interviews/offers extensively; worth a
+  quick correction pass whenever someone's in that file next, not urgent). The
+  genuinely-open gaps, by area, confirmed accurate: DPDP compliance (consent, retention,
+  anonymization, deletion, export, legal hold — **nothing built**), notifications
+  failed-delivery replay/alerting (⬜), integrations (SSO/HRIS/calendar/job
+  boards/assessment/e-signature — **none built**), and the whole AWS go-live column
+  (Terraform partial, no AWS account/OIDC/secrets, no `deploy.yml`, no cloud RDS, no
+  domain/TLS/WAF/CDN, **performance/SLO validation under load never run**, no
+  pen-test/DPIA, no UAT/runbooks/backup-DR/on-call). The one item explicitly flagged by
+  the user back on 2026-08-10 as "executes first, ahead of everything else" —
+  `nfr-response-time-slo-validation` (full OpenSpec change already written at
+  `openspec/changes/nfr-response-time-slo-validation/`, 4/4 artifacts complete,
+  k6 load-testing harness + first-ever measured baseline against response-time SLOs) —
+  is STILL not started. **Next session: ask the user directly which of these to pick up
+  (DPDP / notifications / integrations / the AWS+SLO work), rather than assuming** — the
+  last AskUserQuestion on this was left unanswered when the two bugs above took over.
+
+  Current repo/stack state: `main` clean, nothing uncommitted, nothing branched.
+  Localhost was last confirmed fully up (backend/celery-worker/celery-beat/Postgres/
+  Redis/frontend all healthy) during this session — restart via
+  `scripts/dev-stack-watchdog.ps1` (plus `podman machine start` first if the VM isn't
+  running — it wasn't at the start of this session, a fresh-day thing, not a crash) for
+  backend/celery/DB/Redis, and `npm run dev` in `frontend/` separately (the watchdog
+  script does not manage the frontend dev server) if resuming in a fresh session.
+
+- 2026-10-08 — **SESSION PAUSED mid-fix, user's explicit choice after a cost
   check-in, on branch `dev/interview-kit-progressive-generation` (HEAD still `6a9cdee` =
   PR #274 merge; everything below is UNCOMMITTED working-tree changes, nothing pushed, no
   PR yet).** This is the interview-kit-progressive-generation change (6+4 batched area
