@@ -10,6 +10,111 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-15, morning/midday — **interviews-my-list-panelist-fixes BUILT, REVIEWED,
+  SYNCED, ARCHIVED. Branch `dev/interviews-my-list-panelist-fixes`, HEAD `bfae917`
+  (NOT pushed, NOT yet PR'd as of this entry — that's the only remaining step).**
+
+  User reported (with screenshot) that the panelist "My Interviews" landing page shows
+  "Something went wrong" until an org filter is picked. Investigated via `cavecrew-
+  investigator` first, then PERSONALLY re-verified the claimed root cause live against
+  the real DB myself (the investigator's static trace was plausible but unexecuted —
+  per this project's RCA-completeness mandate, re-ran the investigator's own suggested
+  query with proper RLS context, `is_internal=true`, since the investigator's own
+  ad-hoc connection had none and got a misleading 0-row result). Confirmed: 2 of the
+  reporting panelist's real interviews (position "Lead Product Security Engineer_Yodlee")
+  belong to a candidate with `display_name IS NULL` (extraction completed, name
+  unparseable) — `MyInterviewItem.candidate_name: str` (non-nullable) failed Pydantic
+  validation on those exact rows, 500ing the whole request. Org filter happened to
+  exclude those rows, masking the bug as "needs a filter."
+
+  User's full ask also included 2 small related UI changes (sort order, button rename)
+  AND one much larger ask (real `.ics` calendar-invite email to candidate+panelist+
+  recruiter CC, replacing today's send-nothing stub). I presented understanding back
+  before building (Quality Gate Rule 1), got clarifying answers via `AskUserQuestion`,
+  then — per the user's own explicit instruction — scoped this change to ONLY the bug
+  fix + sort + rename, and tracked the calendar-invite feature as its own BACKLOG
+  PRIORITY item 8 (not built, deliberately deferred) rather than bundling it in.
+
+  **Real regression risk found via Rule 6 dependency mapping, BEFORE building** (this is
+  the single most important design decision in this change): `useMyInterviews` has TWO
+  consumers, not one — the My Interviews page itself, AND
+  `frontend/src/lib/hooks/use-find-my-interview.ts` (built 2026-10-14, the scorecard
+  page's own permission-check lookup, which depends on finding ANY assigned interview
+  regardless of scheduling state). If "exclude unscheduled + sort by scheduled_at" had
+  been made the endpoint's DEFAULT behavior, a panelist opening the scorecard-entry page
+  for an interview with no schedule would have gotten a FALSE permission-denied — a
+  silent regression to yesterday's shipped feature. Fixed by making it an OPT-IN query
+  param (`upcoming_only: bool = False`, default preserves today's exact behavior byte-
+  for-byte in SQL terms minus one harmless whitespace difference); only the My Interviews
+  page passes `upcoming_only=true`, `use-find-my-interview.ts` is untouched.
+
+  Backend (`backend-engineer`) and frontend (`ux-ui-engineer`) dispatched in parallel —
+  both clean: `MyInterviewItem.candidate_name` widened to `str | None`; the opt-in param
+  threaded through router→service→repository with the SQL template's filter/order
+  swapped only when `upcoming_only=True`; frontend wired `upcoming_only: true` into the
+  My Interviews page only, confirmed zero diff to `use-find-my-interview.ts`; button
+  label "Submit Feedback"→"Initiate Interview Process" (pre-submission only).
+
+  **Environment note for future sessions**: this session's background-process tracking
+  for long-running servers (uvicorn/Celery via `run_in_background`) was genuinely
+  unreliable — wrapping jobs repeatedly reported "exited with code 127" for processes
+  that were, in some cases, still alive (a misleading false alarm), and in other cases,
+  really had died while leaving ORPHANED `--reload` multiprocessing children bound to
+  the port, silently serving STALE pre-fix code even after a "successful" restart. The
+  reliable fix: always verify liveness directly (`curl .../health` AND
+  `curl .../openapi.json | grep` for a marker proving current code, e.g. a newly-added
+  param name) rather than trusting a background-task notification either way; if stale,
+  kill ALL orphaned `python`/`python3.12` processes by PID first (PowerShell
+  `Get-Process python,python3.12 | Select-Object Id,@{N='Cmd';E={(Get-CimInstance
+  Win32_Process -Filter "ProcessId=$($_.Id)").CommandLine}}` then `Stop-Process -Force`
+  each), confirm the process list is empty, THEN restart WITHOUT `--reload` (plain
+  `uvicorn app.main:app --host 0.0.0.0 --port 8000`) — `--reload`'s multiprocessing
+  respawn is the likely source of the orphaning in this specific environment. This
+  caused real wasted cost this session (a redundant functional-test-engineer dispatch
+  had to be `TaskStop`'d after a duplicate, earlier dispatch turned out to have already
+  completed successfully in parallel while I was fighting the process-management
+  confusion) — bake the liveness-check-first habit in going forward, don't just trust
+  `run_in_background`'s own status notifications for long-lived server processes.
+
+  `functional-test-engineer` ran the 5 regression scenarios from design.md against the
+  real stack — all PASS, zero bugs, including the specific regression Decision 2 exists
+  to prevent (live-proven: an interview with `scheduled_at` nulled is still found via
+  the endpoint's default mode). `principal-reviewer`:
+  - **Round 1 (sonnet/high): CHANGES-REQUESTED** — one real Major: the flagship
+    regression scenarios (the whole reason `upcoming_only` is opt-in) had ZERO
+    persisted test coverage, only an ad-hoc non-reproducible dispatch run. Also a Minor
+    (a "byte-identical" claim was actually "functionally identical, whitespace differs"
+    — confirmed via the reviewer's own live EXPLAIN, plan shape unaffected either way).
+  - Fixed: 3 new functional tests in `test_functional_my_interviews_filters.py` + 1 new
+    assertion in `test_functional_scorecard_tab_entry.py`, persisting exactly the
+    scenarios round 1 found missing. Also found (not fixed, logged in
+    `docs/BACKLOG.md` §5 instead, out of scope): 7 PRE-EXISTING tests in that filters
+    file are failing against live data due to unrelated fixture rot — a hardcoded
+    candidate/interview no longer exists, and a shared panelist account
+    (`preeti.saxena_test@panelist.example`) has accumulated 126 interviews from prior
+    test runs. Root-caused via direct DB query, not inference.
+  - **Round 2 (sonnet/high, correctly not escalated — reviewer itself said round 1's
+    gap was a missing-test completeness issue, not an uncertainty signal): APPROVE.**
+    Independently re-ran all 4 new tests live, independently re-verified the BACKLOG
+    claims via direct DB query (126 exactly, not approximate), confirmed cleanup.
+
+  Close-out done: spec synced (BR-P20-019 amended with the button-rename scenarios;
+  new BR-MYLIST-001/002 added with their full scenario sets — the formal BR blocks,
+  not just the prose endpoint-docs text the backend-engineer had already updated
+  in-place during implementation), change archived to
+  `openspec/changes/archive/2026-10-15-interviews-my-list-panelist-fixes/`,
+  `docs/GO_LIVE_CHECKLIST.md`'s Interviews row updated. **Not yet done: GH Actions
+  usage check, push, PR, CI, human merge approval** — standard close-out, pick up from
+  there if this session ends first (check `git log`/`gh pr list` — may already be done
+  by the time you read this).
+
+  **Next queued, per the user's own explicit instruction**: once this PR is merged,
+  focus on "the interview kit not opening in an independent tab" — a SEPARATE bug the
+  user flagged (not yet investigated) about the scorecard-entry page / kit-question
+  picker flow, described as preventing the panelist from building their own scorecard
+  by selecting kit or custom questions. Investigate fresh, don't assume it's the same
+  `window.open()` mechanism already confirmed working elsewhere in this session.
+
 - 2026-10-14, night — **PR #283 (interview-scorecard-coverage-fixes) MERGED
   (`571c5ab`). applications/candidates pagination fix BUILT, REVIEWED
   (APPROVE), committed. SESSION PAUSED at user's explicit request (hard

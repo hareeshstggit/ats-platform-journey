@@ -245,6 +245,30 @@ narrative, only current state.
    quarantined mobile e2e tests needing a UX pass (§5); index-tuning opportunities with no
    measured pain yet (§4/§8).
 
+8. **Real interview calendar-invite email (candidate + panelist(s) To, recruiter CC, real
+   `.ics` attachment) — user-flagged 2026-10-15 as an important feature, deliberately
+   deferred until after the smaller `interviews-my-list-panelist-fixes` change lands.**
+   Full requirement, tracked here (not a separate OpenSpec change yet — not started):
+   `interviews.send_interview_calendar_invite` (`backend/app/modules/interviews/
+   _calendar_tasks.py`) is an explicit stub today — it logs `calendar_invite_stub` and
+   returns `{"status": "stub"}`, sends nothing to anyone. The existing REAL email
+   (`interview.scheduled`, published in `_service_scheduling.py`) goes to candidate +
+   owning recruiter only, never the assigned panelist(s), and is gated behind
+   `NOTIFICATIONS_ENABLED` (defaults off, same as every other notification on this
+   platform — see §8 below). User's confirmed scope: build a real `.ics` calendar
+   attachment + email body (hand-rolled VCALENDAR/VEVENT plain text, no new PyPI
+   dependency needed) sent to the candidate and all assigned panelist(s) as direct
+   recipients, CC'd to the position's owning recruiter, triggered on schedule (already
+   enqueued there, just needs real send logic replacing the stub). Needs the existing
+   `meeting_link` field (already a real column + UI input in both the create and
+   schedule drawers, confirmed 2026-10-15) embedded in the invite. **Known precondition,
+   same gap as every other `NOTIFICATIONS_ENABLED` feature on this platform**: no AWS
+   SES credentials exist in this local dev environment (confirmed via `backend/.env` —
+   zero `AWS_*`/`SES_*` vars present) — real delivery cannot be verified end-to-end
+   until SES is actually provisioned; flipping the flag locally before then will attempt
+   and fail the real SES call (caught, logged, not silently swallowed), not deliver to
+   an inbox.
+
 ---
 
 ## 0. Go-Live readiness (tracked closely — 1-week dev freeze from 2026-08-08 pending user's date-planning decisions)
@@ -1105,15 +1129,20 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 5. Tech debt — tests/CI
 
-- 🟡 **`src/app/(focused)/interviews/[interviewId]/scorecard/page.test.tsx`'s "prior feedback
+- 🟠 **`src/app/(focused)/interviews/[interviewId]/scorecard/page.test.tsx`'s "prior feedback
   prefills" test (`toBeChecked()` on the "4 stars" radio) flaked in CI's `component-test` job
-  (PR #285, 2026-10-15) — failed only when running the full 95-file/692-test suite together on
-  the CI runner; passed clean both in isolation and in a full local suite run (692/692 twice).
-  Likely a timing race in the prefill effect (`prefilledRef` guard setting `rating` state)
-  under CI's slower/more loaded environment, not reproducible locally. Confirmed unrelated to
-  PR #285 (a 2-line breadcrumb/button-label fix touching neither this file nor its component).
-  Not investigated further — root cause and fix (or an explicit `waitFor` around the radio
-  assertion) needed next time this test file is touched or this flake recurs.
+  — now confirmed TWICE: PR #285 (2026-10-15) and again PR #286 (2026-10-15, same day) —
+  failed only when running the full 95-file/692-test suite together on the CI runner; passed
+  clean both in isolation and in a full local suite run (692/692) both times. Likely a timing
+  race in the prefill effect (`prefilledRef` guard setting `rating` state) under CI's
+  slower/more loaded environment, not reproducible locally. Confirmed unrelated to either PR
+  (PR #285 was a 2-line breadcrumb/button-label fix; PR #286 touched `candidate_name`
+  nullability + an opt-in query param + a different button label — neither touches this file
+  or its component). **Severity raised 🟡→🟠 since the "investigate on next recurrence"
+  condition from the first entry has now been met** — next time this test file, the scorecard
+  page, or its prefill effect is touched for any other reason, add an explicit `waitFor`
+  around the radio-checked assertion (or otherwise harden the prefill-effect timing) instead
+  of deferring a 3rd time.
 
 - 🟡 **`test_functional_matching_bugs.py::test_retrigger_extraction_on_completed_returns_409`
   fails (got 202, expected 409) — found 2026-10-13 during screening-jd-gaps-grounding's
@@ -1165,6 +1194,29 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   exist in a real environment for any reason, reading them would hit the same landmine. Low
   priority; worth a cheap observability improvement (a clearer error on an unmapped enum
   value) next time this area is touched, not urgent enough for its own pass.
+
+- 🟡 **`test_functional_my_interviews_filters.py` — same stale-fixture class, a different
+  instance (candidate name + panelist-account pollution, not position UUIDs)** — found
+  2026-10-15, `backend-engineer`, while adding BR-MYLIST-002 test coverage (branch
+  `dev/interviews-my-list-panelist-fixes`). 7 of this file's pre-existing tests
+  (`test_baseline_exactly_one_interview`, `test_candidate_name_legit_substring_matches`,
+  `test_scheduled_date_range_boundary_is_inclusive`, `test_organization_filter_matches`,
+  `test_position_title_filter_matches`,
+  `test_combined_candidate_name_and_status_returns_correct_row`,
+  `test_combined_filters_all_five_new_params_together`) fail against live data —
+  confirmed via direct DB query, not inference: the hardcoded `KNOWN_INTERVIEW_ID` /
+  `KNOWN_CANDIDATE_NAME="Vikram Nair"` fixture no longer exists (interview and candidate
+  both gone), and the shared panelist account `preeti.saxena_test@panelist.example` has
+  accumulated 126 assigned interviews from unrelated prior test runs (tests assert
+  `== 1`). Same pollution ripples into other files sharing that panelist account in a
+  full-suite run (`test_functional_19b_status.py`,
+  `test_functional_19c_panelists_feedback.py`,
+  `test_functional_audit_2026_06_29.py`, observed but not enumerated). Not fixed —
+  explicitly out of scope for the task that found it. Cheapest fix: convert these 7
+  tests to self-seed fresh fixtures (own candidate/interview/panelist per test, FK-safe
+  cleanup) the same way `test_functional_scorecard_tab_entry.py` and this same file's
+  own NEW `upcoming_only` tests already do, rather than depending on long-lived shared
+  rows that erode over time.
 
 - 🔴 **Same dead-UUID class as bucket (b) — NOT scope-closed at 2, an earlier version of this
   entry claimed that without independently re-deriving it and was wrong.** Live-verified against
