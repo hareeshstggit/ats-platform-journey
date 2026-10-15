@@ -1105,6 +1105,16 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 5. Tech debt — tests/CI
 
+- 🟡 **`src/app/(focused)/interviews/[interviewId]/scorecard/page.test.tsx`'s "prior feedback
+  prefills" test (`toBeChecked()` on the "4 stars" radio) flaked in CI's `component-test` job
+  (PR #285, 2026-10-15) — failed only when running the full 95-file/692-test suite together on
+  the CI runner; passed clean both in isolation and in a full local suite run (692/692 twice).
+  Likely a timing race in the prefill effect (`prefilledRef` guard setting `rating` state)
+  under CI's slower/more loaded environment, not reproducible locally. Confirmed unrelated to
+  PR #285 (a 2-line breadcrumb/button-label fix touching neither this file nor its component).
+  Not investigated further — root cause and fix (or an explicit `waitFor` around the radio
+  assertion) needed next time this test file is touched or this flake recurs.
+
 - 🟡 **`test_functional_matching_bugs.py::test_retrigger_extraction_on_completed_returns_409`
   fails (got 202, expected 409) — found 2026-10-13 during screening-jd-gaps-grounding's
   functional regression sweep, confirmed unrelated to that change (candidate-extraction
