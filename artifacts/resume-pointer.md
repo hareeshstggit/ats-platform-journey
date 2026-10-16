@@ -10,6 +10,112 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-15, evening — **SESSION PAUSED by user request ("pause the session logically in
+  about 45 minutes"), after `interview-kit-shared-focus-areas` build (Decisions D1-D5 in
+  its own `design.md`) completed Gate 1 only. Resume state:**
+  - **Branch `dev/interview-kit-shared-focus-areas`, commit `019bf7e`, PUSHED to origin.**
+    Was NOT on a branch when `backend-engineer` finished — found still on `main` with 20
+    modified + 9 new files sitting uncommitted (a real violation of this project's binding
+    branch-before-edit rule). Fixed before pausing: branched, committed, pushed — `main`
+    itself was never touched/at risk.
+  - **What shipped in that commit**: new table `interview_level_kit_templates` (migration
+    `0070_ivw_level_kit_templates`, applied/downgraded/re-applied + live `EXPLAIN`-verified
+    against local dev DB, logged in `docs/SCHEMA_CHANGE.md`); Bedrock/Gemini kit generation
+    split into a naming-call + questions-call shape matching Anthropic's existing
+    BR-P20-017 pattern; shared reuse-or-generate logic (`_kit_template_reuse.py`); the
+    "Regenerate Interview Kit" button now resets the slot's shared template, not just one
+    interview's kit; reconciler sweep extended to stuck template rows. Full detail: the
+    agent's own handback report (already folded into the commit message) and
+    `openspec/changes/interview-kit-shared-focus-areas/tasks.md` (items 1-6.2/6.5/7.2
+    checked off).
+  - **Independently re-verified, not just trusted from the agent's self-report**: `git
+    status`/`git diff --stat` confirmed the claimed file list was real (no extra/missing
+    files, no stray commits, no PR self-created); re-ran
+    `python -m pytest app/modules/interviews/tests/ -q --no-cov` myself — 392 passed, 191
+    skipped, 0 failed, matching the agent's own claim exactly.
+  - **NOT done yet — the next 2 pipeline stages, both still pending (tasks.md 6.3/6.4/7.1,
+    all left unchecked on purpose):**
+    1. Functional tests against the REAL local stack (DB/Redis/Celery) — the 2 scenarios
+       `tasks.md` §6.3-6.4 specify: (a) a never-before-seen slot's first interview
+       generates+persists a template, a second interview at the same slot reuses it with
+       NO naming call firing, and 2 near-simultaneous interviews at a brand-new slot don't
+       race into 2 templates or a missing kit; (b) regenerating one candidate's kit resets
+       the slot template but leaves another candidate's already-completed kit alone.
+    2. `principal-reviewer` pass, escalated to **opus** per the Model-tier mandate (schema
+       migration + cross-provider contract change both independently qualify).
+  - **Immediate next step on resume**: dispatch `functional-test-engineer` against this
+    branch's real stack for the 2 scenarios above — this is a hard gate (Gate 5/Rule 8);
+    do not skip to `principal-reviewer` before it's clean. Local dev stack (podman
+    Postgres/Redis, uvicorn, Celery `--pool=solo`, frontend) was left running across the
+    earlier pause/resume in this same session — reuse it, don't restart blind (`curl
+    localhost:8000/health` + `openapi.json` marker check first, per this file's own
+    "background-process-tracking instability" note).
+  - **Still separately open from earlier this session** (unrelated to the above, not
+    forgotten): the live-browser confirmation that the 2 interview_levels data-fix kits
+    (`c66ed3ee`, `34bae477`, position "Lead Product Security Engineer_Yodlee") actually
+    render in the scorecard tab as the panelist — asked, never answered, see the entry
+    below this one for full detail.
+
+- 2026-10-15, afternoon — **SESSION PAUSED by user request ("pause the session for now,
+  will resume later tonight"), right after the interview-kit data fix below completed.**
+  Resume state, so a fresh session can pick this up with zero session-scoped references:
+  - **Uncommitted working-tree changes (docs only, not yet committed/pushed):**
+    `docs/BACKLOG.md` (new §4 entry for the interview-kit data-correction below) and this
+    file (`memory/resume-pointer.md`, the entry below it). No code changes are pending —
+    the actual fix was a direct DB data correction (already applied and verified, not
+    sitting as a diff). Safe to commit as a docs-only commit (`[skip ci]`, since no
+    code/config/test/CI file changed) whenever convenient — not urgent, nothing blocks on
+    it.
+  - **Local dev stack was left running** (not stopped on pause): podman containers
+    `ats-platform` (Postgres) + `ats-redis` (Redis), backend uvicorn on :8000 (plain,
+    no `--reload` — see the "background-process-tracking instability" note elsewhere in
+    this file for why), Celery worker with `--pool=solo` (queues: extraction, matching,
+    screening, notifications, reports, maintenance), frontend `npm run dev`. If a new
+    session finds these already running, reuse them (`curl localhost:8000/health` +
+    `curl localhost:8000/openapi.json` to confirm current code is loaded, per this
+    project's own established verification pattern) rather than restarting blind.
+  - **Immediate next step on resume**: confirm in the browser (log in as the panelist
+    whose email is `ritu.chawla_test@panelist.example`) that "Initiate Interview Process"
+    on BOTH interviews `c66ed3ee-6d33-4fac-861f-5bb462bd945a` (Oct 6) and
+    `34bae477-1f82-4db4-bdf7-904b8094cb52` (Oct 8), position "Lead Product Security
+    Engineer_Yodlee", now shows real kit questions instead of "No kit questions
+    available" — the DB-side fix is verified complete and both kits are `status =
+    'completed'` with 10 `technical_focus_areas` each, but the user's own live-UI
+    confirmation (this project's Quality Gate Rule 4) hasn't happened yet.
+  - **Then**: ask the user whether to sweep other positions in the dev DB for the same
+    duplicate-active-level corruption pattern (proposed, not yet answered — see
+    `docs/BACKLOG.md` §4's 🔴 line), or move straight to the user's own stated "many more
+    in the queue" (BACKLOG Tier 1/2/3 items).
+
+- 2026-10-15, afternoon — **"interview kit not opening in independent tab" ROOT-CAUSED +
+  FIXED as a data correction (local dev DB only, no code/migration).** User's actual
+  reported interviews (`c66ed3ee` Oct 6, `34bae477` Oct 8, position "Lead Product Security
+  Engineer_Yodlee") opened the scorecard tab correctly but showed "No kit questions
+  available" — proven via live Playwright testing to NOT be a tab/routing/UI bug (my first
+  2 reframing theories were both explicitly rejected by the user, who insisted on staying
+  on their exact 2 reported interviews rather than a "cleaner" example — that pushback was
+  correct and is what surfaced the real bug). Root cause: position `e8846522-...`'s level
+  config was saved 3 times within 41 minutes on 2026-10-05, leaving the CURRENT active
+  `interview_levels` set with duplicate entries per level slot — one correctly
+  `level_type='stg_labs'`, one wrongly `='organization'` — and both of the user's
+  interviews were pinned to the wrong-typed one, so BR-P20-001's stg_labs-only kit
+  eligibility (working as designed) never ran for them. A literal re-point onto the
+  correct level (my first proposed fix) turned out to be blocked by a real DB constraint
+  (`uq_interview_app_level`, UNIQUE on `application_id, interview_level_id` — a 3rd
+  interview, `7b252cef`, assigned to a different panelist entirely, already occupied that
+  slot) — caught by checking the constraint BEFORE writing, not after a failed UPDATE.
+  Fixed instead by correcting `level_type`/`level_category` to `stg_labs` in place on the
+  2 levels the broken interviews already reference (`af27b469` deactivated in the same
+  UPDATE to dodge `uq_int_level_pos_type_num`'s partial unique index; `f896d898` was
+  already inactive), deactivated 2 true orphan duplicate levels with no interview
+  references, then enqueued `interviews.generate_level_interview_kit` for both — both
+  completed (10 focus areas each), live-verified via direct DB polling. Full detail in
+  `docs/BACKLOG.md` §4. **Open**: whether other positions have the same duplicate-active-
+  level corruption pattern — not yet swept, found via one user-reported case only.
+  **Next**: confirm the fix resolves the user's actual browser experience (re-open the
+  scorecard tab for both interviews), then the user's "many more in the queue" — Tier
+  1/2/3 BACKLOG items.
+
 - 2026-10-15, morning/midday — **interviews-my-list-panelist-fixes BUILT, REVIEWED,
   SYNCED, ARCHIVED. Branch `dev/interviews-my-list-panelist-fixes`, HEAD `bfae917`
   (NOT pushed, NOT yet PR'd as of this entry — that's the only remaining step).**

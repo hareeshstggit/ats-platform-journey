@@ -498,6 +498,32 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 4. Tech debt — data/query correctness
 
+- ✅ **Position `e8846522-...` ("Lead Product Security Engineer_Yodlee") had duplicate,
+  wrongly-typed active `interview_levels` rows, breaking interview-kit eligibility for 2
+  real interviews** — found + fixed 2026-10-15. Root cause: the position's level config
+  was saved 3 times within 41 minutes on 2026-10-05, leaving the CURRENT active set with
+  2 levels per slot (one correctly `level_type='stg_labs'`, one wrongly `='organization'`
+  for the same "STG Labs Level N" label) — BR-P20-001 scopes kit generation to
+  `stg_labs`-category levels only (by design, correct), so the 2 interviews pinned to the
+  wrong-typed/orphaned level never got a kit, surfacing to the user as "Initiate Interview
+  Process" opening a tab with "No kit questions available." A literal re-point of the
+  affected interviews onto the correct level was NOT possible — `uq_interview_app_level`
+  (UNIQUE on `application_id, interview_level_id`) already had a 3rd interview
+  (`7b252cef`, different panelist, unrelated to this user) occupying that slot. Fixed
+  instead by correcting `level_type`/`level_category` to `stg_labs` in place on the 2
+  levels the broken interviews already referenced (`af27b469`, `f896d898` — `af27b469`
+  deactivated in the same UPDATE to avoid colliding with `uq_int_level_pos_type_num`'s
+  partial unique index), deactivated 2 true orphan duplicate levels with no interview
+  references (`108977f5`, `12b959f1`), then enqueued `generate_level_interview_kit` for
+  both affected interviews (`c66ed3ee`, `34bae477`) — both completed successfully
+  (10 focus areas each). Local dev DB only; no migration, no schema change (data
+  correction, not DDL). ✅ **Sweep of all positions completed 2026-10-15** — checked 2
+  signatures DB-wide: (a) any active `interview_levels` row whose `level_label` mentions
+  "STG Labs" but `level_type <> 'stg_labs'` (or the inverse, an org-sounding label typed
+  `stg_labs`) — 0 matches; (b) any position with 2+ ACTIVE rows sharing the IDENTICAL
+  `level_label` (the true "same slot duplicated under 2 types" signature, broader than
+  the literal wording check) — 0 matches. This position's corruption was an isolated
+  incident, not a systemic pattern; no further action needed.
 - 🟡 **5 remaining repository files share the same unstable-`ORDER BY
   updated_at DESC` + OFFSET/LIMIT-pagination pattern already confirmed and
   fixed in `interviews`, `applications`, and `candidates`** — found 2026-10-14,
@@ -1129,6 +1155,26 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 
 ## 5. Tech debt — tests/CI
 
+- 🟡 **`backend/app/modules/interviews/agents/_level_kit_anthropic_bedrock.py`'s
+  `_call_anthropic_impl` has 2 uncovered branches on the live Anthropic progressive
+  path: `PermanentProviderError` fail-fast and open-breaker** — found 2026-10-16,
+  `principal-reviewer` (opus, round 2 of `interview-kit-shared-focus-areas`). Pre-
+  existing, not introduced by that change — the now-deleted `test_level_kit_agent.py`
+  never covered them either. Add 2 unit tests (PermanentProviderError raised by the
+  provider call → immediate fail, no retry; breaker already open → immediate fail, no
+  call attempted) next time this file is touched for any reason.
+- 🟡 **31 of the 34 functional/integration test files that hard-delete
+  `interview_level_kits` in teardown do not also clean up
+  `interview_level_kit_templates`** — found 2026-10-16, `principal-reviewer` round 1 of
+  `interview-kit-shared-focus-areas` (M5). The 3 files that actually trigger real kit
+  generation got scoped `DELETE FROM interview_level_kit_templates WHERE position_id =
+  ...` teardown in that change (`test_interview_kit_candidate_aware_flow.py`,
+  `test_functional_level_kit.py`, `test_integration_level_kit_occ_chain.py` — the
+  latter 2 defensively, since neither currently triggers real generation). The table is
+  empty today so nothing has been lost yet; the risk is latent — once real dev-DB slots
+  have cached names, any of the remaining 31 files that start exercising real kit
+  generation could leave orphaned template rows behind for a real position+level slot.
+  Sweep mechanically or re-triage next time any of those 31 files is touched.
 - 🟠 **`src/app/(focused)/interviews/[interviewId]/scorecard/page.test.tsx`'s "prior feedback
   prefills" test (`toBeChecked()` on the "4 stars" radio) flaked in CI's `component-test` job
   — now confirmed TWICE: PR #285 (2026-10-15) and again PR #286 (2026-10-15, same day) —
@@ -1156,6 +1202,19 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   mismatch (local `.env` has moved `CANDIDATE_SCREENING_PROVIDER` to `anthropic` as primary
   since this test's assertion was written) — update the assertion to match current provider
   precedence next time this file is touched, or make it provider-agnostic.
+
+- 🟡 **`interview_level_kit_templates` rows are not cleaned up by most functional/integration
+  tests that could create one** (interview-kit-shared-focus-areas, principal-reviewer round 2,
+  M5) — found 2026-10-16. Only the 3 files that actually trigger real kit generation
+  (`tests/integration/test_interview_kit_candidate_aware_flow.py`,
+  `app/modules/interviews/tests/test_functional_level_kit.py`,
+  `app/modules/interviews/tests/test_integration_level_kit_occ_chain.py`) got a scoped
+  `DELETE FROM interview_level_kit_templates WHERE position_id = ...` added to their teardown
+  in this round. The ~31 other interview-module functional/integration test files that hard-
+  delete `interview_level_kits` were deliberately NOT swept in the same round (cost discipline
+  — most never reach the kit-generation path at all). Next time any of those files is touched
+  for an unrelated reason, add the same scoped template cleanup if that file's own fixtures
+  could plausibly populate a slot template.
 
 - 🟡 **The project's own stale-data-check command (CLAUDE.md, Quality Gate Rule 5) is silently
   blind when run as the `ats_app` role** — found 2026-10-13, functional-test-engineer. `ats_app`
@@ -1637,6 +1696,19 @@ policy question (see PRIORITY item 4) remains open from this whole arc.
     (320-line state) still applies to why login/session/refresh/logout stay untouched;**
     the delta needing a home is the newer multi-role surface, which the existing split
     precedent already demonstrates is safe to extract.
+  - 🟡 `backend/app/modules/interviews/repository.py` — **397 lines, 97 over the
+    300-line cap** (correcting an earlier round-1 note's arithmetic — the baseline
+    before `interview-kit-shared-focus-areas` was 393, not 382; principal-reviewer
+    round 2 also reverted round 1's `_DETAIL_SQL` widening — `il.level_number`/
+    `a.position_id` moved to a dedicated `get_slot_for_interview` query in
+    `_repo_kit_templates.py` instead of staying on this file's hot GET-detail path —
+    so the real delta is just +4: the new `KitTemplateRepositoryMixin` import +
+    inheritance-list registration, plus a slightly longer `get_detail` docstring).
+    This file already has a working split precedent: 5 existing query-family mixins
+    (`_repo_kit_templates.py` etc. — see this change's own new
+    `KitTemplateRepositoryMixin`). Cheapest next fix: split `get_detail`/
+    `list_by_application` + their SQL constants into a new `_repo_detail.py` mixin,
+    same pattern.
   - 🟡 `backend/app/modules/offers/repository.py` — `offers` table gets a `Seq Scan`
     (filtered on `deleted_at IS NULL`) in both `list_with_filters` and `_COUNT_SQL`,
     confirmed via live `EXPLAIN (ANALYZE, BUFFERS)` 2026-09-21 while fixing the
