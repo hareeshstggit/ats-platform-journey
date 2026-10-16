@@ -10,6 +10,40 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-16 — **SESSION PAUSED by user request ("pause the session. Will break for long
+  now. Will resume on Monday").** Clean state, nothing in flight:
+  - `git status` clean, on `main`, up to date with `origin/main` at `7a3f795` (the
+    resume-pointer-entry commit right below this one — this pause entry itself will be
+    one commit past that once pushed). `alembic current` was at head
+    `0070_ivw_level_kit_templates` before pausing.
+  - **Local dev stack STOPPED** (not left running, unlike the shorter same-day pause
+    earlier this session) — multi-day break, so `podman stop ats-platform ats-redis` was
+    run explicitly. On resume: `podman start ats-platform ats-redis`, then restart
+    backend (`cd backend && ./.venv/Scripts/python.exe -m uvicorn app.main:app --host
+    0.0.0.0 --port 8000`, plain, no `--reload`) and Celery (`./.venv/Scripts/python.exe -m
+    celery -A app.workers.celery_app worker -Q extraction,matching,screening,
+    notifications,reports,maintenance --loglevel=info --pool=solo`) and frontend
+    (`cd frontend && npm run dev`) fresh — do not assume any of the 3 app-level processes
+    are still alive even if their background shell IDs look present, since stopping the
+    DB/Redis containers underneath them will have broken their connections regardless.
+  - **No open PR, no uncommitted branch, no pending review round.** The last completed
+    unit of work was PR #287 (`interview-kit-shared-focus-areas`) — merged, archived,
+    spec-synced, external-mirror-synced; see the entry directly below this one for full
+    detail if picking that work back up for any reason (it's fully closed, not expected
+    to need revisiting).
+  - **Next up, per the user's own last request before pausing**: nothing queued or
+    promised — the most recent exchange was answering 2 informational questions (a
+    10-PR summary, and a Tier 1/Tier 2 backlog listing from `docs/BACKLOG.md`'s PRIORITY
+    item 7, dated 2026-10-14). On resume, the natural next step is the user picking one
+    of those Tier 1 (7 items, real correctness/security bugs) or Tier 2 (4 items, test/CI
+    debt) backlog items to build, per Gate 5 (full subagent pipeline, no exceptions) —
+    but nothing has been decided or started on any of them as of this pause.
+  - **Still separately open from 2026-10-15** (unrelated, low-urgency, never answered):
+    the live-browser confirmation that the `interview_levels` data-fix kits
+    (`c66ed3ee`/`34bae477`, position "Lead Product Security Engineer_Yodlee") actually
+    render for the panelist — see the entry further below for full detail. Worth asking
+    about on resume if it hasn't surfaced on its own by then.
+
 - 2026-10-16 — **`interview-kit-shared-focus-areas` MERGED (PR #287, squash commit
   `238c24c` on `main`), spec synced (BR-P20-020/021 in `openspec/specs/interviews/
   spec.md`), OpenSpec change archived to `openspec/changes/archive/2026-10-16-interview-
