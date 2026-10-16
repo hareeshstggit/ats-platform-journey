@@ -10,6 +10,29 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-16 — **`interview-kit-shared-focus-areas` MERGED (PR #287, squash commit
+  `238c24c` on `main`), spec synced (BR-P20-020/021 in `openspec/specs/interviews/
+  spec.md`), OpenSpec change archived to `openspec/changes/archive/2026-10-16-interview-
+  kit-shared-focus-areas/`, external mirror (`ats-platform-journey`) re-synced for
+  `BACKLOG.md`/`resume-pointer.md`.** Full pipeline: spec → backend-engineer build →
+  functional-test-engineer (live stack, 4/4 scenarios pass) → principal-reviewer round 1
+  (opus, CHANGES-REQUESTED: 1 Critical template-update race + 6 Majors, all fixed) →
+  principal-reviewer round 2 (opus, APPROVE-WITH-NITS: 4 minors fixed + self-verified) →
+  PR opened → CI caught 2 real gaps before merge (a `[skip ci]`-tagged tip commit
+  silently suppressed ALL checks on the PR — 4th recurrence of this exact bug class,
+  documented again in `backend-ci.yml`'s own header; `docs/ci_schema_snapshot.sql` was
+  stale, regenerated + verified via `check_schema_definition_drift.py`; one of my own new
+  tests assumed pre-existing DB data that doesn't exist on CI's fresh DB, plus a
+  transaction-scoped RLS-GUC reset-after-commit gotcha — both fixed) → CI green → merged.
+  **Process gap self-caught mid-session**: I told the user "ready for merge" before ever
+  opening a PR — conflated "subagents shouldn't self-create PRs" (a real cost-discipline
+  rule) with "don't create one until asked" (never the rule's intent). Logged as
+  `feedback_open-pr-once-branch-stable` in auto-memory; going forward, open the PR myself
+  once a branch is pushed and reviewed, don't wait to be asked for the PR number.
+  **Still open from earlier this session, unrelated**: the live-browser confirmation that
+  the `interview_levels` data-fix kits (`c66ed3ee`/`34bae477`) actually render — asked,
+  never answered, see the entry below for full detail.
+
 - 2026-10-15, evening — **SESSION PAUSED by user request ("pause the session logically in
   about 45 minutes"), after `interview-kit-shared-focus-areas` build (Decisions D1-D5 in
   its own `design.md`) completed Gate 1 only. Resume state:**
