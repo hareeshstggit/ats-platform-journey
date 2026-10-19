@@ -193,9 +193,8 @@ narrative, only current state.
 
    **Tier 1 — real correctness/security bugs, not yet fixed, recommended first (cheap-to-
    moderate effort, several are one-line-to-small fixes):**
-   - `departments/service.py`'s `set_org_scope`-without-actor-check gap (§4, Security/RLS) —
-     same bug class already confirmed and fixed in `positions/service.py`, deliberately left
-     out of that fix.
+   - ~~`departments/service.py`'s `set_org_scope`-without-actor-check gap (§4, Security/RLS)~~
+     — **Closed 2026-10-19, `dev/departments-org-actor-check`** (see §4 entry below).
    - Screening revert (shortlisted→screen_rejected) doesn't invalidate existing interviews,
      orphaning pending records (§3, item 2).
    - BR-SYNC-005 auto-sync is fire-and-forget with a bare exception swallow, no retry (§3,
@@ -819,12 +818,101 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
   gap BEFORE a non-internal user type exists, not in response to a live incident.
   **`departments/service.py` has the identical `set_org_scope`-without-actor-check pattern —
   deliberately left out of scope for this fix** (tracked as a new entry immediately below;
-  same remediation pattern as this entry applies there).
-- 🔴 **`departments/service.py` has the same `set_org_scope`-without-actor-check pattern the
+  same remediation pattern as this entry applies there). **Closed 2026-10-19 — see the entry
+  directly below.**
+- ✅ **`departments/service.py` has the same `set_org_scope`-without-actor-check pattern the
   `positions` entry directly above just closed** (flagged 2026-09-08 while scoping
   `dev/positions-actor-org-isolation`, deliberately not fixed in that branch to keep it
-  scoped to positions). Needs its own pass applying the same `ActorContext`/
-  `actor_can_access_org` pattern once departments gets a non-internal caller.
+  scoped to positions). **Closed 2026-10-19, `dev/departments-org-actor-check`** — mirrors the
+  positions fix exactly, reusing the same `app.core.rls.ActorContext`/`actor_can_access_org`
+  primitives (no new pattern invented). `actor: ActorContext` threaded through all 4 org-scoped
+  `DepartmentService` methods (`create`, `get`, `list`, `update`) plus
+  `list_summaries_for_org` (the inter-module call `OrganizationService.get` makes to embed a
+  department listing — the one indirect path into the same `set_org_scope` call); checked via
+  a new `_assert_actor_can_access_org` guard (mirrors positions'
+  `assert_actor_can_create_in_org`) BEFORE `set_org_scope`/org-existence validation ever runs.
+  A mismatch raises `OrganizationNotFoundError` (404 `ORGANIZATION_NOT_FOUND`, same code as an
+  unknown org — no distinct 403, no existence leak), logged as
+  `department_actor_org_mismatch` (org ids only, no PII). `OrganizationService.get` also
+  gained an `actor: ActorContext` keyword-only param to thread through to the now-guarded
+  `list_summaries_for_org` call — a non-internal actor requesting a different org's detail via
+  `GET /organizations/{id}` is now blocked before the departments embed runs (its own
+  top-level fields have no separate actor check — out of scope, tracked only if ever needed).
+  One incidental call site with no actor concept of its own
+  (`positions/_service_writes.py`'s parent-dept lookups go through `._repo.get_by_id`
+  directly, unaffected) and one (`reporting/service.py::_validate_org_active`) that
+  deliberately keeps passing `INTERNAL_ACTOR` — reporting has no actor-isolation model of its
+  own, tracked as a separate, NOT-yet-fixed gap below. Spec updated in the same change:
+  `openspec/specs/departments/spec.md` (new BR-005, AC-007/AC-008, §2 "Actor-org isolation"
+  note) and `openspec/specs/organizations/spec.md` (new BR-006, AC-008/AC-009, §2 note on
+  `GET /organizations/{id}`). Unit tests added mirroring positions' own actor-isolation test
+  shape (internal-unrestricted / non-internal-matching-passes / non-internal-mismatch-404) for
+  create/get/list/update/list_summaries_for_org, plus `organizations/tests/test_service.py`
+  coverage for the `GET /organizations/{id}` propagation path. Full backend suite (2180 tests,
+  1 pre-existing unrelated failure in `test_llm_gateway.py` deselected) + `ruff check app` +
+  `mypy app` all green. Integration tests (`tests/integration/test_departments_flow.py`,
+  `test_organizations_flow.py`, `RUN_DB_TESTS=1`-gated) were not executable in the building
+  agent's own sandbox (no local Postgres there) — independently run by the main loop against
+  the real local dev DB: **19/19 passed**, including both new actor-isolation proofs
+  (`test_actor_org_mismatch_blocks_create_list_get_update`,
+  `test_get_non_internal_actor_mismatched_org_is_404_before_departments_embed`).
+  **Round 2 (same branch, principal-reviewer CHANGES-REQUESTED, 2026-10-19): the write path was
+  NOT actually closed by round 1** — `PATCH /organizations/{id}` had no actor guard at all;
+  `OrganizationService.update()` re-read via `self.get(org_id, actor=INTERNAL_ACTOR)`
+  (hardcoded, not the real caller) and the router never threaded a real `ActorContext` into
+  `update()` in the first place, so a non-internal actor could modify a DIFFERENT org's data
+  and the response leaked that org's departments — the exact cross-org leak this fix exists to
+  close, now live-proven on the write path too. Fixed: `OrganizationService.update()` gained a
+  required `actor: ActorContext` keyword-only param, checked via the same
+  `_assert_actor_can_access_org` guard BEFORE `get_by_id` runs (actor-check-first, matching
+  `get()`'s and departments' ordering), and now passes the REAL `actor` through to the
+  post-write re-read instead of `INTERNAL_ACTOR`; `organizations/router.py::update_organization`
+  now builds `ActorContext` via `actor_context(actor)` (same pattern `get_organization` already
+  used) and passes it in. `get()` itself was ALSO reordered to check actor-org isolation first,
+  before `repo.get_by_id` runs (previously the check only happened one level deep, inside the
+  departments-embed call, after the row was already read) — closing the ordering
+  inconsistency flagged against departments' own actor-check-first convention and saving a
+  query on a mismatch. Also fixed this round: `reporting/service.py`'s lazy
+  `from app.core.rls import INTERNAL_ACTOR` (inside `_validate_org_active`) moved to module
+  level — no circular-import reason existed, and lazy imports block `mock.patch` at test time;
+  `core/rls.py`'s stale "no production call site today" comment on `INTERNAL_ACTOR` corrected
+  to name the real call sites (`reporting/service.py`, organizations' own unit tests);
+  `organizations/service.py`'s module header updated to document `core.rls` and
+  `departments.service`/`reporting.service` as integration points; the word-for-word duplicated
+  `_create_org_scoped_hr_admin`/`_login_org_scoped`/`_ORG_SCOPED_PASSWORD` test helper across
+  both integration test files consolidated into one shared `org_scoped_actor` factory fixture
+  in `tests/integration/conftest.py`. Spec corrected: the GET endpoint's note previously claimed
+  "no org data of any kind leaks cross-org" — overstated, since `GET /organizations` (the list
+  endpoint) has no actor-scoping at all and leaks every org's summary; reworded to scope the
+  claim to the GET/PATCH single-resource endpoints, with the list-endpoint gap called out
+  separately (see the new tracked item below). New unit test
+  `test_update_non_internal_actor_mismatch_is_404_before_write` (plus a rewritten
+  `test_get_non_internal_actor_mismatch_blocked_before_departments_embed` reflecting get()'s new
+  check-first ordering) and a new integration test
+  `test_patch_non_internal_actor_mismatched_org_is_404_and_data_unchanged` (live-proves the
+  target org's name/version are unchanged after the blocked PATCH attempt, and that the same
+  scoped actor can still PATCH their own org). Full backend suite green, `ruff check app tests`
+  and `mypy app` clean (fix-up commit on `dev/departments-org-actor-check`).
+- 🔴 **`GET /organizations` (the list endpoint) has no actor-org scoping at all** — flagged
+  during `dev/departments-org-actor-check` round 2 proactive-deviation review (principal-
+  reviewer, 2026-10-19), NOT fixed in this branch (out of scope — this branch closes the
+  single-resource GET/PATCH gap only). `organizations/router.py::list_organizations` only
+  depends on `get_current_user` (any authenticated role); `OrganizationService.list()` has no
+  `actor` param and returns every non-deleted org's summary to any caller, internal or not.
+  Latent today (single-tenant, every current user is internal) — becomes a real cross-org
+  leak the moment a non-internal user type exists, same rationale as the already-fixed
+  single-resource endpoints. Needs its own fix: either filter the list to the caller's own org
+  for a non-internal actor, or confirm (with the user) that org summaries are intentionally
+  visible platform-wide and only org DETAIL needs isolation.
+- 🔴 **The `reporting` module has no actor-org isolation check anywhere** — flagged during the
+  same round-2 review. `reporting/router.py` gates every endpoint on `get_current_user` only
+  (no org-match against any org-scoped query param); `reporting/service.py::_validate_org_active`
+  explicitly calls `OrganizationService.get(org_id, actor=INTERNAL_ACTOR)` — INTERNAL_ACTOR by
+  design, not a caller-derived actor, so a non-internal actor could request another org's
+  pipeline-progress/ageing report data (`org_{org_id}_select` / `org_{org_id}_reject` status
+  groups) with no isolation check at all. Latent today for the same single-tenant reason as the
+  item above. Needs its own design pass (not a one-line fix): reporting has no existing
+  actor-context plumbing from its routers today, unlike organizations/departments/positions.
 - ✅ **`candidates` table has no `UPDATE`/`ALL` RLS policy for the `ats_app` role — only `candidates_read_all` (SELECT)** (2026-08-25, `dev/tech-debt-batch2-data-query`) — was worse than originally logged: INSERT was also silently blocked (no `INSERT`/`ALL` policy either), not just UPDATE. Fixed via new `candidates_insert_all`/`candidates_update_all` RLS policies (migration `0057_candidates_write_rls.py`) plus widening `candidates_read_all` from `USING (deleted_at IS NULL)` to `USING (true)` — matching every other RLS-protected table's app-layer-filtering pattern instead of relying on RLS to hide soft-deleted rows. That widening meant 6 other read paths were silently relying on RLS for `deleted_at` filtering and needed an explicit app-layer guard added: `interviews/_kit_context.py` (LEFT JOIN + `AND c.deleted_at IS NULL`), `applications/repository.py`, `offers/repository.py`, `offers/tasks.py`, `candidate_screenings/repository.py`, `candidates/_extraction_tasks.py`, `candidates/_matching_tasks.py`. Live-verified via a real probe against the local dev DB, and by fixing the actual tracked stale orphan this entry originally flagged (`FT-SoftDelKit-96f844ca`, now cleaned up).
 - ✅ **`candidate_documents`/`bulk_upload_jobs`/`candidate_consents` had no INSERT/UPDATE RLS policy for the `ats_app` role — same bug class as the `candidates` entry above** (2026-08-27, `dev/tech-debt-rls-candidate-docs-consents`) — found live by functional-test-engineer during Tier-3 code-hygiene work (`dev/hygiene-tier3-backend-batch1`), reproducing `POST /candidates/upload` as a 500 `InsufficientPrivilegeError` on `candidate_documents`. Migration 0010 enabled RLS on all 3 tables but only ever defined `candidate_documents`'s SELECT policy (`candidate_docs_read_all`) — `bulk_upload_jobs`/`candidate_consents` had zero policies for any command, ever; live introspection showed even `candidate_docs_read_all` was absent on this environment (`pg_policies` returned zero rows for all 3). Fixed via `0059_docs_bulkjobs_consents_rls.py` — 8 new `USING (true)`/`WITH CHECK (true)` policies (SELECT+INSERT+UPDATE on `candidate_documents`/`bulk_upload_jobs`; SELECT+INSERT only on `candidate_consents` — no UPDATE policy there since no withdraw/UPDATE endpoint exists yet, per principal-reviewer's CHANGES-REQUESTED round 1: don't widen RLS on a DPDP proof-of-consent table with no code path behind it). No DELETE policy on any (no production code path hard-deletes these entities — the hard DELETEs that do exist are test/script cleanup only, 3 sites via the owner role which bypasses RLS, 2 via `async_session_factory`/`ats_app` which silently no-op under RLS, see the new tracked entry below). Live-verified as the actual `ats_app` role (`SET ROLE` inside a rolled-back admin transaction): INSERT+UPDATE+SELECT succeeded on `candidate_documents`/`bulk_upload_jobs`, INSERT+SELECT on `candidate_consents`. Downgrade↔upgrade round-tripped cleanly, row counts unchanged. Unit suite 266 passed; functional tests (`test_functional_bulk_upload.py`, `test_functional_duplicate_file_error.py`) 7/7 passed in isolation. **CI cannot regress-test this fix** — `backend-ci.yml`'s schema bootstrap runs `alembic stamp head` against a pre-baked snapshot with RLS disabled on all these tables; local-dev-verified only, tracked below.
 - ✅ `docs/ci_schema_snapshot.sql` (2026-08-08) doesn't enable RLS on `candidates`/`candidate_documents`/`bulk_upload_jobs`/`candidate_consents` at all, and `backend-ci.yml` stamps rather than replays migrations — meaning CI's `ats_app` is unrestricted on all 4 tables and CI has zero coverage for this entire defect class (both `0057` and `0059` escaped to live use as a direct result). **Closed 2026-09-01 as part of G15/G15b** (see `docs/BACKLOG.md` §0.1 G15/G15b, `docs/SCHEMA_CHANGE.md`'s 2026-09-01 entry) — supersedes the interim "regenerated as a byproduct of 0061" note below: `backend-ci.yml`'s `test` job no longer depends on the snapshot at all (it now loads `docs/schema.sql` + genuinely replays `alembic upgrade head`, which includes all candidates-domain RLS policies for real), and the snapshot itself was regenerated a 2nd time from that successful replay, superseding both the 0061-byproduct regeneration and the file's remaining staleness (stale `candidate_source_enum` values, missing `candidate_source_details` constraints, missing `offer_details` table, stale trigger name — see SCHEMA_CHANGE.md for the full diff). **Historical note, interim regeneration (2026-08-08 -> 2026-09-01, since superseded):** the first regeneration attempt used a plain schema-only `pg_dump`, which silently dropped this file's hand-curated seed tail (bootstrap `organizations` row + 8 reference-data `COPY` blocks: `roles`/`permissions`/`role_permissions`/`lookup_values`/`currencies`/`consent_purposes`/`feature_flags`/`tenant_settings`) — this would have left every CI-seeded user with zero permissions, with `seed_dev.py`'s grant step raising no error. Fixed by re-appending the seed tail and verifying non-zero row counts on all 9 reference tables. **This mechanic still applies to the current file** — any future regeneration MUST re-append this seed tail (or, for `backend-ci.yml` specifically, is now moot since that job bootstraps from `schema.sql`, which seeds all 9 tables inline).

@@ -10,6 +10,47 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-19 — **Tier 1 backlog item 1 (`departments/service.py`'s `set_org_scope`-without-
+  actor-check gap, `docs/BACKLOG.md` §4) CLOSED — PR #288 merged, squash commit `7c6e5f0` on
+  `main`.** No schema change, local DB already current.
+  - Mirrors the already-shipped `positions` fix exactly (`ActorContext`/`actor_can_access_org`,
+    `app.core.rls`, unchanged): every `DepartmentService` method reaching `set_org_scope` now
+    checks the caller's own org against the target BEFORE scoping, raising
+    `OrganizationNotFoundError` (404, no distinct 403) on mismatch.
+  - **Rule 6 dependency mapping found the gap was bigger than the backlog wording** — closing
+    it properly meant touching `organizations/service.py`/`router.py` too, not just
+    departments: `OrganizationService.get()` embeds department summaries via the
+    now-guarded path but had no actor param to check with at all (added one); a
+    `principal-reviewer` round then live-proved a THIRD path was still open —
+    `PATCH /organizations/{id}`'s post-write re-read was hardcoded to an unrestricted
+    internal actor, so a non-internal user could modify a DIFFERENT org's data and see its
+    departments in the response. Fixed the same way. All 3 paths now live-verified closed
+    (non-internal actor, real mismatched org, real local DB — not just unit-mocked).
+  - **Specs synced to match what's implemented** (the user's explicit ask this session):
+    `openspec/specs/departments/spec.md` (BR-005, AC-007/008) and
+    `openspec/specs/organizations/spec.md` (BR-006, AC-010/011), both cross-referencing
+    `positions/spec.md`'s already-shipped pattern rather than inventing new terminology.
+  - **Full pipeline, 2 review rounds**: `cavecrew-investigator` (lookup + Rule 6 map) →
+    `backend-engineer` (round 1 build) → `principal-reviewer` round 1 (opus, CHANGES-
+    REQUESTED: the PATCH gap above, a stray lazy import, several minors) →
+    `backend-engineer` (round 2 fix) → **main loop found a genuine NEW bug during its own
+    independent verification** (the sandboxed building agent has no local Postgres access,
+    so it couldn't run the new `RUN_DB_TESTS=1` integration tests it wrote — the main loop
+    ran them and found a real `fk_users_org` violation from pytest's LIFO fixture-teardown
+    order deleting organizations before the users referencing them; fixed via
+    `cavecrew-builder`, then hardened structurally so it can't regress) → `principal-reviewer`
+    round 2 (opus, APPROVE-WITH-NITS: one `docs/BACKLOG.md` entry-merge corruption from the
+    round-1 edit, fixed inline) → PR #288 opened immediately once stable (not after being
+    asked — see `feedback_open-pr-once-branch-stable` in auto-memory) → CI green → merged.
+  - **Proactive-deviation flags logged, not fixed** (`docs/BACKLOG.md` §4, explicitly out of
+    this PR's scope): `GET /organizations` (list) isn't actor-scoped at all — any
+    authenticated user sees every org's summary; the entire `reporting` module has no
+    actor-org isolation model anywhere. Both latent today (every current user is internal),
+    real gaps once a non-internal user type ships.
+  - **Next up**: 6 remaining Tier 1 items + 4 Tier 2 items, listed in full in the entry
+    below this one (or re-derive from `docs/BACKLOG.md` §4's PRIORITY item 7 triage list —
+    item 1 above is now the only one of the original 7 Tier 1 items that's closed).
+
 - 2026-10-16 — **SESSION PAUSED by user request ("pause the session. Will break for long
   now. Will resume on Monday").** Clean state, nothing in flight:
   - `git status` clean, on `main`, up to date with `origin/main` at `7a3f795` (the
