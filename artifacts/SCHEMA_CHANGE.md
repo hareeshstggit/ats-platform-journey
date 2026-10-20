@@ -51,6 +51,11 @@ append-only (corrections are added as new entries that reference the prior one).
 <details>
 <summary><strong>Dated index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- [2026-10-19] Add 'screen_rejected' to application_status_enum + 'cancelled' to interview_status_enum (application-exit-interview-cascade) — 0071_app_ivw_exit_cascade
+- [2026-10-15] Add interview_level_kit_templates (interview-kit-shared-focus-areas) — 0070_ivw_level_kit_templates
+- [2026-10-12] fn_set_updated_at_and_version(): honor app.skip_version_bump GUC (principal-reviewer C1) — 0069_skip_version_bump_guc
+- [2026-10-12] Add candidate_screenings.recommendation + recommendation_error + recommendation_requested_at (BR-052) — 0068_screening_recommendation
+- [2026-10-07] Add candidate_screenings.role_briefing (BR-048) — 0067_screening_role_briefing
 - [2026-09-21] Add user_roles (multi-role support) + offers.selected_approver_id — 0065_user_roles_offer_approver
 - [2026-09-19] Add offer_templates, offer_compensation_structures, offer_approvers tables — 0064_offer_org_tables
 - [2026-09-17] Add 3 offer-relevant candidate columns (relevant_experience_years, years_in_current_organization, title_in_current_organization) — 0063_cand_offer_fields
@@ -125,6 +130,360 @@ append-only (corrections are added as new entries that reference the prior one).
 - [2026-06-08] Initial enterprise schema — baseline
 
 </details>
+
+---
+
+### [2026-10-19] Add 'screen_rejected' + 'cancelled' enum values — 0071_app_ivw_exit_cascade
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer for hareesh@stg.com
+- Trigger         : new feature — `application-exit-interview-cascade` (OpenSpec change).
+                    Closes Tier 1 backlog item 2: (1) a screening decision reverted to
+                    `screen_rejected` never propagated to `applications.status`; (2) no
+                    application-exit path ever cancelled that application's still-open
+                    interviews, leaving panelists seeing stale actionable rows in "My
+                    Interviews" indefinitely.
+- Module(s)       : applications, screening, interviews
+- Change type     : add enum value (x2)
+- Objects         : `application_status_enum` +'screen_rejected'; `interview_status_enum`
+                    +'cancelled'. Both enums are `create_type=False` in their ORM models —
+                    `applications/models.py`'s `_APPLICATION_STATUS` and
+                    `interviews/models.py`'s `_INTERVIEW_STATUS` Python-side value lists
+                    were updated in the same commit to match (established project
+                    convention — see migrations 0042/0044/0050's own ORM-list updates).
+- Storage decision: REAL ENUM VALUE on an existing native PG enum column (per
+                    docs/SCHEMA_EVOLUTION.md decision tree) — both are hot-queried,
+                    indexed-via-equality lookup, relational state values on existing
+                    `status` columns; neither is a fit for metadata JSONB/lookup_values/
+                    custom_field_definitions/tags (those are for ad-hoc/configurable
+                    attributes, not a core lifecycle state machine's own enum).
+- Backward compat : Fully additive — no existing enum value removed, renamed, or
+                    reinterpreted; no existing row's status changes. `screen_rejected` is
+                    manual-PATCH-blocked (`_status_rules._MANUAL_TARGET_BLOCKED`) — only
+                    the new `applications/_screening_sync.py` system path writes it.
+                    `cancelled` is written only by the new
+                    `InterviewService.cancel_open_interviews_for_application` seam.
+- Backfill         : CORRECTED 2026-10-19 (principal-reviewer M2) — the original entry
+                    below this line claimed case (b) ("no authoritative source"), which was
+                    factually wrong: `screening_decisions.status='screen_rejected'` IS an
+                    authoritative source for `applications.status` (the gap this change
+                    closes is precisely that the sync from one to the other never existed —
+                    that is a reason to backfill FROM it, not a reason no source exists),
+                    and `applications.status` already in `EXIT_STATUSES` with a still-open
+                    interview IS an authoritative source for which interviews should be
+                    `cancelled`. Case (a) applies: `backend/app/scripts/
+                    backfill_exit_interview_cascade.py` (ENVIRONMENT=local-gated, dry-run
+                    by default, idempotent, single transaction, rollback-on-exception, same
+                    pattern as `backfill_legacy_feedback_outcome.py`) derives and applies
+                    both — Pass A re-runs the live `do_sync_screen_rejected` seam for every
+                    application whose screening decision is `screen_rejected` while
+                    `applications.status` is still pre-interview-eligible; Pass B re-runs
+                    the live `cancel_open_interviews_for_application` seam for every
+                    application already in `EXIT_STATUSES` with a still-open interview.
+                    Expected 0 rows affected against the local dev DB (this feature and its
+                    migration are brand new as of this same change) — confirm via the
+                    script's dry-run output before/after deploying; do not assume the
+                    number without running it.
+                    [Original, incorrect entry, retained for history:] "None — case (b) per
+                    the CLAUDE.md backfill mandate... no authoritative source row to derive
+                    a retroactive `cancelled` value from for any pre-existing interview."
+- Migration       : 0071_app_ivw_exit_cascade; downgrade is a documented no-op (Postgres
+                    cannot remove an enum value — same accepted limitation as 0042/0050).
+- Validation      : `ALTER TYPE ... ADD VALUE IF NOT EXISTS` for both enums, each preceded
+                    by `COMMIT` (ADD VALUE cannot run inside a transaction block) — same
+                    pattern as 0050. Live-verified against local Postgres 18.4
+                    (`atsplatform` db): `alembic heads` resolves to a single clean head
+                    (`0071_app_ivw_exit_cascade`), migration module imports and its
+                    `downgrade()` no-op runs cleanly. Real enum values queried live via
+                    `pg_enum` before writing this migration (not trusted from
+                    `docs/schema.sql`, which is stale here).
+- Rollback        : `alembic downgrade` is a documented no-op — the 2 new enum values
+                    persist in the DB after downgrade; running code reverted to the prior
+                    commit simply never writes them again (same as every prior
+                    enum-add-only migration in this project).
+- Notes           : 4 real call sites cascade into `cancel_open_interviews_for_application`
+                    (`applications/_service_transitions.py`'s `do_update_status`/
+                    `do_withdraw_application`, `applications/tasks.py`'s position-close
+                    Celery task, and the existing interview-outcome sync in
+                    `applications/_interview_sync.py`) plus the new screening sync
+                    (`applications/_screening_sync.py`). Full membership list and rationale
+                    in `openspec/changes/application-exit-interview-cascade/design.md` D4.
+
+---
+
+### [2026-10-15] Add interview_level_kit_templates — 0070_ivw_level_kit_templates
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer for hareesh@stg.com
+- Trigger         : new feature — `interview-kit-shared-focus-areas`. Today
+                    `generate_level_interview_kit` re-derives a position+level slot's 10
+                    technical focus-area NAMES on EVERY candidate's interview at that
+                    slot, even though the names depend only on the position
+                    (title/skills/level depth), never the candidate — wasted LLM spend
+                    and non-deterministic area sets across candidates at the same slot.
+- Module(s)       : interviews
+- Change type     : add table | add constraint | add trigger
+- Objects         : interview_level_kit_templates (new table, `position_id REFERENCES
+                    positions(id)` — principal-reviewer round 2, minor fix, matching
+                    the sibling `interview_level_kits.interview_id` FK precedent);
+                    UNIQUE constraint uq_ivw_level_kit_templates_slot (position_id,
+                    level_type, level_number); trigger trg_ivw_level_kit_templates_upd
+                    → fn_set_updated_at_and_version(). Round 2 also: (a) dropped
+                    `retry_count`/`generation_error` (the reconciler sweep that would
+                    have consumed them was removed as dead code — a template never
+                    reaches `processing`, and `failed` is already treated like
+                    `pending`); (b) added `naming_fingerprint TEXT` (hash of the
+                    naming-call inputs — position title, skills, level sequence — so a
+                    JD/skills edit after caching invalidates the cache automatically,
+                    treated as a normal cache miss, never an error).
+- Storage decision: REAL TABLE (per docs/SCHEMA_EVOLUTION.md decision tree) — looked up
+                    by the composite key (position_id, level_type, level_number) on
+                    every single kit generation (hot-queried, genuinely relational), not
+                    a sparse per-entity attribute. Cache key is deliberately
+                    (position_id, level_type, level_number), NEVER `interview_levels.id`
+                    (regenerated whenever a recruiter re-saves the position's level
+                    config — a live incident fixed separately this session; keying on
+                    the ephemeral id would silently re-break this exact feature).
+- Backward compat : purely additive — a brand-new, currently-empty table; no existing
+                    row in any table is touched. No existing `interview_level_kits` row
+                    or its `technical_focus_areas` is modified — the new per-slot
+                    template behavior applies only to interviews created after this
+                    ships (design.md D5, confirmed with the user — no backfill, no
+                    feature flag).
+- Migration       : 0070_ivw_level_kit_templates; downgrade implemented (DROP TABLE,
+                    drops the trigger/constraint with it)? yes. NOT CASCADE (principal-
+                    reviewer round 2, minor — round 1's downgrade used CASCADE despite
+                    its own docstring claiming "CASCADE-free"; this table has no current
+                    dependents, so a real future one should fail the downgrade loudly).
+- Validation      : applied upgrade + downgrade + re-upgrade against the local dev DB
+                    (confirmed `alembic current` lands back at head); confirmed columns/
+                    constraints/trigger via `information_schema`/`pg_constraint`/
+                    `pg_trigger`; confirmed the slot UNIQUE index is actually used by a
+                    live `EXPLAIN (ANALYZE, BUFFERS)` (Index Scan using
+                    uq_ivw_level_kit_templates_slot, no SeqScan). Re-validated round 2
+                    (principal-reviewer, amended migration — same revision id, not yet
+                    merged): downgraded the local dev DB to 0069, re-upgraded to the
+                    amended 0070, confirmed clean; confirmed via `pg_constraint` that
+                    `naming_fingerprint` is present, `generation_error`/`retry_count` are
+                    gone, and `interview_level_kit_templates_position_id_fkey` (FOREIGN
+                    KEY (position_id) REFERENCES positions(id)) exists.
+- Rollback        : revert the PR; the down-migration drops the now-unused table.
+- Notes           : backfill mandate (CLAUDE.md case (b), explicitly documented — no
+                    backfill possible or needed). Corrected reasoning (principal-
+                    reviewer round 2 — round 1's wording was wrong): per-candidate names
+                    DO already exist in `interview_level_kits.technical_focus_areas`, so
+                    "no prior authoritative source" was not accurate. The real reason no
+                    backfill is possible: each candidate's existing names legitimately
+                    DIFFER (question generation is candidate-experience-calibrated, and
+                    today's un-cached naming step is itself non-deterministic across
+                    candidates at the same slot), so no single slot-level value can be
+                    derived from them without guessing which candidate's naming call
+                    should "win" retroactively. An absent template row is therefore a
+                    correct cache miss on first read after deploy, not missing data that
+                    needs recovering; the table starts empty and populates only from the
+                    first NEW interview created per slot after deploy. Linked spec:
+                    `openspec/changes/interview-kit-shared-focus-areas/`.
+
+### [2026-10-12] fn_set_updated_at_and_version(): honor app.skip_version_bump GUC — 0069_skip_version_bump_guc
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer for hareesh@stg.com
+- Trigger         : principal-reviewer CRITICAL finding (C1) on `candidate-screening-
+                    view-partial-save-ai-recommendation`. The shared
+                    `fn_set_updated_at_and_version()` trigger bumps `version` on ANY
+                    UPDATE to a row it's attached to — including 0068's new system-driven
+                    `set_recommendation`/`set_recommendation_error` writes. Since the
+                    frontend only re-adopts the server's `version` when its local copy is
+                    null, a recommendation landing async between a recruiter's page load
+                    and their next action silently invalidated that recruiter's held
+                    `version`, producing a false 409 `OPTIMISTIC_LOCK_CONFLICT` on their
+                    very next Save/Set-Outcome.
+- Module(s)       : shared trigger function (candidates/candidate_screenings is the
+                    first/only caller of the new skip-bump path; 8+ other tables keep
+                    using the same function unchanged)
+- Change type     : add trigger (function body change via CREATE OR REPLACE — no new
+                    trigger objects, no table DDL)
+- Objects         : fn_set_updated_at_and_version() (shared PL/pgSQL function)
+- Storage decision: N/A — behavior-only change to an existing shared function, no new
+                    column/table.
+- Backward compat : 100% — when the new `app.skip_version_bump` GUC is unset (the case
+                    for every existing caller, every other table, and every OTHER write to
+                    candidate_screenings itself), `current_setting(..., true)` returns
+                    NULL, `NULL = 'true'` is NULL (not TRUE), and the function takes the
+                    ELSE branch — bumps `version` exactly as before. Only a caller that
+                    explicitly issues `SET LOCAL app.skip_version_bump = true` immediately
+                    before its own UPDATE (today: the shared `skip_version_bump()` helper,
+                    defined in `_repository_recommendation.py` and re-exported from
+                    `repository.py` — used by BOTH the AI-recommendation write path
+                    (`_recommendation_tasks.py`'s two setters) AND the question-generation
+                    task's `update_questions` write path (`tasks.py`)) gets the new
+                    behavior, and `SET LOCAL` auto-resets at transaction end so it can
+                    never leak.
+- Backfill        : N/A — function behavior change, not a column; no historical data to
+                    backfill.
+- Migration       : 0069_skip_version_bump_guc; downgrade implemented (restores the
+                    original unconditional-bump function body verbatim).
+- Validation      : applied locally via `alembic upgrade head`; confirmed
+                    `fn_set_updated_at_and_version`'s new body via `\df+` in psql; unit
+                    test (`test_recommendation_tasks.py`) asserts the `SET LOCAL` statement
+                    is issued before each recommendation write. What was LIVE-verified: the
+                    question-generation and regenerate write paths (both call the identical
+                    shared `skip_version_bump()`/trigger mechanism) — confirmed a
+                    recruiter-save → question-generation-write → recruiter-save sequence no
+                    longer 409s. The AI-recommendation write path itself was confirmed via
+                    direct repository-level live calls against real Postgres (same
+                    mechanism, same trigger), NOT yet via a full live Anthropic-backed
+                    recruiter-save → recommendation-write → recruiter-save end-to-end run —
+                    that run is happening in a separate functional-test pass (round-3
+                    Major 4).
+- Rollback        : `alembic downgrade 0068_screening_recommendation` (restores the
+                    original function body — every table reverts to always bumping
+                    `version` on UPDATE, including recommendation writes, i.e. the bug
+                    this migration fixes would return).
+- Notes           : Kept as its own migration rather than folded into 0068's column adds
+                    — this is a shared trigger-function change (affects every table using
+                    the function), a materially different class of change than two
+                    nullable columns.
+
+### [2026-10-12] Add candidate_screenings.recommendation + recommendation_error + recommendation_requested_at — 0068_screening_recommendation
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer for hareesh@stg.com
+- Trigger         : spec change — `candidate-screening-view-partial-save-ai-
+                    recommendation` (BR-052/BR-053). After a qualifying `PUT .../
+                    responses` save, an async Celery task generates a Proceed/
+                    Borderline/Do Not Proceed AI recommendation + rationale, advisory
+                    only — never gates/pre-fills the manual shortlist/reject outcome.
+                    `recommendation_requested_at` added in review round 2 (M2): the real
+                    "is a recommendation pending" signal, replacing an unreliable
+                    answered-count inference that left pre-existing rows spinning
+                    "Generating..." forever.
+- Module(s)       : candidates (candidate_screenings)
+- Change type     : add column (x3)
+- Objects         : candidate_screenings.recommendation (JSONB, NULLABLE),
+                    candidate_screenings.recommendation_error (TEXT, NULLABLE),
+                    candidate_screenings.recommendation_requested_at (TIMESTAMPTZ, NULLABLE)
+- Storage decision: JSONB + TEXT + TIMESTAMPTZ columns on the existing candidate_screenings
+                    table (per docs/SCHEMA_EVOLUTION.md decision tree) — low-query-volume,
+                    1:1-with-the-row display data, exact structural precedent already on
+                    this same table (`role_briefing` JSONB / `question_generation_error`
+                    TEXT, migration 0067); real columns are the consistent choice, not
+                    metadata/lookup/a new table.
+- Backward compat : Additive + NULLABLE — existing rows get NULL in all three columns; the
+                    detail response already treats each as `| None` (no crash).
+- Backfill        : NONE for all three — explicitly confirmed, not a silent "no rows
+                    affected" dodge (CLAUDE.md Backfill Mandate option (b)).
+                    `recommendation`/`recommendation_error`: genuinely NEW AI-derived
+                    content — no screening row created before this migration was ever
+                    scored by any other authoritative source (no history table, no
+                    transient field held this before) — nothing to derive it from.
+                    `recommendation_requested_at`: CORRECTION (principal-reviewer M2) —
+                    this migration's first draft claimed "existing rows show no
+                    recommendation section until a qualifying save re-triggers
+                    generation," which principal-reviewer live-verified FALSE (5 of 24 real
+                    dev screenings already had `responses` meeting BR-050's threshold,
+                    so their detail response already inferred "pending" from
+                    answered-count alone, with nothing to ever resolve it — a permanent
+                    spinner). `recommendation_requested_at` exists precisely to replace
+                    that unreliable inference: it is NULL for every pre-existing row by
+                    construction (no save, old or new code, ever set this column before
+                    this migration runs), so every pre-existing row now correctly shows NO
+                    recommendation section (neither pending nor a result) until its own
+                    next qualifying save sets this column for the first time. No backfill
+                    is possible or needed — there is no authoritative source recording
+                    whether a pre-existing row's answered-count-looks-qualifying state was
+                    ever acted on, because no recommendation run of any kind existed before
+                    this migration.
+- Migration       : 0068_screening_recommendation; downgrade implemented (drops all three
+                    columns).
+- Validation      : applied locally via `alembic upgrade head` against the dev DB;
+                    `alembic current` confirmed at new head; downgrade verified to cleanly
+                    drop all three columns and re-upgrade without error.
+- Rollback        : `alembic downgrade 0067_screening_role_briefing` (drops all three
+                    columns; no data-loss concern — recommendations are regenerable via the
+                    next qualifying responses save).
+- Notes           : No backfill script needed/added (D5's rationale above) — this is the
+                    "no existing rows could ever have had this value" case the Backfill
+                    Mandate explicitly carves out, not an oversight.
+
+### [2026-10-07] Add candidate_screenings.role_briefing — 0067_screening_role_briefing
+
+- Baseline        : v2.2 (11-Jun-2026)
+- Author          : backend-engineer for hareesh@stg.com
+- Trigger         : spec change — BR-048 (`openspec/changes/screening-role-briefing-
+                    simplification/specs/candidates/spec.md`). Every screening session
+                    now carries one shared "role briefing" panel (summary, focus_points,
+                    must_have_skills, good_to_have_skills, jd_gaps), generated once
+                    alongside the (now variable-count, 3-10) question set, instead of a
+                    bare question list with no role-level context.
+- Module(s)       : candidates (candidate_screenings)
+- Change type     : add column
+- Objects         : candidate_screenings.role_briefing (JSONB, NULLABLE)
+- Storage decision: JSONB column on the existing candidate_screenings table (per
+                    docs/SCHEMA_EVOLUTION.md decision tree) — hot-read, per-screening,
+                    1:1-with-the-row data shown on every screening detail page load, same
+                    lifecycle/access pattern as the existing screening_questions JSONB
+                    column; not metadata on an unrelated entity, not a lookup value, not a
+                    new table (no independent lifecycle of its own).
+- Backward compat : Additive + NULLABLE — existing rows get NULL; no running code depends
+                    on a non-NULL value (API response treats role_briefing: None as a
+                    valid, handled shape — empty-state UI, not a crash).
+- Backfill        : NONE — explicitly confirmed, not a silent "no rows affected" dodge
+                    (CLAUDE.md Backfill Mandate option (b)). This is genuinely NEW
+                    AI-derived content: no screening row created before this migration
+                    ever had a role briefing from any other authoritative source (no
+                    history table, no transient field held this data previously) — there
+                    is no prior value to derive. Existing rows surface a "Role briefing
+                    not available — use Regenerate Questions" empty state instead.
+- Migration       : 0067_screening_role_briefing; downgrade implemented (drops the column).
+- Validation      : applied locally via `alembic upgrade head` against the dev DB;
+                    `alembic current` confirmed at new head; downgrade verified to cleanly
+                    drop the column and re-upgrade without error.
+- Rollback        : `alembic downgrade 0066_org_artifacts` (drops role_briefing; no data
+                    loss beyond the AI-generated briefings themselves, regenerable via the
+                    existing Regenerate Questions action).
+- Notes           : Same migration also underpins the question-count change (fixed 10 →
+                    variable 3-10) — that change is prompt/validation-logic only, no schema
+                    impact, so it is not a separate migration.
+                    **Post-merge CI fix (2026-10-07, PR #267 CI failure):** `docs/
+                    ci_schema_snapshot.sql` had not been regenerated after this migration
+                    landed, so `check_schema_definition_drift.py` (G15d) correctly failed
+                    CI with `[column] present in REPLAYED DB only, missing from snapshot:
+                    ('candidate_screenings', 'role_briefing')`. Regenerated following the
+                    tribal-knowledge procedure logged at `docs/BACKLOG.md`'s `ci_schema_
+                    snapshot` entry (2026-09-19, offers-schema §3 incident): (1) built a
+                    disposable scratch DB (`g267_role_briefing_replay`) from source of
+                    truth — `docs/schema.sql` load → `alembic stamp 0001_baseline` →
+                    `alembic upgrade head` (full real replay, 0002 through
+                    `0067_screening_role_briefing`, same path `backend-ci.yml`'s own `test`
+                    job exercises); (2) `pg_dump --schema-only --no-owner --no-privileges`
+                    from that DB; (3) re-spliced the hand-curated seed tail (bootstrap
+                    `organizations` row + 8 reference-data `COPY` blocks: `consent_purposes`/
+                    `currencies`/`feature_flags`/`lookup_values`/`permissions`/`roles`/
+                    `role_permissions`/`tenant_settings`) from the PRE-fix committed file,
+                    extracted via the marker-anchored line range derived from the stable
+                    `-- PostgreSQL database dump complete` / `\unrestrict` marker (never a
+                    hardcoded line number — this is the exact incident the BACKLOG entry
+                    warns got it wrong once). Diff vs. the pre-fix committed file: only the
+                    new `role_briefing jsonb` column on `candidate_screenings` + the 2
+                    cosmetic per-dump `\restrict`/`\unrestrict` session tokens — nothing
+                    else. **Verified, not assumed:** loaded the regenerated candidate into a
+                    fresh scratch DB (`atsplatform_schema_drift_snapshot`) via
+                    `psql -v ON_ERROR_STOP=1` — exit 0, zero errors across the full load
+                    log; ran `check_schema_definition_drift.py` against the real replay —
+                    clean pass. **Control run (before trusting the fix):** also loaded the
+                    UNMODIFIED pre-fix committed file into a separate scratch DB and ran the
+                    same drift check — reproduced the exact reported CI failure message
+                    verbatim, confirming the comparison methodology and that this fix
+                    actually closes the gap. Re-verified a second time against the real
+                    local dev DB (`atsplatform`, already at head) post-commit — also clean.
+                    All scratch DBs dropped after verification. Same PR also fixed a stale
+                    hardcoded `== 10` assertion in
+                    `backend/tests/integration/test_candidate_ai_match_screen_flow.py`
+                    (pre-dates this migration's variable 3-10 question count; only caught
+                    by CI since it's a `RUN_DB_TESTS=1`-gated integration test, not part of
+                    any unit-test sweep) — widened to a `3 <= len(...) <= 10` range
+                    assertion.
 
 ---
 

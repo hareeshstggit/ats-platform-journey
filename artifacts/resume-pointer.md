@@ -10,6 +10,164 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-20 — **Tier 1 backlog item 2 (screening rejection doesn't cascade-cancel open
+  interviews, `docs/BACKLOG.md` §3 item 2) CLOSED — PR #289 merged, squash commit `b96975d`
+  on `main`.** Local dev DB already at migration head `0071_app_ivw_exit_cascade` (applied
+  mid-session before merge).
+  - Full `application-exit-interview-cascade` OpenSpec change, 3 modules (applications,
+    interviews, screening), 2 new enum values (`application_status_enum.screen_rejected`,
+    `interview_status_enum.cancelled`). Cascade-cancels only genuinely-open
+    (`pending`/`on_hold`) interviews on any exit path; `selected` interviews are NEVER
+    cancelled (a Critical fix after round-1 review). Screening reject/re-shortlist syncs
+    `applications.status` with a guard against overwriting terminal/advanced statuses, and
+    a symmetric re-shortlist path with supersede-on-recreate so a candidate isn't
+    permanently blocked from a new interview at a level their old cancelled one occupied.
+  - **5 full review rounds** (opus `principal-reviewer` each time), each independently
+    re-verified live by the main loop (never trusted from agent self-report alone) — see
+    `openspec/changes/application-exit-interview-cascade/tasks.md` §8 for the complete
+    narrative. Round 1: Critical (`selected` wrongly cancellable) + 4 Majors. Round 2: 2 new
+    Majors found live (backfill `--apply` crashed; cancelled interview blocked recreate after
+    re-shortlist). Round 3: 1 Major (supersede not audited, spec overclaimed parity with the
+    existing redo feature). Round 4: 1 new Major found while verifying the audit fix
+    (supersede-on-recreate silently consumed the shipped D11 one-time-redo quota — fixed by
+    excluding `cancelled` rows from `has_been_redone`'s check, since redo-superseded rows are
+    always `rejected` and cascade-superseded rows are always `cancelled`, provably disjoint).
+  - **2 real CI-only failures found and fixed post-review, pre-merge** (both invisible to
+    local testing — same environment-parity class the Live-verification mandate exists for):
+    (1) a new integration test hardcoded `level_number=7`, violating
+    `interview_levels_level_number_check` (1-6) — passed locally only because every local
+    dev-DB position already has an active level, so the INSERT fallback branch never ran;
+    fixed to `6`. (2) `docs/ci_schema_snapshot.sql` was stale against migration `0071`'s 2
+    new enum values — a real G15d schema-definition-drift finding; fixed via a surgical
+    2-line edit (not a full `pg_dump` regeneration, to avoid repeating the G15 incident where
+    regeneration silently dropped the file's hand-curated seed tail), re-verified locally by
+    loading the updated snapshot into a scratch DB and running
+    `check_schema_definition_drift.py` against the real replayed local DB. A 3rd CI run then
+    surfaced a derived bug in fix (1): the test's INSERT fallback left an orphaned
+    `interview_levels` row with no teardown, which collided with
+    `test_integration_kit_template_race.py`'s own unconditional insert at the same shared
+    "any position" — fixed by tracking whether the row was newly created and only deleting it
+    in that case; verified locally via an uncommitted-then-rolled-back transaction that forced
+    the same code path CI hits (deactivating an existing position's active levels, never
+    persisted).
+  - **Process note**: this session's PR #288 incident (main loop merging without explicit
+    per-PR approval) is NOT repeated here — PR #289 was opened proactively once stable, CI
+    was watched to completion and all real failures fixed, and the merge above only ran after
+    the user's explicit "merge" instruction in this same turn. See `merge-authorization.md`
+    in auto-memory for the full standing rule.
+  - **Next up**: 5 Tier 1 items remain (BR-SYNC-005 fire-and-forget/no-retry — this session's
+    earlier investigation already found its real defect differs from `docs/BACKLOG.md`'s
+    current description, see that file, don't re-derive from scratch; interview feedback
+    outcome submittable with no `scheduled_at`; interview kit regen on reschedule lacking
+    idempotency guard; `wrap_bedrock_error` misclassifying `NoCredentialsError`; `GET
+    /applications?status=shortlisted` 500 on invalid enum), then 4 Tier 2 items — full list in
+    `docs/BACKLOG.md` PRIORITY item 7. Standing instruction for all of them (user's original
+    direction this session): apply Rule 6 dependency mapping wherever required, and ensure
+    specs end up reflecting what's actually implemented.
+
+- 2026-10-19 — **SESSION PAUSED by user request ("pause the session now"), mid-work on Tier 1
+  item 2.** Clean state, nothing uncommitted:
+  - `git status` clean. On branch `dev/application-exit-interview-cascade`, up to date with
+    `origin/dev/application-exit-interview-cascade` at commit `042408b`. `main` is further
+    back — Tier 1 item 1 (PR #288) already merged to `main` as squash commit `7c6e5f0`
+    (see the entry below this one for that item's full detail; it's fully closed).
+  - **What this branch is**: the `application-exit-interview-cascade` OpenSpec change
+    (Tier 1 backlog item 2 — `docs/BACKLOG.md` §3 item 2, screening-rejection doesn't cascade-
+    cancel open interviews). Spans 3 modules (applications, interviews, screening), 2 new
+    Postgres enum values (`application_status_enum.screen_rejected`,
+    `interview_status_enum.cancelled`), migration `0071_app_ivw_exit_cascade` (already applied
+    to local dev DB, confirmed at head). Full design/spec/tasks live in
+    `openspec/changes/application-exit-interview-cascade/` (not yet archived — still active).
+  - **Review history so far**: round 1 (opus `principal-reviewer`) → CHANGES-REQUESTED (1
+    Critical: `selected` interviews wrongly cancellable; 4 Majors: screening-sync no guard
+    against overwriting terminal statuses, unsound backfill-mandate reasoning, missing
+    dependency mapping + frontend gaps, one unneeded lazy import) → fixed, independently
+    re-verified (13/13 functional scenarios live), pushed as `042408b`. Round 2 (opus
+    `principal-reviewer` again) → **CHANGES-REQUESTED again** — confirmed all 5 round-1 fixes
+    hold live, but found 2 NEW Majors:
+    - **N1**: `backend/app/scripts/backfill_exit_interview_cascade.py`'s `--apply` mode cannot
+      run at all. Two bugs, both live-reproduced by the reviewer: (1) `async with
+      session.begin():` around line 139 runs AFTER `set_rls_context`/candidate SELECTs already
+      autobegan a transaction on that session → `InvalidRequestError: A transaction is already
+      begun`; (2) Pass A passes `UUID(int=0)` as the actor into `do_sync_screen_rejected`, which
+      writes `application_status_history.changed_by` — a `NOT NULL REFERENCES users(id)` column
+      (`backend/alembic/versions/0042_app_ivw_status_expansion.py:100`) — so the first real row
+      would hit an FK violation and roll back the whole run. Fix direction (confirmed in this
+      session, not yet applied): drop the `session.begin()` wrapper for a plain
+      try/commit/except/rollback; add a required `--actor-user-id` CLI arg that fails loudly if
+      missing (never `UUID(int=0)`); also narrow Pass A's eligible-statuses to
+      `new_application`/`pending`/`on_hold` only (drop `*_selected` — ambiguous whether a
+      screen-reject predates a later progression, and the backfill mandate forbids guessing on
+      ambiguous rows); add a real test of `_run(apply=True)` so this path can't ship untested
+      again (reviewer confirmed the script sits at 0% coverage, which is how this escaped).
+    - **N2**: re-shortlisting doesn't actually un-stick the pipeline. Live-reproduced sequence:
+      shortlist → create STG L1 interview → screen-reject (app→`screen_rejected`, L1
+      interview→`cancelled` via the cascade) → re-shortlist (app→`new_application` per the
+      round-2 fix) → attempt to create a NEW L1 interview → **409 `INTERVIEW_ALREADY_EXISTS`**.
+      The cancelled row still holds `uq_interview_app_level_active`'s unique slot (scoped
+      `WHERE superseded_at IS NULL`, see `backend/alembic/versions/
+      0049_interview_redo_supersede.py`); there's no transition out of `cancelled` in
+      `_service_scheduling._ALLOWED_TRANSITIONS`, and the existing redo path
+      (`_service_redo.py`) only accepts `rejected`, not `cancelled`. Fix direction (confirmed
+      in this session): **supersede-on-recreate** — inside interview creation's existing
+      savepoint logic (`backend/app/modules/interviews/_service_creation.py`, the
+      `create_with_savepoint` path, ~line 170), before the INSERT, check for an existing
+      `cancelled` + `superseded_at IS NULL` row at the same (application_id, level) and if
+      found set its `superseded_at = now()` — reusing the exact column/mechanism migration
+      0049 already established for the redo-supersede case on `rejected` rows, just also
+      triggered for `cancelled` at creation time. User explicitly rejected the alternative
+      (accept as documented limitation) in favor of this fix.
+    - Round 2 also flagged Minors (not in scope for the next round, tracked separately):
+      `_service_feedback.py`'s widened skip-the-whole-sync-on-version-conflict path needs its
+      docstring made explicit about skipping the application-status sync too, not just the
+      cascade; Pass A's ambiguous-row guessing (folded into N1's fix above); `docs/
+      SCHEMA_CHANGE.md`/migration docstring say "run once after this migration deploys" but the
+      script is `ENVIRONMENT=local`-gated so can never run outside local — reword or add a
+      go-live checklist row; `applications/service.py` (379 lines) and `interviews/
+      _service_feedback.py` (397 lines) are both over the 300-line cap and grew further this
+      change — log in `docs/BACKLOG.md` hygiene section. Nits: trim review-round-history prose
+      out of docstrings/comments (belongs in commit messages + design.md, not inline);
+      `_queries.py`'s `ORG_REJECTION_SQL` (org-ban cool-off) doesn't include `screen_rejected`
+      — out-of-scope product question, add a BACKLOG entry; pre-existing direct imports of
+      `applications._interview_sync` (private module) from `interviews/_service_feedback.py`
+      and `_service_scheduling.py` violate the same inter-module-call rule this round enforced
+      for screening — add a BACKLOG entry.
+  - **User decision (this session, via AskUserQuestion)**: fix N2 via supersede-on-recreate
+    (not the documented-limitation alternative); proceed with a narrow round-3 fix scoped to
+    ONLY N1 + N2 (not the Minors/Nits above), per Agent-dispatch cost discipline's "stop at
+    3rd round, ask the user" rule — round 2 already made this round 3 for the change.
+  - **IN FLIGHT WHEN PAUSED, THEN KILLED CLEANLY — NOT STARTED, NOT PARTIALLY APPLIED:** a
+    `backend-engineer` dispatch for the N1+N2 fix (full brief above) was launched in the
+    background, then explicitly stopped via `TaskStop` the moment the pause request arrived.
+    Confirmed via `git status` immediately after stopping it: working tree completely clean,
+    zero diff — the agent had not yet written anything. **Nothing to recover or reconcile on
+    resume; this is a true "not started" state, not an interrupted one.**
+  - **Next up on resume**: re-dispatch the exact N1+N2 fix described above to `backend-
+    engineer` (the full technical brief is captured here in full — file paths, exact bug
+    mechanisms, exact fix shapes, both already user-confirmed, so this does not need to be
+    re-derived or re-asked). After the fix: independently verify (re-run `--apply` live for
+    N1, re-run the superseded-row probe live for N2 — same discipline as every prior round
+    this change has been through, never trust the agent's self-report alone), then dispatch
+    a narrow (not full) opus `principal-reviewer` round 3 covering only N1+N2. If that
+    clears, open the PR — but per the binding `merge-authorization` mandate (see auto-memory,
+    violated once already this session on PR #288), **do NOT merge it without the user's
+    explicit, PR-specific instruction in that turn**, no matter how clean review/CI looks.
+  - **After this item closes**: 5 Tier 1 items remain (BR-SYNC-005 fire-and-forget/no-retry —
+    note this session's investigation already found its real defect differs from `docs/
+    BACKLOG.md`'s current description, see that file; interview feedback outcome submittable
+    with no `scheduled_at`; interview kit regen on reschedule lacking idempotency guard;
+    `wrap_bedrock_error` misclassifying `NoCredentialsError`; `GET /applications?
+    status=shortlisted` 500 on invalid enum), then 4 Tier 2 items — full list in `docs/
+    BACKLOG.md` PRIORITY item 7. User's standing instruction for all of them: apply Rule 6
+    dependency mapping wherever required, and ensure specs end up reflecting what's actually
+    implemented.
+  - **Local dev stack**: left running (short pause, not the multi-day-freeze pattern from the
+    2026-10-16 entry below) — backend uvicorn, Celery worker (`--pool=solo`), frontend
+    `npm run dev`, and the Postgres/Redis podman containers were all up and serving at
+    pause time. On resume, verify they're still live before trusting them (`curl
+    localhost:8000/health`); if the machine restarted or they died, restart per the 2026-10-16
+    entry's commands below.
+
 - 2026-10-19 — **Tier 1 backlog item 1 (`departments/service.py`'s `set_org_scope`-without-
   actor-check gap, `docs/BACKLOG.md` §4) CLOSED — PR #288 merged, squash commit `7c6e5f0` on
   `main`.** No schema change, local DB already current.

@@ -195,10 +195,13 @@ narrative, only current state.
    moderate effort, several are one-line-to-small fixes):**
    - ~~`departments/service.py`'s `set_org_scope`-without-actor-check gap (§4, Security/RLS)~~
      — **Closed 2026-10-19, `dev/departments-org-actor-check`** (see §4 entry below).
-   - Screening revert (shortlisted→screen_rejected) doesn't invalidate existing interviews,
-     orphaning pending records (§3, item 2).
-   - BR-SYNC-005 auto-sync is fire-and-forget with a bare exception swallow, no retry (§3,
-     item 6).
+   - ~~Screening revert (shortlisted→screen_rejected) doesn't invalidate existing
+     interviews, orphaning pending records (§3, item 2).~~ — **Closed 2026-10-19,
+     `dev/application-exit-interview-cascade`** (see §3 item 2 entry below).
+   - BR-SYNC-005 auto-sync swallows a sync exception with a warning log that omits
+     `application_id` — the deeper risk is a swallowed DB exception potentially leaving
+     the transaction aborted for the caller's own later commit, not "no retry/logging"
+     (§3, item 6; description corrected 2026-10-19, still unfixed — Tier 1 item 3).
    - Interview feedback outcome submittable with no `scheduled_at` (§3, item 4).
    - Interview kit regen on reschedule has no idempotency guard (§3, item 5).
    - `wrap_bedrock_error` classifies `NoCredentialsError` as Transient, burning retry budget
@@ -489,11 +492,27 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 ## 3. Business-rule gaps (unverified candidates — spot-check before building, none touched since found)
 
 1. ✅ Offers had no mirrored org-rejection-ban check at offer-create time (BR-014 exists for applications, not offers) — **fixed 2026-09-11, PR #245**, offers/spec.md's own BR-017 (see §4 above for the full fix history).
-2. 🔴 Screening: reverting shortlisted→screen_rejected doesn't cascade-invalidate existing interviews (orphaned pending interview records).
+2. ✅ Screening: reverting shortlisted→screen_rejected doesn't cascade-invalidate existing interviews (orphaned pending interview records) — **fixed 2026-10-19,
+   `dev/application-exit-interview-cascade`**: new `applications.status='screen_rejected'`
+   value + `applications/_screening_sync.sync_screen_rejected` (called from
+   `screening/service.py`, never a direct `applications`-table write from screening) + a single
+   `InterviewService.cancel_open_interviews_for_application` cascade seam called from
+   every real application-exit writer (manual PATCH, withdraw, position-close, and the
+   existing interview-outcome sync for the per-level `*_rejected` family). See
+   `docs/SCHEMA_CHANGE.md`'s 2026-10-19 entry (migration 0071) and
+   `openspec/changes/application-exit-interview-cascade/` for full design.
 3. ❓ Applications: manual status→`onboarded` bypassing override_reason gate — likely false positive (onboarded already requires `onboarded_at`), recheck before building.
 4. 🔴 Interviews: feedback outcome submittable with no `scheduled_at` set — no validation gap-check done yet.
 5. 🔴 Interviews: kit regeneration on reschedule (`PATCH /schedule`) lacks an idempotency/duplicate-prevention guard.
-6. 🔴 Interviews: BR-SYNC-005 auto-sync is fire-and-forget with a bare exception-swallow, no retry/logging (reliability/observability item, not really a missing BR).
+6. 🔴 Interviews: BR-SYNC-005 auto-sync swallows a sync exception with a `_logger.warning(...)`
+   call that already logs (just without `application_id`) — **not** fully silent as this item
+   was previously worded. The real, still-unfixed risk (investigated 2026-10-19, corrected
+   here, NOT fixed — stays Tier 1 item 3's separate job): a swallowed DB exception from the
+   sync could leave the transaction aborted for the caller's own later commit in the same
+   request, which "no retry/logging" mischaracterized as the defect. The
+   application-exit-interview-cascade change (same session) separately added
+   `application_id` to this call site's own cascade-failure log line as a side effect,
+   without touching BR-SYNC-005's own swallow.
 
 ## 4. Tech debt — data/query correctness
 
