@@ -504,15 +504,25 @@ by PR #209's status-groups redesign after live user testing rejected #206's shap
 3. ❓ Applications: manual status→`onboarded` bypassing override_reason gate — likely false positive (onboarded already requires `onboarded_at`), recheck before building.
 4. 🔴 Interviews: feedback outcome submittable with no `scheduled_at` set — no validation gap-check done yet.
 5. 🔴 Interviews: kit regeneration on reschedule (`PATCH /schedule`) lacks an idempotency/duplicate-prevention guard.
-6. 🔴 Interviews: BR-SYNC-005 auto-sync swallows a sync exception with a `_logger.warning(...)`
-   call that already logs (just without `application_id`) — **not** fully silent as this item
-   was previously worded. The real, still-unfixed risk (investigated 2026-10-19, corrected
-   here, NOT fixed — stays Tier 1 item 3's separate job): a swallowed DB exception from the
-   sync could leave the transaction aborted for the caller's own later commit in the same
-   request, which "no retry/logging" mischaracterized as the defect. The
-   application-exit-interview-cascade change (same session) separately added
-   `application_id` to this call site's own cascade-failure log line as a side effect,
-   without touching BR-SYNC-005's own swallow.
+6. ✅ Interviews: BR-SYNC-005 auto-sync swallows a sync exception with a `_logger.warning(...)`
+   call — **fixed 2026-10-22, `dev/br-sync-005-savepoint-protection`**: the real risk
+   (identified 2026-10-19) was that a swallowed DB-level exception left the Postgres
+   transaction aborted for the caller's own later commit, silently discarding every other
+   write already made in the same request. Rule 6 mapping found 7 identical-pattern sites
+   sharing this convention, not just the 1 named in this bullet — all 7 now wrapped in a
+   SAVEPOINT (`async with session.begin_nested():`), the established pattern already used
+   elsewhere in this codebase: `_service_feedback.py` ×4, `applications/_interview_sync.py`
+   ×1, `interviews/_service_scheduling.py` ×2 (the BR-SYNC-001 path + the BR-P20-006
+   kit-reset-on-reschedule path, found by `principal-reviewer` round 1, not in the original
+   map). Each fix live-verified by deliberately reverting it, reproducing the real
+   `asyncpg.exceptions.InFailedSQLTransactionError`, then restoring and confirming green —
+   not just unit-mocked. Also corrected 2 stale spec rules in `openspec/specs/interviews/
+   spec.md` found during the same investigation: BR-SYNC-001 claimed atomic rollback-on-sync-
+   failure (the code has always deliberately swallowed this path); BR-SYNC-004 claimed the
+   sync raises `INVALID_STATUS_TRANSITION` on rollback (it bypasses the BR-003 matrix
+   entirely by design and never raises that). `docs/BACKLOG.md` §4 item 5 (kit-regen
+   idempotency gap on the same `PATCH /schedule` call site) is a SEPARATE, still-open
+   concern — this fix does not touch or close it.
 
 ## 4. Tech debt — data/query correctness
 

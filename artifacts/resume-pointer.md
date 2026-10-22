@@ -10,6 +10,58 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-22 — **Tier 1 backlog item 3 (BR-SYNC-005 auto-sync swallow, `docs/BACKLOG.md` §3
+  item 6) CLOSED — PR #290 merged, squash commit `9d3f8ba` on `main`.** No schema change, no
+  migration, local dev DB still at head `0071_app_ivw_exit_cascade`.
+  - **Real defect**: a fire-and-forget sync swallowed its own exceptions but never rolled back
+    to a savepoint, so a real Postgres-level error inside it (CHECK/FK/unique violation)
+    aborted the WHOLE transaction — silently discarding every other write already made in the
+    same request at the final commit. A byte-identical incident already happened in this
+    codebase (`memory/feedback_interview-workflow-regression-lessons.md`). The backlog item's
+    prior wording ("no retry/logging") mischaracterized the defect — this session's 2026-10-19
+    investigation (recorded in the backlog entry itself) had already corrected that framing
+    before this session built the fix.
+  - **Rule 6 mapping found 7 sites sharing the identical convention, not just the 1 named in
+    the backlog bullet** — confirmed with the user before building (AskUserQuestion: fix all
+    7 vs just the 1). All 7 wrapped in `begin_nested()` (SAVEPOINT), the pattern already
+    established elsewhere in this codebase: `interviews/_service_feedback.py` ×4,
+    `applications/_interview_sync.py` ×1, `interviews/_service_scheduling.py` ×2 (the
+    BR-SYNC-001 path + the BR-P20-006 kit-reset-on-reschedule path — this 7th site was found
+    by `principal-reviewer` round 1, NOT in the original map, and fixed in a follow-up round).
+    Two sibling files (`_service_redo.py`, `_service_outcome_override.py`) deliberately do NOT
+    swallow — confirmed correct, untouched.
+  - **2 stale spec rules also corrected** in `openspec/specs/interviews/spec.md` (found during
+    the same investigation, each confirmed with the user before fixing): BR-SYNC-001 claimed
+    atomic rollback-on-sync-failure (the code has always deliberately swallowed this path);
+    BR-SYNC-004 claimed the sync raises `INVALID_STATUS_TRANSITION` on rollback (it bypasses
+    the BR-003 transition matrix entirely by design and never raises that).
+  - **Every fix live-verified by deliberately reverting it and reproducing the real
+    `asyncpg.exceptions.InFailedSQLTransactionError`**, then restoring and confirming green —
+    both for the original 6-site fix and the 7th-site follow-up, independently re-done by the
+    main loop itself (not just trusted from the building/reviewing agents' reports) each time.
+  - **Pipeline**: direct main-loop investigation + Rule 6 mapping (a deliberate, acknowledged
+    deviation from Gate 5's "always dispatch cavecrew-investigator" rule — the investigation
+    was already solid and user-confirmed, so re-deriving it via a subagent would have been
+    pure cost with no new information) → `backend-engineer` (6-site fix) → Gate-1 unit tests
+    (main loop, 579 passed) → `functional-test-engineer` (3 live scenarios, golden path +
+    P36 edit/revert + direct status PATCH) → `principal-reviewer` round 1 (sonnet/high —
+    CHANGES-REQUESTED: missed 7th site) → `backend-engineer` (7th-site fix) →
+    `principal-reviewer` round 2, narrow scope — APPROVE → PR #290 opened once stable → CI
+    green → merged on explicit user instruction.
+  - **`docs/BACKLOG.md` §4 item 5** (a kit-regen idempotency gap on the SAME `PATCH /schedule`
+    call site this fix also touched) is a separate, still-open concern — this fix does not
+    touch or close it; don't conflate the two if revisiting that call site later.
+  - **Next up**: 4 Tier 1 items remain (manual status→`onboarded` bypassing override_reason
+    gate — likely false positive, recheck before building; interview feedback outcome
+    submittable with no `scheduled_at`; interview kit regen on reschedule lacking idempotency
+    guard — see note above; `GET /applications?status=shortlisted` 500 on invalid enum —
+    `wrap_bedrock_error` misclassifying `NoCredentialsError` was Tier 1 item 4 in the original
+    7-item list but may already be re-numbered, re-derive current numbering from
+    `docs/BACKLOG.md` PRIORITY item 7 rather than trusting this list's exact ordering), then 4
+    Tier 2 items. Standing instruction for all of them (user's original direction this
+    session): apply Rule 6 dependency mapping wherever required, and ensure specs end up
+    reflecting what's actually implemented.
+
 - 2026-10-20 — **Tier 1 backlog item 2 (screening rejection doesn't cascade-cancel open
   interviews, `docs/BACKLOG.md` §3 item 2) CLOSED — PR #289 merged, squash commit `b96975d`
   on `main`.** Local dev DB already at migration head `0071_app_ivw_exit_cascade` (applied
