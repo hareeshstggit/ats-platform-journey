@@ -10,6 +10,43 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-26 — **ATS PROJECT PARKED by user request** — focus shifts to Project-Compass for "the next
+  couple of days until we have a working prototype"; resume ATS only when the user says to. Nothing
+  was in flight; this is a clean park, not an interruption.
+  - **Repo state at park**: `main` clean and in sync with `origin/main`, no uncommitted/untracked
+    files, no unpushed commits, no in-flight branch, agent or PR of ours. Local DB at migration head
+    `0071_app_ivw_exit_cascade`. Pre-existing, untouched: old PR #210 (`chore/ci-test-infrastructure`,
+    open since Aug — see the 2026-08-04 PAUSED entry in this file), 8 `git stash` entries, many stale
+    local branches. Recent closes: Tier 1 items 2 and 3 (PR #289, #290).
+  - **Local stack STOPPED** (frees ports 8000/3000/5432/6379 and RAM for Compass): containers
+    `ats-platform` + `ats-redis` stopped; uvicorn, Celery and Next.js processes killed. To resume,
+    start fresh — do not assume anything survived:
+    `podman start ats-platform ats-redis`; then in `backend/`:
+    `./.venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000` (plain, no
+    `--reload`) and `./.venv/Scripts/python.exe -m celery -A app.workers.celery_app worker -Q
+    extraction,matching,screening,notifications,reports,maintenance --loglevel=info --pool=solo`;
+    in `frontend/`: `npm run dev`. Cold start can take 1-2 min; healthy = `curl localhost:8000/health`
+    returns 200 and `localhost:3000` returns 307 (login redirect). Run `alembic current` and confirm
+    `(head)`.
+  - **To resume ATS**: `git checkout main && git pull origin main`, confirm `alembic current` is at
+    head, then restart the stack above. Work queue is unchanged: remaining Tier 1 items in
+    `docs/BACKLOG.md` PRIORITY item 7 (manual status→`onboarded` likely false positive — recheck
+    first; feedback outcome submittable with no `scheduled_at`; kit regen on reschedule lacks an
+    idempotency guard; `GET /applications?status=` 500 on invalid enum), then 4 Tier 2 items. Open
+    user decisions are listed in the 2026-10-26 entry directly below (runtime model 4.6→5.5, Compass
+    learnings/ONBOARDING, methodology PDF). Standing instruction: Rule 6 dependency mapping, and
+    specs must match what's implemented.
+  - **Rules that keep binding across the park** (they do not lapse while parked): never merge a
+    code PR without the user's explicit, PR-specific instruction in that turn (CI green + review
+    APPROVE is readiness, not authorization); docs-only changes may go straight to `main` with the
+    skip-CI directive in the subject line only; Gate 5's full bug-fix pipeline; the
+    debt-escalation clock in `.claude/CLAUDE.md` keeps counting — on resume, check `docs/BACKLOG.md`
+    for any item that has passed 14 days and surface it rather than re-deferring it.
+  - **Keep the two projects separate**: Compass lives in its own repo/folder
+    (`Project-Compass` beside this one) with its own VS Code workspace and its own Claude Code
+    memory. Its `CLAUDE.md`, skills and playbook are a SEEDED COPY of ATS's reusable collateral and
+    are not auto-synced — if a mandate is changed here while parked, or there, port it deliberately.
+
 - 2026-10-26 — **Project-Compass repo + VS Code workspace created; Sonnet 5.5 doc refresh.** No ATS
   code, schema or PR changes; ATS `main` untouched except the docs below.
   - **Project-Compass** = a separate project seeded from this repo's reusable governance collateral.
