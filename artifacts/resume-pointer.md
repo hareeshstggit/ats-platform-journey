@@ -15,9 +15,17 @@ below before doing anything else.
   was in flight; this is a clean park, not an interruption.
   - **Repo state at park**: `main` clean and in sync with `origin/main`, no uncommitted/untracked
     files, no unpushed commits, no in-flight branch, agent or PR of ours. Local DB at migration head
-    `0071_app_ivw_exit_cascade`. Pre-existing, untouched: old PR #210 (`chore/ci-test-infrastructure`,
-    open since Aug — see the 2026-08-04 PAUSED entry in this file), 8 `git stash` entries, many stale
-    local branches. Recent closes: Tier 1 items 2 and 3 (PR #289, #290).
+    `0071_app_ivw_exit_cascade`. Zero open PRs. Old draft PR #210 (`chore/ci-test-infrastructure`, open
+    since 2026-08-04; see the 2026-08-04 PAUSED entry in this file) was CLOSED 2026-10-26 as
+    superseded by PR #221 (merged 2026-08-08, a fresh reapplication of #210): a read-only
+    `git merge-tree` simulation showed 12 of its 13 files conflict with `main`, and resolving
+    in its favour would have reverted ~10,000 lines — the G15b real migration replay, the e2e
+    real-login fixes, the current `ci_schema_snapshot.sql` (drift check would fail every PR), the
+    `users.mfa_channel` CHECK guard in migration 0002, and Rule 5 e2e cleanup helpers. Its branch
+    `chore/ci-test-infrastructure` was deliberately left in place (an auto-mode guard blocked
+    deleting it): safe to delete any time — tip `f09f43a` stays reachable at `refs/pull/210/head`.
+    Still untouched: 8 `git stash` entries and many stale local branches. Recent closes: Tier 1
+    items 2 and 3 (PR #289, #290).
   - **Local stack STOPPED** (frees ports 8000/3000/5432/6379 and RAM for Compass): containers
     `ats-platform` + `ats-redis` stopped; uvicorn, Celery and Next.js processes killed. To resume,
     start fresh — do not assume anything survived:
