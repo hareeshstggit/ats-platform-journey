@@ -10,6 +10,37 @@ below before doing anything else.
 <details>
 <summary><strong>History index — click to expand (newest first, jump to any entry)</strong></summary>
 
+- 2026-10-26 — **Project-Compass repo + VS Code workspace created; Sonnet 5.5 doc refresh.** No ATS
+  code, schema or PR changes; ATS `main` untouched except the docs below.
+  - **Project-Compass** = a separate project seeded from this repo's reusable governance collateral.
+    GitHub: `hareeshstggit/Project-Compass` (private, single clean root commit, 22 files). Local
+    clone: sibling folder `Project-Compass` next to `ats-platform-project`. VS Code workspace file
+    `Project-Compass.code-workspace` lives in the shared parent folder (outside both repos) and opens
+    a teal-themed `[COMPASS]` window so it can't be confused with the ATS window. Contents: `CLAUDE.md`
+    (as-is; its Part I, ATS-specific rules/incidents and Part VIII need adapting at kickoff),
+    `principal-reviewer`, generic skills + `opsx` commands, PR template, `AI_AGENTIC_GOVERNANCE_GUIDE.md`,
+    `TOKEN_OPTIMIZATION_PRACTICE.md`, an EMPTY `docs/BACKLOG.md`, and a reset `memory/resume-pointer.md`
+    template. Deliberately excluded: all ATS specs/changes, architecture/schema/compliance docs,
+    stack-specific agents, READMEs, `ONBOARDING.md`. Compass will need its own dev-stack ports and
+    container names (ATS uses 8000/3000/5432/6379 and `ats-platform`/`ats-redis`).
+  - **Sonnet 5.5 refresh (`claude-sonnet-5-5`)**: agents/skills pin the version-agnostic `sonnet`
+    alias, so nothing to change there. Updated the one hard-coded "Sonnet 5" sentence in
+    `.claude/CLAUDE.md` (Model + effort pinning), the stale `Co-Authored-By` example in
+    `.claude/skills/commit-message/SKILL.md`, and added playbook changelog row 1.10. NOT changed:
+    ATS runtime LLM model IDs (`claude-sonnet-4-6` / Bedrock `anthropic.claude-sonnet-4-6-20250514-v1:0`
+    in `backend/app/core/config.py`, `infrastructure/terraform/modules/bedrock/main.tf`,
+    `docs/AI_TRANSITION_RUNBOOK.md`, specs) — product config pinned by the requirements.
+  - **Open decisions for the user**: (a) move the ATS runtime model to Sonnet 5.5? Needs an OpenSpec
+    change (spec says "pinned by the requirements"), a verified Bedrock model ID for 5.5 (unverified
+    — do not guess), Terraform IAM scope update, test updates (~14 files assert the model string)
+    and a cost/quality check; (b) copy the general auto-memory "learnings" (feedback_*.md) into
+    Compass; (c) adapt `ONBOARDING.md` for Compass; (d) `docs/EXECUTION_METHODOLOGY.html/.pdf` still
+    shows the 2026-07-24 "Sonnet 5" snapshot — regenerate only if wanted.
+  - **Next up**: unchanged — remaining Tier 1 items in `docs/BACKLOG.md` PRIORITY item 7 (manual
+    status→`onboarded` likely false positive; feedback outcome submittable with no `scheduled_at`;
+    kit regen on reschedule lacks idempotency guard; `GET /applications?status=` 500 on invalid
+    enum), then Tier 2. Standing instruction: Rule 6 mapping, and specs must match what's implemented.
+
 - 2026-10-22 — **Tier 1 backlog item 3 (BR-SYNC-005 auto-sync swallow, `docs/BACKLOG.md` §3
   item 6) CLOSED — PR #290 merged, squash commit `9d3f8ba` on `main`.** No schema change, no
   migration, local dev DB still at head `0071_app_ivw_exit_cascade`.

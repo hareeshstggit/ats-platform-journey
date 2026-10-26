@@ -401,7 +401,11 @@ localhost DB, pollutes UI views, and causes false failures in subsequent runs.
     no deleted_at and will remain visible in the UI until hard-deleted.
 
 **Pre-run stale data check (mandatory — functional-test-engineer runs this first):**
-Before executing any FT suite, query for leftover FT-prefixed rows:
+Before executing any FT suite, query for leftover FT-prefixed rows — run as the
+`atsplatformuser` admin/owner role (bypasses RLS), NEVER as `ats_app`: `positions` is
+RLS-protected, so the same query run as `ats_app` with no RLS context set silently
+returns 0 for every query regardless of actual stale-row count, defeating the check
+entirely (found 2026-10-13, functional-test-engineer, screening-jd-gaps-grounding review).
   `SELECT COUNT(*) FROM positions WHERE title ILIKE 'FT-%' AND deleted_at IS NULL`
   `SELECT COUNT(*) FROM candidates WHERE display_name ILIKE 'FT-%' AND deleted_at IS NULL`
 If either count > 0: log a warning and run the bulk cleanup SQL before proceeding. Stale data
@@ -1005,7 +1009,9 @@ only when the change under review meets the listed risk criteria; the two on-dem
 `principal-reliability-engineer` / `principal-performance-auditor` stay pinned to opus/xhigh by
 default (their low dispatch frequency, not a per-dispatch downgrade, is what keeps their cost
 down); `backend-engineer`/`ux-ui-engineer` (sonnet/high) and `unit-test-engineer`/
-`functional-test-engineer`/`integration-test-engineer` (sonnet/medium) stay on Sonnet 5.
+`functional-test-engineer`/`integration-test-engineer` (sonnet/medium) stay on the `sonnet`
+alias — a version-agnostic pin that resolves to the latest Sonnet (currently Sonnet 5.5,
+`claude-sonnet-5-5`), so a new Sonnet release needs no agent-frontmatter edit.
 **Max effort is reserved for cases where it is absolutely required to protect quality or
 a hard review gate — never a standing default**; using it by default measurably slows throughput
 without a proportional quality gain on routine work. The main loop's own mechanical tool calls
